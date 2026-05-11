@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { tenantStore, tokenStore } from './api';
+import { api, tenantStore, tokenStore } from './api';
 
 describe('api browser stores', () => {
   beforeEach(() => {
@@ -34,5 +34,23 @@ describe('api browser stores', () => {
 
     tenantStore.set(42);
     expect(tenantStore.get()).toBe(42);
+  });
+
+  it('can skip the active tenant header for tenant resolution requests', async () => {
+    tenantStore.set(42);
+
+    const response = await api.get('/tenant-context/resolve', {
+      params: { host: 'tenant.example.com' },
+      skipTenantHeader: true,
+      adapter: async (config) => ({
+        data: { id: 1, name: 'Tenant' },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }),
+    });
+
+    expect(response.config.headers?.['X-Company-Id']).toBeUndefined();
   });
 });

@@ -795,7 +795,7 @@ td small {
 .landing-brand-row {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
   color: var(--brand-dark);
   font-weight: 900;
 }
@@ -809,6 +809,28 @@ td small {
   background: var(--brand-dark);
   color: #ffffff;
   box-shadow: var(--shadow-md);
+}
+
+.landing-logo-mark img {
+  max-width: 34px;
+  max-height: 34px;
+  object-fit: contain;
+}
+
+.landing-logo-mark.has-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.landing-logo-mark.has-logo img {
+  width: 96px;
+  height: 96px;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
 }
 
 .landing-copy {

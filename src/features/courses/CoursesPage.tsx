@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiBookOpen, FiCalendar, FiCheckSquare, FiFileText, FiUsers } from 'react-icons/fi';
+import { FiBookOpen, FiCalendar, FiCheckSquare, FiFileText, FiPlus, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, LoadingState } from '../../components/DataState';
-import { listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses } from '../../services/api';
+import { FormModal } from '../../components/Modal';
+import { createTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, updateCourseStatus } from '../../services/api';
 import type { Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
+import { useAuth } from '../auth/AuthProvider';
+import { getEffectiveTenantRole } from '../tenant/tenantRoles';
 import { formatDate } from '../../lib/format';
+
+type TenantCourseType = 'offline' | 'online_live' | 'video';
 
 export function CoursesPage() {
   const { activeTenant } = useTenant();
+  const { user } = useAuth();
   const activeTenantId = activeTenant?.id;
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
@@ -25,6 +31,28 @@ export function CoursesPage() {
   const [progressFilter, setProgressFilter] = useState<'all' | 'not_started' | 'in_progress' | 'completed'>('all');
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [creatingCourse, setCreatingCourse] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const [createForm, setCreateForm] = useState({
+    title: '',
+    description: '',
+    courseType: 'offline' as TenantCourseType,
+  });
+
+  const activeRole = getEffectiveTenantRole(user, activeTenant);
+  const canCreateCourse = ['owner', 'company_admin', 'admin', 'instructor'].includes(activeRole);
+  const canApproveTenantCourses = ['owner', 'company_admin', 'admin'].includes(activeRole);
+
+  const courseTypeOptions = useMemo(() => {
+    const flags = activeTenant?.featureFlags ?? {};
+    const options: Array<{ value: TenantCourseType; label: string }> = [];
+    if (flags['courses.offline.enabled'] !== false) options.push({ value: 'offline', label: 'Offline' });
+    if (flags['courses.onlineLive.enabled'] !== false) options.push({ value: 'online_live', label: 'Online live' });
+    if (flags['courses.video.enabled'] === true) options.push({ value: 'video', label: 'Video' });
+    return options;
+  }, [activeTenant?.featureFlags]);
 
   const filteredCourses = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -47,6 +75,7 @@ export function CoursesPage() {
   );
 
   useEffect(() => {
+    let cancelled = false;
     setCourses([]);
     setGroups([]);
     setSessions([]);
@@ -54,8 +83,10 @@ export function CoursesPage() {
     setHomework([]);
     setSelectedCourseId(undefined);
     setSelectedGroupId(undefined);
-    if (!activeTenantId) return;
-    let cancelled = false;
+    if (!activeTenantId) {
+      setLoading(false);
+      return undefined;
+    }
     setLoading(true);
     listTenantCourses(activeTenantId)
       .then((items) => {
@@ -169,11 +200,92 @@ export function CoursesPage() {
     [students],
   );
 
+  useEffect(() => {
+    if (!courseTypeOptions.length) return;
+    if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
+      setCreateForm((current) => ({ ...current, courseType: courseTypeOptions[0].value }));
+    }
+  }, [courseTypeOptions, createForm.courseType]);
+
+  const openCreateModal = () => {
+    setCreateErrors({});
+    setCreateForm({
+      title: '',
+      description: '',
+      courseType: courseTypeOptions[0]?.value ?? 'offline',
+    });
+    setCreateModalOpen(true);
+  };
+
+  const submitCourse = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!activeTenantId) return;
+
+    const errors: Record<string, string> = {};
+    if (createForm.title.trim().length < 2) errors.title = 'Course title is required.';
+    if (createForm.description.trim().length < 10) errors.description = 'Add a short course description.';
+    if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
+      errors.courseType = 'This course type is not enabled for this tenant.';
+    }
+    setCreateErrors(errors);
+    if (Object.keys(errors).length) return;
+
+    setCreatingCourse(true);
+    try {
+      const created = await createTenantCourse(activeTenantId, {
+        title: createForm.title.trim(),
+        description: createForm.description.trim(),
+        courseType: createForm.courseType,
+      });
+      const items = await listTenantCourses(activeTenantId);
+      setCourses(items);
+      setSelectedCourseId(created.id);
+      setCreateModalOpen(false);
+      toast.success('Course created');
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || 'Could not create course');
+    } finally {
+      setCreatingCourse(false);
+    }
+  };
+
+  const reloadCourses = async (preferredCourseId?: number) => {
+    if (!activeTenantId) return;
+    const items = await listTenantCourses(activeTenantId);
+    setCourses(items);
+    const preferred = preferredCourseId ? items.find((course) => course.id === preferredCourseId) : null;
+    setSelectedCourseId(preferred?.id ?? items[0]?.id);
+  };
+
+  const changeCourseStatus = async (courseId: number, status: 'pending' | 'approved' | 'rejected') => {
+    setStatusUpdating(true);
+    try {
+      await updateCourseStatus(courseId, status);
+      await reloadCourses(courseId);
+      toast.success(status === 'approved' ? 'Course approved' : status === 'rejected' ? 'Course rejected' : 'Course submitted for approval');
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || 'Could not update course status');
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
   if (loading) return <LoadingState label="Loading courses" />;
 
   return (
     <>
-      <PageHeader title="Courses" eyebrow={activeTenant?.name} />
+      <PageHeader
+        title="Courses"
+        eyebrow={activeTenant?.name}
+        actions={canCreateCourse ? (
+          <button type="button" className="primary-button" onClick={openCreateModal} disabled={!courseTypeOptions.length}>
+            <FiPlus />
+            Create course
+          </button>
+        ) : null}
+      />
       <div className="filters-row">
         <input
           value={query}
@@ -188,8 +300,10 @@ export function CoursesPage() {
       {!courses.length ? (
         <EmptyState
           title="No tenant courses yet"
-          detail="Courses are created and assigned in platform management. This tenant workspace focuses on delivery once courses are assigned."
-          action={<Link className="secondary-link-button" to="/settings">Review tenant settings</Link>}
+          detail={canCreateCourse ? 'Create a private offline or live course for this tenant, or ask the platform team to assign existing courses.' : 'Assigned tenant courses will appear here when they are ready for delivery.'}
+          action={canCreateCourse ? (
+            <button type="button" className="secondary-button" onClick={openCreateModal} disabled={!courseTypeOptions.length}>Create course</button>
+          ) : <Link className="secondary-link-button" to="/settings">Review tenant settings</Link>}
         />
       ) : (
         <>
@@ -282,6 +396,38 @@ export function CoursesPage() {
                     <span>Type</span><strong>{(selectedCourse.courseType || 'video').replace('_', ' ')}</strong>
                     <span>Status</span><strong><span className={`status-badge ${selectedCourse.status || 'draft'}`}>{selectedCourse.status || 'draft'}</span></strong>
                     <span>Published</span><strong><span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>{selectedCourse.isPublished ? 'Published' : 'Draft'}</span></strong>
+                  </div>
+                  <div className="modal-actions">
+                    {canApproveTenantCourses && selectedCourse.status !== 'approved' ? (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={statusUpdating}
+                        onClick={() => changeCourseStatus(selectedCourse.id, 'approved')}
+                      >
+                        Approve
+                      </button>
+                    ) : null}
+                    {canApproveTenantCourses && selectedCourse.status !== 'rejected' ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={statusUpdating}
+                        onClick={() => changeCourseStatus(selectedCourse.id, 'rejected')}
+                      >
+                        Reject
+                      </button>
+                    ) : null}
+                    {activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id && ['draft', 'rejected'].includes(selectedCourse.status || 'draft') ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={statusUpdating}
+                        onClick={() => changeCourseStatus(selectedCourse.id, 'pending')}
+                      >
+                        Submit for approval
+                      </button>
+                    ) : null}
                   </div>
 
                   <label>
@@ -395,6 +541,58 @@ export function CoursesPage() {
           ) : null}
         </>
       )}
+      {createModalOpen ? (
+        <FormModal labelledBy="create-course-title" onClose={() => setCreateModalOpen(false)} onSubmit={submitCourse}>
+          <div className="modal-header-block">
+            <span>Create private tenant course</span>
+            <h2 id="create-course-title">New course</h2>
+          </div>
+          <label>
+            Title
+            <input
+              className={createErrors.title ? 'input-error' : undefined}
+              value={createForm.title}
+              onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Course title"
+              autoFocus
+            />
+            {createErrors.title ? <small className="field-error">{createErrors.title}</small> : null}
+          </label>
+          <label>
+            Type
+            <select
+              className={createErrors.courseType ? 'input-error' : undefined}
+              value={createForm.courseType}
+              onChange={(event) => setCreateForm((current) => ({ ...current, courseType: event.target.value as TenantCourseType }))}
+            >
+              {courseTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            {createErrors.courseType ? <small className="field-error">{createErrors.courseType}</small> : null}
+          </label>
+          <label>
+            Description
+            <textarea
+              className={createErrors.description ? 'input-error' : undefined}
+              value={createForm.description}
+              onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
+              placeholder="Short description for staff and students"
+              rows={4}
+            />
+            {createErrors.description ? <small className="field-error">{createErrors.description}</small> : null}
+          </label>
+          {activeTenant?.featureFlags?.['courses.video.enabled'] !== true ? (
+            <p className="muted-text">Video course creation is platform-controlled for this tenant.</p>
+          ) : null}
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setCreateModalOpen(false)}>Cancel</button>
+            <button type="submit" className="primary-button" disabled={creatingCourse || !courseTypeOptions.length}>
+              {creatingCourse ? 'Creating...' : 'Create course'}
+            </button>
+          </div>
+        </FormModal>
+      ) : null}
     </>
   );
 }

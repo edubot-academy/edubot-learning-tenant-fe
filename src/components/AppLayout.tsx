@@ -27,7 +27,7 @@ const studentNavItems = [
 export function AppLayout() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { tenants, activeTenant, setActiveTenantId } = useTenant();
+  const { tenants, activeTenant, hostnameLocked, setActiveTenantId } = useTenant();
   const tenantRole = getEffectiveTenantRole(user, activeTenant);
   const learnerView = isTenantStudent(user, activeTenant);
   const navItems: NavItem[] = learnerView
@@ -60,7 +60,7 @@ export function AppLayout() {
           <span className={`status-badge role-${tenantRole || 'user'}`}>{learnerView ? 'Learner' : 'Staff'}</span>
         </div>
 
-        {tenants.length > 1 ? (
+        {!hostnameLocked && tenants.length > 1 ? (
           <>
             <label className="tenant-select-label" htmlFor="tenant-select">Tenant</label>
             <select

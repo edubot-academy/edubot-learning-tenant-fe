@@ -3,15 +3,17 @@ import { Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiAward, FiBookOpen, FiCalendar, FiCheckCircle, FiUsers } from 'react-icons/fi';
 import { useAuth } from './AuthProvider';
+import { useTenant } from '../tenant/TenantProvider';
 
 const proofPoints = [
-  { icon: FiCalendar, label: 'Live and offline sessions', value: 'Schedule, links, materials' },
-  { icon: FiCheckCircle, label: 'Attendance and homework', value: 'Daily queues in one place' },
-  { icon: FiAward, label: 'Certificates', value: 'Brand, approve, issue' },
+  { icon: FiCalendar, label: 'Sessions', value: 'Schedules, links, materials' },
+  { icon: FiCheckCircle, label: 'Daily operations', value: 'Attendance and homework queues' },
+  { icon: FiAward, label: 'Achievements', value: 'Certificates and progress' },
 ];
 
 export function LoginPage() {
   const { user, signIn } = useAuth();
+  const { resolvedTenant, resolvingTenant, resolutionError } = useTenant();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -20,6 +22,10 @@ export function LoginPage() {
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (resolutionError) {
+      toast.error(resolutionError);
+      return;
+    }
     setSubmitting(true);
     try {
       await signIn(email, password);
@@ -32,18 +38,24 @@ export function LoginPage() {
 
   return (
     <main className="login-page landing-page">
-      <section className="landing-hero" aria-label="EduBot Learning platform overview">
+      <section className="landing-hero" aria-label="Learning workspace sign in">
         <div className="landing-brand-row">
-          <div className="landing-logo-mark">E</div>
-          <span>EduBot Learning</span>
+          <div className={`landing-logo-mark ${resolvedTenant?.logoUrl ? 'has-logo' : ''}`}>
+            {resolvedTenant?.logoUrl ? <img src={resolvedTenant.logoUrl} alt="" /> : 'L'}
+          </div>
+          <span>{resolvedTenant?.name ?? 'Learning workspace'}</span>
         </div>
         <div className="landing-copy">
-          <span className="eyebrow">Tenant workspace</span>
-          <h1>Run every learning operation from one calm workspace.</h1>
+          <span className="eyebrow">
+            {resolvingTenant ? 'Preparing workspace' : resolvedTenant ? 'Private learning portal' : 'Learning portal'}
+          </span>
+          <h1>{resolvedTenant ? `Welcome to ${resolvedTenant.name}` : 'Sign in to your learning workspace'}</h1>
           <p>
-            EduBot Learning gives schools and course centers a focused tenant portal for sessions,
-            attendance, homework, certificates, and student progress.
+            Manage classes, attendance, homework, certificates, and student progress in one workspace
+            configured for your organization.
           </p>
+          <p className="login-support-note">Powered by EduBot Learning.</p>
+          {resolutionError ? <p className="field-error">{resolutionError}</p> : null}
         </div>
         <div className="landing-proof-grid">
           {proofPoints.map((item) => {
@@ -86,8 +98,8 @@ export function LoginPage() {
       <form className="login-panel" onSubmit={onSubmit}>
         <div className="login-heading">
           <span>Sign in</span>
-          <h2>Access your tenant</h2>
-          <p>Use the account assigned by your EduBot Learning platform administrator.</p>
+          <h2>{resolvedTenant ? `Access ${resolvedTenant.name}` : 'Access your workspace'}</h2>
+          <p>Use the account assigned by your organization administrator.</p>
         </div>
         <label>
           Email
@@ -97,8 +109,10 @@ export function LoginPage() {
           Password
           <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
         </label>
-        <button type="submit" disabled={submitting}>{submitting ? 'Signing in...' : 'Sign in'}</button>
-        <p className="login-support-note">Need access? Ask your platform administrator to add you to a tenant.</p>
+        <button type="submit" disabled={submitting || resolvingTenant || Boolean(resolutionError)}>
+          {submitting ? 'Signing in...' : resolvingTenant ? 'Preparing workspace...' : 'Sign in'}
+        </button>
+        <p className="login-support-note">Need access? Ask your organization administrator to add you to this workspace.</p>
       </form>
     </main>
   );

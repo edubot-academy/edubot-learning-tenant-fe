@@ -15,7 +15,7 @@ import { SettingsPage } from '../features/settings/SettingsPage';
 import { StudentDashboardPage } from '../features/student/StudentDashboardPage';
 import { EmptyState, LoadingState } from '../components/DataState';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
-import { canManageTenantCertificates, canManageTenantMembers, canOperateTenantLearning, isTenantStudent } from '../features/tenant/tenantRoles';
+import { canManageTenantCertificates, canManageTenantMembers, canOperateTenantLearning, isPlatformAdmin, isTenantStudent } from '../features/tenant/tenantRoles';
 
 const routeTitles: Record<string, string> = {
   '/': 'Overview',
@@ -29,21 +29,46 @@ const routeTitles: Record<string, string> = {
   '/settings': 'Settings',
 };
 
+const defaultFaviconHref = '/edubot-icon.svg';
+
+function getManagedFaviconLink() {
+  const existingManaged = document.querySelector<HTMLLinkElement>('link[data-managed-favicon="true"]');
+  if (existingManaged) return existingManaged;
+
+  const existingIcon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+  const link = existingIcon ?? document.createElement('link');
+  link.rel = 'icon';
+  link.dataset.managedFavicon = 'true';
+  if (!existingIcon) document.head.appendChild(link);
+  return link;
+}
+
 function DocumentMetadata() {
   const { pathname } = useLocation();
   const { activeTenant } = useTenant();
+  const faviconHref = activeTenant?.logoUrl || defaultFaviconHref;
 
   const title = useMemo(() => {
-    if (pathname === '/login') return 'Sign in | EduBot Learning';
+    if (pathname === '/login') return activeTenant?.name ? `Sign in | ${activeTenant.name}` : 'Sign in | Learning Workspace';
 
     const sectionTitle = routeTitles[pathname] ?? 'Tenant Workspace';
     const tenantName = activeTenant?.name ?? 'Tenant Workspace';
-    return `${sectionTitle} | ${tenantName} | EduBot Learning`;
+    return `${sectionTitle} | ${tenantName}`;
   }, [activeTenant?.name, pathname]);
 
   useEffect(() => {
     document.title = title;
   }, [title]);
+
+  useEffect(() => {
+    const link = getManagedFaviconLink();
+    link.href = faviconHref;
+    if (faviconHref.endsWith('.svg')) {
+      link.type = 'image/svg+xml';
+    } else {
+      link.removeAttribute('type');
+    }
+  }, [faviconHref]);
 
   return null;
 }
@@ -95,10 +120,44 @@ function FeatureRoute({ feature, children }: { feature: TenantFeatureKey; childr
 
 function ProtectedRoutes() {
   const { user, loading, signOut } = useAuth();
-  const { tenants, activeTenant, error: tenantError, loading: tenantLoading, reloadTenants } = useTenant();
+  const {
+    tenants,
+    activeTenant,
+    error: tenantError,
+    loading: tenantLoading,
+    resolvingTenant,
+    resolutionError,
+    reloadTenants,
+  } = useTenant();
 
-  if (loading || tenantLoading) return <LoadingState label="Preparing workspace" />;
+  if (loading || tenantLoading || resolvingTenant) return <LoadingState label="Preparing workspace" />;
   if (!user) return <Navigate to="/login" replace />;
+  if (isPlatformAdmin(user)) {
+    return (
+      <main className="login-page">
+        <section className="login-panel state-panel">
+          <strong>Use platform admin</strong>
+          <span>Super admin accounts cannot access tenant workspaces.</span>
+          <div className="page-actions">
+            <button type="button" className="secondary-button" onClick={signOut}>Sign out</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+  if (resolutionError) {
+    return (
+      <main className="login-page">
+        <section className="login-panel state-panel">
+          <strong>Tenant domain unavailable</strong>
+          <span>{resolutionError}</span>
+          <div className="page-actions">
+            <button type="button" className="secondary-button" onClick={signOut}>Sign out</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
   if (tenantError) {
     return (
       <main className="login-page">

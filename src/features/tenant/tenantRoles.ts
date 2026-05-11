@@ -11,8 +11,6 @@ function normalizeRole(role?: string | null) {
 }
 
 export function getEffectiveTenantRole(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
-  const platformRole = normalizeRole(user?.role);
-  if (platformAdminRoles.has(platformRole)) return platformRole;
   return normalizeRole(tenant?.role || user?.role);
 }
 
@@ -22,12 +20,12 @@ export function isPlatformAdmin(user: AuthUser | null | undefined) {
 
 export function isTenantAdmin(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
   const role = getEffectiveTenantRole(user, tenant);
-  return platformAdminRoles.has(role) || tenantAdminRoles.has(role);
+  return tenantAdminRoles.has(role);
 }
 
 export function isTenantStaff(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
   const role = getEffectiveTenantRole(user, tenant);
-  return platformAdminRoles.has(role) || tenantAdminRoles.has(role) || teachingRoles.has(role);
+  return tenantAdminRoles.has(role) || teachingRoles.has(role);
 }
 
 export function isTenantStudent(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
@@ -35,8 +33,8 @@ export function isTenantStudent(user: AuthUser | null | undefined, tenant: Tenan
 }
 
 export function getTenantAccessLevel(user: AuthUser | null | undefined, tenant: Tenant | null | undefined): TenantAccessLevel {
+  if (isPlatformAdmin(user)) return 'none';
   const role = getEffectiveTenantRole(user, tenant);
-  if (platformAdminRoles.has(role)) return 'platform';
   if (tenantAdminRoles.has(role)) return 'tenant_admin';
   if (role === 'instructor') return 'instructor';
   if (role === 'assistant') return 'assistant';
@@ -58,5 +56,5 @@ export function canOperateTenantLearning(user: AuthUser | null | undefined, tena
 
 export function canManageTenantCertificates(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
   const role = getEffectiveTenantRole(user, tenant);
-  return platformAdminRoles.has(role) || tenantAdminRoles.has(role) || role === 'instructor';
+  return tenantAdminRoles.has(role) || role === 'instructor';
 }

@@ -21,10 +21,10 @@ const tenant = (role: string | null): Tenant => ({
 });
 
 describe('tenant role access', () => {
-  it('treats superadmin as platform-wide access', () => {
+  it('keeps superadmin out of tenant workspace access', () => {
     expect(isPlatformAdmin(user('superadmin'))).toBe(true);
-    expect(getTenantAccessLevel(user('superadmin'), tenant('student'))).toBe('platform');
-    expect(canManageTenantMembers(user('superadmin'), tenant('student'))).toBe(true);
+    expect(getTenantAccessLevel(user('superadmin'), tenant('student'))).toBe('none');
+    expect(canManageTenantMembers(user('superadmin'), tenant('student'))).toBe(false);
   });
 
   it('keeps admin scoped to tenant access instead of platform access', () => {

@@ -1,7 +1,7 @@
 {
-  "name": "EduBot Learning Tenant Workspace",
-  "short_name": "EduBot Tenant",
-  "description": "Tenant workspace for managing EduBot Learning courses, sessions, attendance, homework, certificates, and learners.",
+  "name": "Learning Workspace",
+  "short_name": "Workspace",
+  "description": "Private learning workspace for managing courses, sessions, attendance, homework, certificates, and learners.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

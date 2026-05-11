@@ -28,6 +28,12 @@ import type {
   UserSummary,
 } from '../types/domain';
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    skipTenantHeader?: boolean;
+  }
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const TOKEN_KEY = 'edubot_tenant_token';
 const TENANT_KEY = 'edubot_active_tenant_id';
@@ -65,7 +71,11 @@ api.interceptors.request.use((config) => {
   const token = tokenStore.get();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   const tenantId = tenantStore.get();
-  if (tenantId) config.headers['X-Company-Id'] = String(tenantId);
+  if (config.skipTenantHeader) {
+    delete config.headers['X-Company-Id'];
+  } else if (tenantId) {
+    config.headers['X-Company-Id'] = String(tenantId);
+  }
   return config;
 });
 
@@ -120,6 +130,14 @@ export async function listMyTenants() {
   return Array.isArray(data) ? data : data.items ?? [];
 }
 
+export async function resolveTenantByHost(host: string) {
+  const { data } = await api.get<Tenant & { resolvedHost?: string }>('/tenant-context/resolve', {
+    params: { host },
+    skipTenantHeader: true,
+  });
+  return data;
+}
+
 export async function getTenant(tenantId: number) {
   const { data } = await api.get<Tenant>(`/companies/${tenantId}`);
   return data;
@@ -155,6 +173,28 @@ export async function listTenantCourses(tenantId: number) {
     params: { limit: 100 },
   });
   return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function createTenantCourse(tenantId: number, payload: {
+  title: string;
+  description: string;
+  courseType: 'offline' | 'online_live' | 'video';
+}) {
+  const { data } = await api.post<Course>('/courses', {
+    title: payload.title,
+    description: payload.description,
+    price: 0,
+    isPaid: false,
+    visibility: 'PRIVATE',
+    companyId: tenantId,
+    courseType: payload.courseType,
+  });
+  return data;
+}
+
+export async function updateCourseStatus(courseId: number, status: 'pending' | 'approved' | 'rejected') {
+  const { data } = await api.patch<{ success: boolean; status: string }>(`/courses/${courseId}/status`, { status });
+  return data;
 }
 
 export async function listCourseGroups(courseId?: number) {

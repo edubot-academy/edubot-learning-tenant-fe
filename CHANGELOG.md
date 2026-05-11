@@ -21,6 +21,67 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - No unreleased changes yet.
 
+## 0.2.0 - 2026-05-12
+
+### Added
+
+- Tenant-domain resolution for white-label tenant workspaces through `/tenant-context/resolve`.
+- Neutral-host tenant overrides through `tenant` and `tenantId` query parameters for local and shared environments.
+- Environment-based neutral host and tenant query base-domain configuration.
+- Tenant provider state for resolved tenants, hostname locking, tenant-resolution loading, and tenant-resolution errors.
+- Tenant-locked navigation behavior when a workspace is resolved from a hostname or explicit tenant override.
+- Tenant-branded login page using the resolved tenant name and logo before authentication.
+- Tenant logo rendering on the login page without the default logo badge background.
+- Dynamic document favicon support using the active tenant logo with a workspace icon fallback.
+- Instructor-focused overview content with upcoming sessions, assigned courses, homework queue, and feature-aware actions.
+- Instructor overview session loading for non-admin staff users.
+- Tenant course creation flow for enabled offline, online live, and video course types.
+- Course approval, rejection, and instructor submission actions.
+- API helpers for tenant course creation and course status updates.
+- Regression coverage for tenant role scoping and tenant-header opt-out behavior.
+
+### Changed
+
+- Login and app-shell text now foreground the tenant or organization workspace, with EduBot Learning shown only as platform attribution.
+- Browser metadata, PWA manifest text, PWA icon accessibility label, and default loading copy now use neutral “Learning Workspace” wording.
+- Document titles now use tenant/workspace names instead of appending EduBot Learning to every page title.
+- Sidebar tenant switching is hidden for hostname-locked tenant workspaces.
+- Login submit state now waits for tenant resolution and blocks sign-in when the resolved tenant domain is invalid.
+- Login brand spacing and logo sizing were adjusted for larger tenant logos.
+- Super admin users are kept out of tenant workspace access and directed away from tenant routes.
+- Platform-level `superadmin` is no longer treated as tenant staff/admin/certificate access inside tenant routes.
+- Tenant activity is shown only to users who can manage tenant members.
+- Course empty states now distinguish between users who can create tenant courses and users waiting for assigned courses.
+- Package version updated to `0.2.0`.
+- Dependency lockfile updated for the `0.2.0` package metadata and installed test/dependency state.
+
+### Fixed
+
+- Tenant-domain resolution requests now skip the active `X-Company-Id` header so stale tenant selections cannot affect hostname lookup.
+- Tenant reload logic now preserves resolved hostname tenants when unauthenticated and validates authenticated access against the resolved tenant.
+- Tenant resolution failures now clear stale stored tenant IDs and expose a tenant-domain-specific error.
+- Course loading clears stale loading state when no tenant is active.
+
+### Files Covered
+
+- `CHANGELOG.md`: added this `0.2.0` release entry.
+- `index.html`: neutral workspace metadata and loading copy.
+- `package.json`: version bumped to `0.2.0`.
+- `package-lock.json`: lockfile metadata updated for the package/dependency state.
+- `public/edubot-icon.svg`: default icon accessible label changed to Learning Workspace.
+- `public/manifest.webmanifest`: neutral PWA name, short name, and description.
+- `src/app/App.tsx`: tenant-aware titles, dynamic favicon, tenant-resolution route guards, and super admin tenant-workspace block.
+- `src/components/AppLayout.tsx`: hostname-locked tenant switcher behavior.
+- `src/features/auth/LoginPage.tsx`: resolved-tenant branding, copy, tenant logo rendering, and tenant-resolution sign-in handling.
+- `src/features/courses/CoursesPage.tsx`: tenant course creation, course type feature filtering, course status actions, and empty-state updates.
+- `src/features/dashboard/OverviewPage.tsx`: instructor overview, upcoming sessions, role-aware tenant activity, and expanded data loading.
+- `src/features/tenant/TenantProvider.tsx`: hostname/query tenant resolution, tenant lock state, and access validation.
+- `src/features/tenant/tenantRoles.ts`: platform and tenant role separation.
+- `src/features/tenant/tenantRoles.test.ts`: updated role-scope expectations.
+- `src/services/api.ts`: tenant resolver, tenant course/status API helpers, and tenant-header opt-out support.
+- `src/services/api.test.ts`: storage tests plus tenant-header opt-out regression coverage.
+- `src/styles/app.css`: login tenant-logo sizing and unframed logo styling.
+
 ## 0.1.0 - 2026-05-11
 
 First release of the EduBot Learning tenant workspace frontend.

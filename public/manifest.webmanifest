@@ -1,0 +1,18 @@
+{
+  "name": "EduBot Learning Tenant Workspace",
+  "short_name": "EduBot Tenant",
+  "description": "Tenant workspace for managing EduBot Learning courses, sessions, attendance, homework, certificates, and learners.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#f17e22",
+  "icons": [
+    {
+      "src": "/edubot-icon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,703 @@
+import axios from 'axios';
+import type {
+  AttendanceRecord,
+  AttendanceStatus,
+  AuthUser,
+  CertificateBranding,
+  CourseCertificate,
+  CourseCertificateSettings,
+  CompanyMember,
+  Course,
+  CourseGroup,
+  CourseSession,
+  GroupStudent,
+  HomeworkReviewRoster,
+  HomeworkSubmission,
+  LiveMeeting,
+  SessionMaterial,
+  SessionActivity,
+  SessionActivityResponseSet,
+  SessionActivityStatus,
+  SessionActivityType,
+  SessionGenerationPreview,
+  SessionGenerationResult,
+  SessionInsights,
+  SessionHomework,
+  Tenant,
+  TenantActivityLog,
+  UserSummary,
+} from '../types/domain';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+const TOKEN_KEY = 'edubot_tenant_token';
+const TENANT_KEY = 'edubot_active_tenant_id';
+
+export const tokenStore = {
+  get: () => sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY),
+  set: (token: string) => {
+    sessionStorage.setItem(TOKEN_KEY, token);
+    localStorage.removeItem(TOKEN_KEY);
+  },
+  clear: () => {
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+  },
+};
+
+export const tenantStore = {
+  get: () => {
+    const value = localStorage.getItem(TENANT_KEY);
+    const id = Number(value);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  },
+  set: (tenantId: number) => localStorage.setItem(TENANT_KEY, String(tenantId)),
+  clear: () => localStorage.removeItem(TENANT_KEY),
+};
+
+export const api = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+});
+
+export const AUTH_EXPIRED_EVENT = 'edubot_tenant_auth_expired';
+
+api.interceptors.request.use((config) => {
+  const token = tokenStore.get();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const tenantId = tenantStore.get();
+  if (tenantId) config.headers['X-Company-Id'] = String(tenantId);
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      tokenStore.clear();
+      tenantStore.clear();
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    }
+    return Promise.reject(error);
+  },
+);
+
+type LoginResponse = {
+  token?: string;
+  access_token?: string;
+  user?: AuthUser;
+};
+
+export async function login(email: string, password: string) {
+  const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
+  const token = data.token || data.access_token;
+  if (!token) throw new Error('Login response did not include a token');
+  tokenStore.set(token);
+  return data.user ?? getCurrentUser();
+}
+
+export async function getCurrentUser() {
+  const { data } = await api.get<AuthUser>('/auth/profile');
+  return data;
+}
+
+export async function searchUsers(params: { search?: string; role?: string; limit?: number } = {}) {
+  const { data } = await api.get<{ data?: UserSummary[]; items?: UserSummary[] } | UserSummary[]>('/users', {
+    params: {
+      page: 1,
+      limit: params.limit ?? 10,
+      search: params.search,
+      role: params.role,
+    },
+  });
+  if (Array.isArray(data)) return data;
+  return data.data ?? data.items ?? [];
+}
+
+export async function listMyTenants() {
+  const { data } = await api.get<{ items?: Tenant[] } | Tenant[]>('/companies/mine', {
+    params: { limit: 100 },
+  });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function getTenant(tenantId: number) {
+  const { data } = await api.get<Tenant>(`/companies/${tenantId}`);
+  return data;
+}
+
+export async function updateTenant(tenantId: number, patch: Partial<Pick<Tenant,
+  'name' | 'logoUrl' | 'timezone' | 'locale' | 'website' | 'email' | 'phone' |
+  'contactName' | 'contactEmail' | 'contactPhone' | 'address' | 'city' | 'country' |
+  'telegram' | 'whatsapp' | 'instagram' | 'taxId' | 'notes'
+>>) {
+  const { data } = await api.patch<Tenant>(`/companies/${tenantId}`, patch);
+  return data;
+}
+
+export async function uploadTenantLogo(tenantId: number, file: File) {
+  const formData = new FormData();
+  formData.append('logo', file);
+  const { data } = await api.post<Tenant>(`/companies/${tenantId}/upload-logo`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function listTenantActivity(tenantId: number, params: { page?: number; limit?: number } = {}) {
+  const { data } = await api.get<{ items?: TenantActivityLog[] } | TenantActivityLog[]>(`/companies/${tenantId}/activity`, {
+    params: { page: params.page ?? 1, limit: params.limit ?? 10 },
+  });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function listTenantCourses(tenantId: number) {
+  const { data } = await api.get<{ items?: Course[] } | Course[]>(`/companies/${tenantId}/courses`, {
+    params: { limit: 100 },
+  });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function listCourseGroups(courseId?: number) {
+  const { data } = await api.get<{ items?: CourseGroup[] } | CourseGroup[]>('/course-groups', {
+    params: courseId ? { courseId } : undefined,
+  });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function createCourseGroup(payload: {
+  courseId: number;
+  name: string;
+  code: string;
+  status?: 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
+  startDate?: string;
+  endDate?: string;
+  seatLimit?: number;
+  timezone?: string;
+  location?: string;
+  meetingProvider?: string;
+  meetingUrl?: string;
+  scheduleNote?: string;
+  scheduleBlocks?: Array<{ day: string; startTime: string; endTime: string }> | null;
+}) {
+  const { data } = await api.post<CourseGroup>('/course-groups', payload);
+  return data;
+}
+
+export async function updateCourseGroup(groupId: number, payload: {
+  name?: string;
+  code?: string;
+  status?: 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
+  startDate?: string;
+  endDate?: string;
+  seatLimit?: number;
+  timezone?: string;
+  location?: string;
+  meetingProvider?: string;
+  meetingUrl?: string;
+  scheduleNote?: string | null;
+  scheduleBlocks?: Array<{ day: string; startTime: string; endTime: string }> | null;
+}) {
+  const { data } = await api.patch<CourseGroup>(`/course-groups/${groupId}`, payload);
+  return data;
+}
+
+export async function previewGeneratedSessions(groupId: number, params: { fromDate?: string; toDate?: string }) {
+  const { data } = await api.get<SessionGenerationPreview>(`/course-groups/${groupId}/session-generation/preview`, {
+    params,
+  });
+  return data;
+}
+
+export async function generateGroupSessions(groupId: number, payload: { fromDate?: string; toDate?: string }) {
+  const { data } = await api.post<SessionGenerationResult>(`/course-groups/${groupId}/session-generation`, payload);
+  return data;
+}
+
+export async function listGroupSessions(groupId?: number) {
+  const { data } = await api.get<{ items?: CourseSession[] } | CourseSession[]>('/group-sessions', {
+    params: groupId ? { groupId } : undefined,
+  });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function createGroupSession(payload: {
+  groupId: number;
+  sessionIndex: number;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  status?: 'scheduled' | 'completed' | 'cancelled';
+  notes?: string;
+}) {
+  const { data } = await api.post<CourseSession>('/group-sessions', payload);
+  return data;
+}
+
+export async function updateGroupSession(sessionId: number, payload: {
+  title?: string;
+  startsAt?: string;
+  endsAt?: string;
+  status?: 'scheduled' | 'completed' | 'cancelled';
+  notes?: string;
+  recordingUrl?: string;
+  materials?: SessionMaterial[];
+}) {
+  const { data } = await api.patch<CourseSession>(`/group-sessions/${sessionId}`, payload);
+  return data;
+}
+
+export async function uploadSessionMaterial(sessionId: number, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post<SessionMaterial>(
+    `/group-sessions/${sessionId}/materials/upload`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data;
+}
+
+export async function getLiveMeeting(sessionId: number, provider?: 'zoom' | 'google_meet' | 'custom') {
+  const { data } = await api.get<LiveMeeting>(`/live-integration/sessions/${sessionId}/meeting`, {
+    params: provider ? { provider } : undefined,
+  });
+  return data;
+}
+
+export async function createLiveMeeting(sessionId: number, payload: {
+  provider?: 'zoom' | 'google_meet' | 'custom';
+  customJoinUrl?: string;
+  topic?: string;
+  agenda?: string;
+  startTime?: string;
+  durationMinutes?: number;
+  timezone?: string;
+  hostUserId?: string;
+}) {
+  const { data } = await api.post<LiveMeeting>(`/live-integration/sessions/${sessionId}/meeting`, payload);
+  return data;
+}
+
+export async function updateLiveMeeting(sessionId: number, payload: {
+  provider?: 'zoom' | 'google_meet' | 'custom';
+  customJoinUrl?: string;
+  topic?: string;
+  agenda?: string;
+  startTime?: string;
+  durationMinutes?: number;
+  timezone?: string;
+  hostUserId?: string;
+}) {
+  const { data } = await api.patch<LiveMeeting>(`/live-integration/sessions/${sessionId}/meeting`, payload);
+  return data;
+}
+
+export async function deleteLiveMeeting(sessionId: number, provider?: 'zoom' | 'google_meet' | 'custom') {
+  const { data } = await api.delete<LiveMeeting>(`/live-integration/sessions/${sessionId}/meeting`, {
+    params: provider ? { provider } : undefined,
+  });
+  return data;
+}
+
+export type SessionActivityPayload = {
+  title: string;
+  description?: string | null;
+  type: SessionActivityType;
+  status: SessionActivityStatus;
+  questions?: Array<{
+    prompt: string;
+    questionMode?: 'single_choice' | 'multiple_choice';
+    options: Array<{ text: string; isCorrect?: boolean }>;
+  }>;
+};
+
+export async function listSessionActivities(sessionId: number) {
+  const { data } = await api.get<SessionActivity[]>(`/group-sessions/${sessionId}/activities`);
+  return data;
+}
+
+export async function createSessionActivity(sessionId: number, payload: SessionActivityPayload) {
+  const { data } = await api.post<SessionActivity[]>(`/group-sessions/${sessionId}/activities`, payload);
+  return data;
+}
+
+export async function updateSessionActivity(sessionId: number, activityId: number, payload: SessionActivityPayload) {
+  const { data } = await api.patch<SessionActivity[]>(`/group-sessions/${sessionId}/activities/${activityId}`, payload);
+  return data;
+}
+
+export async function deleteSessionActivity(sessionId: number, activityId: number) {
+  const { data } = await api.post<{ ok: boolean }>(`/group-sessions/${sessionId}/activities/${activityId}/delete`);
+  return data;
+}
+
+export async function getSessionActivityResponses(sessionId: number, activityId: number) {
+  const { data } = await api.get<SessionActivityResponseSet>(`/group-sessions/${sessionId}/activities/${activityId}/responses`);
+  return data;
+}
+
+export async function getSessionInsights(sessionId: number) {
+  const { data } = await api.get<SessionInsights>(`/group-sessions/${sessionId}/insights`);
+  return data;
+}
+
+export async function reviewSessionActivitySubmission(
+  sessionId: number,
+  activityId: number,
+  submissionId: number,
+  payload: { status: 'submitted' | 'approved' | 'rejected' | 'needs_revision'; score?: number; reviewComment?: string },
+) {
+  const { data } = await api.patch<{ ok: boolean }>(
+    `/group-sessions/${sessionId}/activities/${activityId}/submissions/${submissionId}`,
+    payload,
+  );
+  return data;
+}
+
+export async function enrollUser(payload: {
+  courseId: number;
+  userId: number;
+  groupId?: number;
+  discountPercentage?: number;
+}) {
+  const { data } = await api.post('/enrollments/enroll', payload);
+  return data;
+}
+
+export async function listGroupStudents(groupId: number, params: {
+  q?: string;
+  progressGte?: number;
+  progressLte?: number;
+  limit?: number;
+} = {}) {
+  const { data } = await api.get<{ items?: GroupStudent[] } | GroupStudent[]>(`/course-groups/${groupId}/students`, {
+    params: { limit: params.limit ?? 200, q: params.q, progressGte: params.progressGte, progressLte: params.progressLte },
+  });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function getSessionAttendance(sessionId: number) {
+  const { data } = await api.get<{ items?: AttendanceRecord[] } | AttendanceRecord[]>(`/attendance/sessions/${sessionId}`);
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function saveSessionAttendance(
+  sessionId: number,
+  rows: Array<{ studentId: number; status: AttendanceStatus; notes?: string }>,
+) {
+  const { data } = await api.post(`/attendance/sessions/${sessionId}/bulk`, { rows });
+  return data;
+}
+
+export async function listSessionHomework(sessionId: number, includeUnpublished = true) {
+  const { data } = await api.get<SessionHomework[] | { items?: SessionHomework[] }>(`/group-sessions/${sessionId}/homework`, {
+    params: { includeUnpublished },
+  });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function createSessionHomework(
+  sessionId: number,
+  payload: {
+    title: string;
+    description?: string;
+    dueAt?: string;
+    maxScore?: number;
+    isPublished?: boolean;
+    assignedStudentIds?: number[];
+  },
+) {
+  const { data } = await api.post<SessionHomework>(`/group-sessions/${sessionId}/homework`, payload);
+  return data;
+}
+
+export async function updateSessionHomework(
+  sessionId: number,
+  homeworkId: number,
+  payload: {
+    title?: string;
+    description?: string | null;
+    dueAt?: string | null;
+    deadline?: string | null;
+    maxScore?: number | null;
+    isPublished?: boolean;
+    assignedStudentIds?: number[] | null;
+  },
+) {
+  const { data } = await api.patch<SessionHomework>(`/group-sessions/${sessionId}/homework/${homeworkId}`, payload);
+  return data;
+}
+
+export async function deleteSessionHomework(sessionId: number, homeworkId: number) {
+  const { data } = await api.delete<{ ok: boolean }>(`/group-sessions/${sessionId}/homework/${homeworkId}`);
+  return data;
+}
+
+export async function getHomeworkReviewRoster(sessionId: number, homeworkId: number) {
+  const { data } = await api.get<HomeworkReviewRoster>(`/group-sessions/${sessionId}/homework/${homeworkId}/review-roster`);
+  return data;
+}
+
+export async function listHomeworkSubmissions(sessionId: number, homeworkId: number) {
+  const { data } = await api.get<HomeworkSubmission[] | { items?: HomeworkSubmission[] }>(
+    `/group-sessions/${sessionId}/homework/${homeworkId}/submissions`,
+  );
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function openHomeworkSubmissionAttachment(sessionId: number, homeworkId: number, submissionId: number) {
+  const { data } = await api.get<Blob>(
+    `/group-sessions/${sessionId}/homework/${homeworkId}/submissions/${submissionId}/attachment`,
+    { responseType: 'blob' },
+  );
+  const url = URL.createObjectURL(data);
+  window.open(url, '_blank', 'noopener,noreferrer');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function reviewHomeworkSubmission(
+  sessionId: number,
+  homeworkId: number,
+  submissionId: number,
+  payload: { status: 'approved' | 'rejected' | 'needs_revision'; score?: number; reviewComment?: string },
+) {
+  const { data } = await api.patch<HomeworkSubmission>(
+    `/group-sessions/${sessionId}/homework/${homeworkId}/submissions/${submissionId}`,
+    payload,
+  );
+  return data;
+}
+
+export async function listTenantMembers(tenantId: number) {
+  const { data } = await api.get<{ items?: CompanyMember[] } | CompanyMember[]>(`/companies/${tenantId}/members`);
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function addTenantMember(tenantId: number, payload: { userId: number; role: string }) {
+  const { data } = await api.post(`/companies/${tenantId}/members`, payload);
+  return data;
+}
+
+export async function inviteTenantMember(
+  tenantId: number,
+  payload: { email: string; fullName: string; role: string; sendEmail?: boolean },
+) {
+  const { data } = await api.post(`/companies/${tenantId}/invitations`, payload);
+  return data;
+}
+
+export async function resendTenantInvitation(
+  tenantId: number,
+  userId: number,
+  payload: { sendEmail?: boolean } = {},
+) {
+  const { data } = await api.post(`/companies/${tenantId}/invitations/${userId}/resend`, payload);
+  return data;
+}
+
+export async function setTenantMemberRole(
+  tenantId: number,
+  userId: number,
+  payload: { role: string; mode?: 'replace' | 'add'; fromRole?: string },
+) {
+  const { data } = await api.patch(`/companies/${tenantId}/members/${userId}`, payload);
+  return data;
+}
+
+export async function removeTenantMember(tenantId: number, userId: number, role?: string) {
+  const { data } = await api.delete(`/companies/${tenantId}/members/${userId}`, {
+    params: role ? { role } : undefined,
+  });
+  return data;
+}
+
+export async function getCertificateBranding(tenantId: number) {
+  const { data } = await api.get<CertificateBranding>(`/companies/${tenantId}/certificate-branding`);
+  return data;
+}
+
+export async function updateCertificateBranding(tenantId: number, patch: Partial<CertificateBranding>) {
+  const { data } = await api.patch<CertificateBranding>(`/companies/${tenantId}/certificate-branding`, patch);
+  return data;
+}
+
+export async function uploadCertificateLogo(tenantId: number, file: File) {
+  const form = new FormData();
+  form.append('logo', file);
+  const { data } = await api.post<CertificateBranding>(`/companies/${tenantId}/certificate-branding/upload-logo`, form);
+  return data;
+}
+
+export async function getCourseCertificateSettings(courseId: number) {
+  const { data } = await api.get<CourseCertificateSettings>(`/courses/${courseId}/certificate-settings`);
+  return data;
+}
+
+export async function updateCourseCertificateSettings(courseId: number, patch: Partial<CourseCertificateSettings>) {
+  const { data } = await api.patch<CourseCertificateSettings>(`/courses/${courseId}/certificate-settings`, patch);
+  return data;
+}
+
+export async function previewCourseCertificate(courseId: number, payload: Partial<CourseCertificateSettings> & {
+  previewStudentName?: string;
+  previewCourseTitle?: string;
+  previewIssuerName?: string;
+  previewIssuerTitle?: string;
+  previewIssuedAt?: string;
+}) {
+  const { data } = await api.post<string>(`/courses/${courseId}/certificate-preview`, payload, {
+    responseType: 'text',
+  });
+  return data;
+}
+
+export async function uploadCourseCertificateSignature(courseId: number, file: File) {
+  const form = new FormData();
+  form.append('signature', file);
+  const { data } = await api.post<CourseCertificateSettings>(
+    `/courses/${courseId}/certificate-settings/upload-signature`,
+    form,
+  );
+  return data;
+}
+
+export async function listCourseCertificates(courseId: number) {
+  const { data } = await api.get<CourseCertificate[] | { items?: CourseCertificate[] }>(`/courses/${courseId}/certificates`);
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function issueCourseCertificate(
+  courseId: number,
+  payload: {
+    studentId: number;
+    studentFullName?: string;
+    issuerDisplayName?: string;
+    issuerTitle?: string;
+    certificateLanguage?: 'en' | 'ru' | 'ky';
+    pageOrientation?: 'landscape' | 'portrait';
+    note?: string;
+  },
+) {
+  const { data } = await api.post<CourseCertificate>(`/courses/${courseId}/certificates/issue`, payload);
+  return data;
+}
+
+export async function approveCertificate(certificateId: number, payload: {
+  issuerDisplayName?: string;
+  issuerTitle?: string;
+  certificateLanguage?: 'en' | 'ru' | 'ky';
+  pageOrientation?: 'landscape' | 'portrait';
+  reason?: string;
+} = {}) {
+  const { data } = await api.post<CourseCertificate>(`/certificates/${certificateId}/approve`, payload);
+  return data;
+}
+
+export async function rejectCertificate(certificateId: number, reason?: string) {
+  const { data } = await api.post<CourseCertificate>(`/certificates/${certificateId}/reject`, { reason });
+  return data;
+}
+
+export async function revokeCertificate(certificateId: number, reason?: string) {
+  const { data } = await api.post<CourseCertificate>(`/certificates/${certificateId}/revoke`, { reason });
+  return data;
+}
+
+export async function regenerateCourseCertificates(courseId: number, certificateId?: number) {
+  const { data } = await api.post<{ regeneratedCount: number; items: Array<{ certificateId: number; publicId: string; fileKey: string | null }> }>(
+    `/courses/${courseId}/certificates/regenerate`,
+    certificateId ? { certificateId } : {},
+  );
+  return data;
+}
+
+export async function getHomeworkSummary(courseId?: number, groupId?: number) {
+  const { data } = await api.get('/homework/summary', { params: { courseId, groupId } });
+  return data;
+}
+
+export async function listHomework(courseId?: number, groupId?: number) {
+  const { data } = await api.get<SessionHomework[] | { items?: SessionHomework[] }>('/homework', { params: { courseId, groupId } });
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function getStudentDashboard(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
+  const { data } = await api.get('/student/dashboard', { params });
+  return data;
+}
+
+export async function listStudentCourses() {
+  const { data } = await api.get('/student/courses');
+  return Array.isArray(data) ? data : data?.items ?? data?.courses ?? [];
+}
+
+export async function listStudentUpcomingSessions(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
+  const { data } = await api.get('/student/sessions/upcoming', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function listStudentResources(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
+  const { data } = await api.get('/student/resources', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function listStudentRecordings(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
+  const { data } = await api.get('/student/recordings', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function listStudentHomework(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
+  const { data } = await api.get('/student/homework', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function listStudentCertificates() {
+  const { data } = await api.get('/student/certificates');
+  return Array.isArray(data) ? data : data?.items ?? data?.certificates ?? [];
+}
+
+export async function listStudentTasks(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
+  const { data } = await api.get('/student/tasks', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function submitStudentHomework(
+  sessionId: number,
+  homeworkId: number,
+  payload: { answerText?: string; attachmentUrl?: string },
+) {
+  const { data } = await api.post(`/group-sessions/${sessionId}/homework/${homeworkId}/submissions`, payload);
+  return data;
+}
+
+export async function uploadStudentHomeworkAttachment(sessionId: number, homeworkId: number, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post(`/group-sessions/${sessionId}/homework/${homeworkId}/submissions/upload`, form);
+  return data as { key: string; url: string; fileName: string; contentType: string; size: number };
+}
+
+export async function submitStudentActivity(
+  sessionId: number,
+  activityId: number,
+  payload: { text?: string; link?: string },
+) {
+  const { data } = await api.post(`/student/sessions/${sessionId}/activities/${activityId}/submit`, payload);
+  return data;
+}
+
+export async function uploadStudentActivityAttachment(sessionId: number, activityId: number, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post(`/student/sessions/${sessionId}/activities/${activityId}/submissions/upload`, form);
+  return data as { key: string; url: string; fileName: string; contentType: string; size: number };
+}
+
+export async function submitStudentActivityQuiz(
+  sessionId: number,
+  activityId: number,
+  answers: Array<{ questionId: number; optionIds: number[] }>,
+) {
+  const { data } = await api.post(`/student/sessions/${sessionId}/activities/${activityId}/quiz-attempt`, { answers });
+  return data;
+}

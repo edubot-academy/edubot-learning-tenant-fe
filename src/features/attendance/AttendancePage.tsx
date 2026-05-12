@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
@@ -18,6 +18,19 @@ import { formatDate } from '../../lib/format';
 
 const attendanceStatuses: AttendanceStatus[] = ['present', 'late', 'absent', 'excused'];
 
+function isAttendanceCourseReady(course: Course | undefined | null) {
+  return Boolean(
+    course
+    && ['offline', 'online_live'].includes(String(course.courseType ?? ''))
+    && course.status === 'approved'
+    && course.isPublished === true,
+  );
+}
+
+function isAttendanceSessionReady(session: CourseSession | undefined | null) {
+  return Boolean(session && ['scheduled', 'completed'].includes(String(session.status ?? 'scheduled')));
+}
+
 type EditableAttendance = {
   status: AttendanceStatus;
   notes: string;
@@ -25,7 +38,12 @@ type EditableAttendance = {
 
 export function AttendancePage() {
   const { activeTenant } = useTenant();
+  const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
+  const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
+  const requestedGroupId = Number(searchParams.get('groupId')) || undefined;
+  const requestedSessionId = Number(searchParams.get('sessionId')) || undefined;
+  const searchParamsString = searchParams.toString();
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
@@ -45,6 +63,7 @@ export function AttendancePage() {
     () => sessions.find((session) => session.id === sessionId),
     [sessionId, sessions],
   );
+  const selectedSessionReady = isAttendanceSessionReady(selectedSession);
 
   const filteredStudents = useMemo(() => {
     const normalizedQuery = studentQuery.trim().toLowerCase();
@@ -101,7 +120,13 @@ export function AttendancePage() {
     setLoading(true);
     listTenantCourses(activeTenantId)
       .then((nextCourses) => {
-        if (!cancelled) setCourses(nextCourses);
+        if (cancelled) return;
+        const readyCourses = nextCourses.filter(isAttendanceCourseReady);
+        setCourses(readyCourses);
+        setCourseId((current) => {
+          if (requestedCourseId && readyCourses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
+          return current && readyCourses.some((course) => course.id === current) ? current : readyCourses[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load courses');
@@ -112,7 +137,7 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, requestedCourseId]);
 
   useEffect(() => {
     setGroups([]);
@@ -130,7 +155,12 @@ export function AttendancePage() {
     setLoading(true);
     listCourseGroups(courseId)
       .then((nextGroups) => {
-        if (!cancelled) setGroups(nextGroups);
+        if (cancelled) return;
+        setGroups(nextGroups);
+        setGroupId((current) => {
+          if (requestedGroupId && nextGroups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
+          return current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load groups');
@@ -141,7 +171,7 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [courseId, requestedGroupId]);
 
   useEffect(() => {
     setSessions([]);
@@ -158,8 +188,13 @@ export function AttendancePage() {
     Promise.all([listGroupSessions(groupId), listGroupStudents(groupId)])
       .then(([nextSessions, nextStudents]) => {
         if (cancelled) return;
-        setSessions(nextSessions);
+        const readySessions = nextSessions.filter(isAttendanceSessionReady);
+        setSessions(readySessions);
         setStudents(nextStudents);
+        setSessionId((current) => {
+          if (requestedSessionId && readySessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
+          return current && readySessions.some((session) => session.id === current) ? current : readySessions[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load group attendance data');
@@ -170,7 +205,15 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, requestedSessionId]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParamsString);
+    if (courseId) next.set('courseId', String(courseId)); else next.delete('courseId');
+    if (groupId) next.set('groupId', String(groupId)); else next.delete('groupId');
+    if (sessionId) next.set('sessionId', String(sessionId)); else next.delete('sessionId');
+    if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
+  }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
 
   useEffect(() => {
     setAttendance({});
@@ -252,19 +295,29 @@ export function AttendancePage() {
       toast.error('No students in this group');
       return;
     }
+    if (!selectedSessionReady) {
+      toast.error('Attendance can only be saved for scheduled or completed sessions');
+      return;
+    }
+
+    const markedStudents = students.filter((student) => attendance[student.userId]);
+    if (!markedStudents.length) {
+      toast.error('Mark at least one student before saving');
+      return;
+    }
 
     setSaving(true);
     try {
-      const nextAttendance = students.reduce<Record<number, EditableAttendance>>((acc, student) => {
+      const nextAttendance = markedStudents.reduce<Record<number, EditableAttendance>>((acc, student) => {
         acc[student.userId] = {
-          status: attendance[student.userId]?.status ?? 'present',
+          status: attendance[student.userId].status,
           notes: attendance[student.userId]?.notes?.trim() ?? '',
         };
         return acc;
       }, {});
       await saveSessionAttendance(
         sessionId,
-        students.map((student) => ({
+        markedStudents.map((student) => ({
           studentId: student.userId,
           status: nextAttendance[student.userId].status,
           notes: nextAttendance[student.userId].notes || undefined,
@@ -291,7 +344,7 @@ export function AttendancePage() {
             <button type="button" className="secondary-button" onClick={() => markUnmarked('present')} disabled={!students.length || !attendanceCounts.unmarked || saving}>
               Mark unmarked present
             </button>
-            <button type="button" onClick={saveAttendance} disabled={!students.length || saving || !hasUnsavedChanges}>
+            <button type="button" onClick={saveAttendance} disabled={!students.length || saving || !hasUnsavedChanges || !selectedSessionReady}>
               {saving ? 'Saving...' : 'Save attendance'}
             </button>
           </>
@@ -342,7 +395,7 @@ export function AttendancePage() {
       {!loading && groupId && students.length > 0 && !sessionId ? (
         <EmptyState
           title="Choose a session"
-          detail="Select a scheduled session to view and update attendance."
+          detail="Select a scheduled or completed session to view and update attendance."
           action={<Link className="secondary-link-button" to="/sessions">Schedule sessions</Link>}
         />
       ) : null}
@@ -410,7 +463,7 @@ export function AttendancePage() {
             </div>
             <span className="status-badge draft">{attendanceCounts.unmarked} unmarked</span>
           </div>
-          <p className="panel-note attendance-note">Unmarked students will be saved as present if you save without changing them.</p>
+          <p className="panel-note attendance-note">Only marked rows are saved. Use bulk actions before saving when the whole class has the same status.</p>
           <div className="table-wrap">
             <table>
               <thead>

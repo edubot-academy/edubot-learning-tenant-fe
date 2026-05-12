@@ -1111,6 +1111,27 @@ td small {
   width: min(100%, 180px);
 }
 
+.student-attendance-summary {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.student-attendance-summary strong {
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.student-attendance-summary span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .settings-grid.embedded {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -1749,6 +1770,16 @@ button.stack-list-item.active {
   color: var(--text);
 }
 
+.course-action-card.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.course-action-card.disabled:hover {
+  border-color: var(--line);
+  background: var(--surface-muted);
+}
+
 .course-action-card svg {
   width: 18px;
   height: 18px;
@@ -2081,6 +2112,101 @@ button.stack-list-item.active {
 
 .certificate-preview-panel {
   gap: 18px;
+  overflow: hidden;
+}
+
+.certificate-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.certificate-display-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.certificate-display-controls label {
+  min-width: 0;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.certificate-display-controls input,
+.certificate-display-controls select {
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.certificate-display-controls.compact,
+.certificate-display-controls.modal-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.certificate-preview-frame {
+  display: block;
+  width: min(100%, 500px);
+  height: clamp(150px, 20vw, 210px);
+  min-height: 0;
+  max-width: 100%;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.certificate-preview-frame.portrait {
+  width: min(100%, 300px);
+  height: clamp(240px, 38vw, 360px);
+  min-height: 0;
+}
+
+.certificate-preview-frame.modal-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.certificate-preview-frame.modal-frame.portrait {
+  width: min(100%, 760px);
+  height: 100%;
+}
+
+.certificate-preview-loading {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.certificate-preview-loading.large {
+  min-height: 0;
+  height: 100%;
+}
+
+.certificate-preview-modal {
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1320px, calc(100vw - 28px));
+  height: min(920px, calc(100vh - 28px));
+  max-height: calc(100vh - 28px);
+  overflow: hidden;
+}
+
+.certificate-preview-modal .certificate-preview-frame {
+  margin-top: 0;
+}
+
+.certificate-preview-modal .section-heading-row {
+  padding-right: 40px;
 }
 
 .certificate-preview {
@@ -2235,6 +2361,46 @@ button.stack-list-item.active {
 }
 
 .certificate-summary-row strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.certificate-rule-summary {
+  margin-bottom: 18px;
+}
+
+.certificate-course-panel .certificate-preview-panel.embedded-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.certificate-course-panel .certificate-preview-panel.embedded-panel .certificate-preview {
+  max-width: 760px;
+  margin: 12px auto 0;
+}
+
+.metric-card {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  align-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.metric-card span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.metric-card strong {
   color: var(--text);
   font-size: 18px;
 }
@@ -3337,6 +3503,35 @@ html[data-theme='dark'] textarea {
     width: 100%;
     max-height: calc(100vh - 20px);
     padding: 16px;
+  }
+
+  .certificate-preview-modal {
+    height: calc(100vh - 20px);
+    max-height: calc(100vh - 20px);
+    overflow: hidden;
+  }
+
+  .certificate-preview-frame {
+    width: min(100%, 440px);
+    height: clamp(130px, 46vw, 200px);
+  }
+
+  .certificate-preview-frame.portrait {
+    width: min(100%, 280px);
+    height: clamp(230px, 82vw, 360px);
+  }
+
+  .certificate-preview-frame.modal-frame,
+  .certificate-preview-frame.modal-frame.portrait {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .certificate-display-controls,
+  .certificate-display-controls.compact,
+  .certificate-display-controls.modal-fields {
+    grid-template-columns: 1fr;
   }
 
   .decision-modal h2 {

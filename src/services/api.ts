@@ -25,6 +25,7 @@ import type {
   SessionHomework,
   Tenant,
   TenantActivityLog,
+  TenantOverview,
   UserSummary,
 } from '../types/domain';
 
@@ -97,12 +98,43 @@ type LoginResponse = {
   user?: AuthUser;
 };
 
+function storeAuthToken(data: LoginResponse) {
+  const token = data.token || data.access_token;
+  if (token) tokenStore.set(token);
+  return token;
+}
+
 export async function login(email: string, password: string) {
   const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
-  const token = data.token || data.access_token;
+  const token = storeAuthToken(data);
   if (!token) throw new Error('Login response did not include a token');
-  tokenStore.set(token);
   return data.user ?? getCurrentUser();
+}
+
+export async function completeAccountSetup(payload: { token: string; newPassword: string }) {
+  const { data } = await api.post<LoginResponse>('/auth/setup-account', payload);
+  const token = storeAuthToken(data);
+  if (!token) throw new Error('Account setup response did not include a token');
+  return data.user ?? getCurrentUser();
+}
+
+export async function logout() {
+  await api.post('/auth/logout');
+}
+
+export async function requestPasswordReset(payload: { identifier: string; method: 'email' | 'whatsapp' | 'telegram' }) {
+  const { data } = await api.post<{ message?: string }>('/auth/forgot-password', payload);
+  return data;
+}
+
+export async function resetPassword(payload: {
+  identifier: string;
+  method: 'email' | 'whatsapp' | 'telegram';
+  otp: string;
+  newPassword: string;
+}) {
+  const { data } = await api.post<{ message?: string }>('/auth/reset-password', payload);
+  return data;
 }
 
 export async function getCurrentUser() {
@@ -152,6 +184,27 @@ export async function updateTenant(tenantId: number, patch: Partial<Pick<Tenant,
   return data;
 }
 
+export async function updateTenantBranding(tenantId: number, patch: {
+  displayName?: string | null;
+  certificateLogoUrl?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+  accentColor?: string | null;
+}) {
+  const { data } = await api.patch<Tenant>(`/companies/${tenantId}/branding`, patch);
+  return data;
+}
+
+export async function updateTenantSettings(tenantId: number, patch: {
+  supportEmail?: string | null;
+  defaultCourseVisibility?: 'PUBLIC' | 'PRIVATE' | 'TENANT_ONLY' | null;
+  allowSelfEnrollment?: boolean | null;
+  requireEnrollmentApproval?: boolean | null;
+}) {
+  const { data } = await api.patch<Tenant>(`/companies/${tenantId}/settings`, patch);
+  return data;
+}
+
 export async function uploadTenantLogo(tenantId: number, file: File) {
   const formData = new FormData();
   formData.append('logo', file);
@@ -168,6 +221,11 @@ export async function listTenantActivity(tenantId: number, params: { page?: numb
   return Array.isArray(data) ? data : data.items ?? [];
 }
 
+export async function getTenantOverview(tenantId: number) {
+  const { data } = await api.get<TenantOverview>(`/companies/${tenantId}/overview`);
+  return data;
+}
+
 export async function listTenantCourses(tenantId: number) {
   const { data } = await api.get<{ items?: Course[] } | Course[]>(`/companies/${tenantId}/courses`, {
     params: { limit: 100 },
@@ -175,10 +233,42 @@ export async function listTenantCourses(tenantId: number) {
   return Array.isArray(data) ? data : data.items ?? [];
 }
 
+export async function listCourseStudents(courseId: number, params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  progressGte?: number;
+  progressLte?: number;
+} = {}) {
+  const { data } = await api.get<{
+    students?: GroupStudent[];
+    page?: number;
+    limit?: number;
+    total?: number;
+    totalPages?: number;
+  }>(`/courses/${courseId}/students`, {
+    params: {
+      page: params.page ?? 1,
+      limit: params.limit ?? 50,
+      q: params.q || undefined,
+      progressGte: params.progressGte,
+      progressLte: params.progressLte,
+    },
+  });
+  return {
+    students: data.students ?? [],
+    page: data.page ?? params.page ?? 1,
+    limit: data.limit ?? params.limit ?? 50,
+    total: data.total ?? data.students?.length ?? 0,
+    totalPages: data.totalPages ?? 1,
+  };
+}
+
 export async function createTenantCourse(tenantId: number, payload: {
   title: string;
   description: string;
   courseType: 'offline' | 'online_live' | 'video';
+  instructorId?: number;
 }) {
   const { data } = await api.post<Course>('/courses', {
     title: payload.title,
@@ -188,6 +278,20 @@ export async function createTenantCourse(tenantId: number, payload: {
     visibility: 'PRIVATE',
     companyId: tenantId,
     courseType: payload.courseType,
+    instructorId: payload.instructorId,
+  });
+  return data;
+}
+
+export async function updateTenantCourse(courseId: number, payload: {
+  title?: string;
+  description?: string;
+  courseType?: 'offline' | 'online_live' | 'video';
+  instructorId?: number;
+}) {
+  const { data } = await api.patch<Course>(`/courses/${courseId}`, {
+    ...payload,
+    visibility: 'PRIVATE',
   });
   return data;
 }
@@ -218,6 +322,7 @@ export async function createCourseGroup(payload: {
   meetingUrl?: string;
   scheduleNote?: string;
   scheduleBlocks?: Array<{ day: string; startTime: string; endTime: string }> | null;
+  instructorId?: number;
 }) {
   const { data } = await api.post<CourseGroup>('/course-groups', payload);
   return data;
@@ -236,6 +341,7 @@ export async function updateCourseGroup(groupId: number, payload: {
   meetingUrl?: string;
   scheduleNote?: string | null;
   scheduleBlocks?: Array<{ day: string; startTime: string; endTime: string }> | null;
+  instructorId?: number | null;
 }) {
   const { data } = await api.patch<CourseGroup>(`/course-groups/${groupId}`, payload);
   return data;
@@ -404,6 +510,11 @@ export async function enrollUser(payload: {
   return data;
 }
 
+export async function unenrollUser(courseId: number, userId: number) {
+  const { data } = await api.delete(`/enrollments/${courseId}/unenroll/${userId}`);
+  return data;
+}
+
 export async function listGroupStudents(groupId: number, params: {
   q?: string;
   progressGte?: number;
@@ -522,7 +633,14 @@ export async function inviteTenantMember(
   tenantId: number,
   payload: { email: string; fullName: string; role: string; sendEmail?: boolean },
 ) {
-  const { data } = await api.post(`/companies/${tenantId}/invitations`, payload);
+  const { data } = await api.post<{
+    userId: number;
+    email: string;
+    fullName?: string;
+    role: string;
+    alreadyMember?: boolean;
+    onboarding?: { setupLink?: string; expiresAt?: string; emailSent?: boolean } | null;
+  }>(`/companies/${tenantId}/invitations`, payload);
   return data;
 }
 
@@ -601,9 +719,55 @@ export async function uploadCourseCertificateSignature(courseId: number, file: F
   return data;
 }
 
+export async function uploadCourseCertificateSecondaryLogo(courseId: number, file: File) {
+  const form = new FormData();
+  form.append('logo', file);
+  const { data } = await api.post<CourseCertificateSettings>(
+    `/courses/${courseId}/certificate-settings/upload-secondary-logo`,
+    form,
+  );
+  return data;
+}
+
 export async function listCourseCertificates(courseId: number) {
   const { data } = await api.get<CourseCertificate[] | { items?: CourseCertificate[] }>(`/courses/${courseId}/certificates`);
   return Array.isArray(data) ? data : data.items ?? [];
+}
+
+function triggerBrowserDownload(downloadUrl: string, fallbackName?: string) {
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  if (fallbackName) link.download = fallbackName;
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function shouldUseApiDownload(downloadUrl: string) {
+  if (downloadUrl.startsWith('/')) return true;
+  try {
+    const parsedUrl = new URL(downloadUrl, window.location.origin);
+    const apiBaseUrl = new URL(API_BASE_URL, window.location.origin);
+    return parsedUrl.origin === apiBaseUrl.origin;
+  } catch {
+    return true;
+  }
+}
+
+export async function downloadCertificatePdf(downloadUrl: string, fallbackName = 'certificate.pdf') {
+  if (!shouldUseApiDownload(downloadUrl)) {
+    triggerBrowserDownload(downloadUrl, fallbackName);
+    return;
+  }
+
+  const { data, headers } = await api.get<Blob>(downloadUrl, { responseType: 'blob' });
+  const disposition = String(headers['content-disposition'] ?? '');
+  const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+  const filename = filenameMatch?.[1] || fallbackName;
+  const objectUrl = URL.createObjectURL(data);
+  triggerBrowserDownload(objectUrl, filename);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
 export async function issueCourseCertificate(
@@ -616,6 +780,7 @@ export async function issueCourseCertificate(
     certificateLanguage?: 'en' | 'ru' | 'ky';
     pageOrientation?: 'landscape' | 'portrait';
     note?: string;
+    allowEligibilityOverride?: boolean;
   },
 ) {
   const { data } = await api.post<CourseCertificate>(`/courses/${courseId}/certificates/issue`, payload);
@@ -694,6 +859,11 @@ export async function listStudentHomework(params: { courseId?: number; groupId?:
 export async function listStudentCertificates() {
   const { data } = await api.get('/student/certificates');
   return Array.isArray(data) ? data : data?.items ?? data?.certificates ?? [];
+}
+
+export async function listStudentAttendance(params: { courseId?: number; groupId?: number; limit?: number; from?: string; to?: string } = {}) {
+  const { data } = await api.get('/student/attendance', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
 }
 
 export async function listStudentTasks(params: { courseId?: number; groupId?: number; limit?: number } = {}) {

@@ -11,6 +11,7 @@ type NavItem = { to: string; label: string; icon: typeof FiHome; feature?: Tenan
 const staffNavItems = [
   { to: '/', label: 'Overview', icon: FiHome },
   { to: '/courses', label: 'Courses', icon: FiBookOpen },
+  { to: '/groups', label: 'Groups', icon: FiUsers },
   { to: '/sessions', label: 'Sessions', icon: FiCalendar },
   { to: '/attendance', label: 'Attendance', icon: FiCheckSquare, feature: 'attendance.enabled' },
   { to: '/homework', label: 'Homework', icon: FiCheckSquare, feature: 'homework.enabled' },
@@ -116,7 +117,7 @@ export function AppLayout() {
           className="ghost-button sidebar-logout"
           type="button"
           onClick={() => {
-            signOut();
+            void signOut();
             navigate('/login');
           }}
         >

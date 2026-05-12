@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiBookOpen, FiCalendar, FiCheckSquare, FiFileText, FiPlus, FiUsers } from 'react-icons/fi';
+import { FiBookOpen, FiCalendar, FiCheckSquare, FiEdit2, FiFileText, FiPlus, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal } from '../../components/Modal';
-import { createTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, updateCourseStatus } from '../../services/api';
-import type { Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
+import { createTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
+import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { getEffectiveTenantRole } from '../tenant/tenantRoles';
@@ -15,15 +15,23 @@ import { formatDate } from '../../lib/format';
 
 type TenantCourseType = 'offline' | 'online_live' | 'video';
 
+function isCourseOperational(course: Course | undefined | null) {
+  return Boolean(course && course.status === 'approved' && course.isPublished === true);
+}
+
 export function CoursesPage() {
   const { activeTenant } = useTenant();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
+  const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
+  const requestedGroupId = Number(searchParams.get('groupId')) || undefined;
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
   const [students, setStudents] = useState<GroupStudent[]>([]);
   const [homework, setHomework] = useState<SessionHomework[]>([]);
+  const [members, setMembers] = useState<CompanyMember[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
   const [query, setQuery] = useState('');
@@ -32,18 +40,26 @@ export function CoursesPage() {
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
+  const [savingCourse, setSavingCourse] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [createForm, setCreateForm] = useState({
     title: '',
     description: '',
     courseType: 'offline' as TenantCourseType,
+    instructorId: undefined as number | undefined,
   });
 
   const activeRole = getEffectiveTenantRole(user, activeTenant);
   const canCreateCourse = ['owner', 'company_admin', 'admin', 'instructor'].includes(activeRole);
   const canApproveTenantCourses = ['owner', 'company_admin', 'admin'].includes(activeRole);
+  const canAssignInstructor = canApproveTenantCourses;
+  const featureEnabled = (key: string) => activeTenant?.featureFlags?.[key] !== false;
+  const attendanceEnabled = featureEnabled('attendance.enabled');
+  const homeworkEnabled = featureEnabled('homework.enabled');
+  const certificatesEnabled = featureEnabled('certificates.enabled');
 
   const courseTypeOptions = useMemo(() => {
     const flags = activeTenant?.featureFlags ?? {};
@@ -53,6 +69,24 @@ export function CoursesPage() {
     if (flags['courses.video.enabled'] === true) options.push({ value: 'video', label: 'Video' });
     return options;
   }, [activeTenant?.featureFlags]);
+
+  const instructorMembers = useMemo(
+    () => {
+      if (canAssignInstructor) {
+        return members.filter((member) => String(member.role).toLowerCase() === 'instructor');
+      }
+      if (activeRole === 'instructor' && user?.id) {
+        return [{
+          userId: user.id,
+          role: 'instructor',
+          fullName: user.fullName,
+          email: user.email,
+        } satisfies CompanyMember];
+      }
+      return [];
+    },
+    [activeRole, canAssignInstructor, members, user?.email, user?.fullName, user?.id],
+  );
 
   const filteredCourses = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -68,11 +102,15 @@ export function CoursesPage() {
     () => courses.find((course) => course.id === selectedCourseId),
     [courses, selectedCourseId],
   );
+  const canEditCourse = Boolean(selectedCourse && (canApproveTenantCourses || (activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id)));
+  const selectedCourseOperational = isCourseOperational(selectedCourse);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId),
     [groups, selectedGroupId],
   );
+
+  const searchParamsString = searchParams.toString();
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +119,7 @@ export function CoursesPage() {
     setSessions([]);
     setStudents([]);
     setHomework([]);
+    setMembers([]);
     setSelectedCourseId(undefined);
     setSelectedGroupId(undefined);
     if (!activeTenantId) {
@@ -88,11 +127,14 @@ export function CoursesPage() {
       return undefined;
     }
     setLoading(true);
-    listTenantCourses(activeTenantId)
-      .then((items) => {
+    Promise.all([
+      listTenantCourses(activeTenantId),
+      canAssignInstructor ? listTenantMembers(activeTenantId).catch(() => [] as CompanyMember[]) : Promise.resolve([] as CompanyMember[]),
+    ])
+      .then(([items, nextMembers]) => {
         if (cancelled) return;
         setCourses(items);
-        setSelectedCourseId(items[0]?.id);
+        setMembers(nextMembers);
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load courses');
@@ -103,7 +145,15 @@ export function CoursesPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, canAssignInstructor]);
+
+  useEffect(() => {
+    setSelectedCourseId((current) => {
+      if (!courses.length) return undefined;
+      if (requestedCourseId && courses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
+      return current && courses.some((course) => course.id === current) ? current : courses[0]?.id;
+    });
+  }, [courses, requestedCourseId]);
 
   useEffect(() => {
     setGroups([]);
@@ -120,7 +170,6 @@ export function CoursesPage() {
         if (cancelled) return;
         setGroups(nextGroups);
         setHomework(nextHomework);
-        setSelectedGroupId(nextGroups[0]?.id);
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load course detail');
@@ -132,6 +181,23 @@ export function CoursesPage() {
       cancelled = true;
     };
   }, [selectedCourseId]);
+
+  useEffect(() => {
+    setSelectedGroupId((current) => {
+      if (!groups.length) return undefined;
+      if (requestedGroupId && groups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
+      return current && groups.some((group) => group.id === current) ? current : groups[0]?.id;
+    });
+  }, [groups, requestedGroupId]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParamsString);
+    if (selectedCourseId) next.set('courseId', String(selectedCourseId)); else next.delete('courseId');
+    if (selectedGroupId) next.set('groupId', String(selectedGroupId)); else next.delete('groupId');
+    if (next.toString() !== searchParamsString) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParamsString, selectedCourseId, selectedGroupId, setSearchParams]);
 
   useEffect(() => {
     setSessions([]);
@@ -159,6 +225,7 @@ export function CoursesPage() {
 
   useEffect(() => {
     if (!selectedGroupId) return;
+    if (!studentQuery.trim() && progressFilter === 'all') return;
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       const params = {
@@ -213,8 +280,21 @@ export function CoursesPage() {
       title: '',
       description: '',
       courseType: courseTypeOptions[0]?.value ?? 'offline',
+      instructorId: activeRole === 'instructor' ? user?.id : instructorMembers[0]?.userId,
     });
     setCreateModalOpen(true);
+  };
+
+  const openEditModal = () => {
+    if (!selectedCourse) return;
+    setCreateErrors({});
+    setCreateForm({
+      title: selectedCourse.title ?? '',
+      description: selectedCourse.description ?? '',
+      courseType: (selectedCourse.courseType ?? courseTypeOptions[0]?.value ?? 'offline') as TenantCourseType,
+      instructorId: selectedCourse.instructor?.id ?? (activeRole === 'instructor' ? user?.id : instructorMembers[0]?.userId),
+    });
+    setEditModalOpen(true);
   };
 
   const submitCourse = async (event: FormEvent<HTMLFormElement>) => {
@@ -227,6 +307,7 @@ export function CoursesPage() {
     if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
       errors.courseType = 'This course type is not enabled for this tenant.';
     }
+    if (!createForm.instructorId) errors.instructorId = 'Select a tenant instructor.';
     setCreateErrors(errors);
     if (Object.keys(errors).length) return;
 
@@ -236,6 +317,7 @@ export function CoursesPage() {
         title: createForm.title.trim(),
         description: createForm.description.trim(),
         courseType: createForm.courseType,
+        instructorId: createForm.instructorId,
       });
       const items = await listTenantCourses(activeTenantId);
       setCourses(items);
@@ -247,6 +329,39 @@ export function CoursesPage() {
       toast.error(message || 'Could not create course');
     } finally {
       setCreatingCourse(false);
+    }
+  };
+
+  const saveCourse = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCourse) return;
+
+    const errors: Record<string, string> = {};
+    if (createForm.title.trim().length < 2) errors.title = 'Course title is required.';
+    if (createForm.description.trim().length < 10) errors.description = 'Add a short course description.';
+    if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
+      errors.courseType = 'This course type is not enabled for this tenant.';
+    }
+    if (!createForm.instructorId) errors.instructorId = 'Select a tenant instructor.';
+    setCreateErrors(errors);
+    if (Object.keys(errors).length) return;
+
+    setSavingCourse(true);
+    try {
+      await updateTenantCourse(selectedCourse.id, {
+        title: createForm.title.trim(),
+        description: createForm.description.trim(),
+        courseType: createForm.courseType,
+        instructorId: createForm.instructorId,
+      });
+      await reloadCourses(selectedCourse.id);
+      setEditModalOpen(false);
+      toast.success('Course updated');
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || 'Could not update course');
+    } finally {
+      setSavingCourse(false);
     }
   };
 
@@ -374,22 +489,52 @@ export function CoursesPage() {
               ) : (
                 <>
                   <div className="course-action-grid">
-                    <Link className="course-action-card" to="/sessions">
-                      <FiCalendar />
-                      <span>Sessions</span>
-                    </Link>
-                    <Link className="course-action-card" to="/attendance">
-                      <FiCheckSquare />
-                      <span>Attendance</span>
-                    </Link>
-                    <Link className="course-action-card" to="/homework">
-                      <FiFileText />
-                      <span>Homework</span>
-                    </Link>
-                    <Link className="course-action-card" to="/certificates">
-                      <FiBookOpen />
-                      <span>Certificates</span>
-                    </Link>
+                    {selectedCourseOperational ? (
+                      <Link className="course-action-card" to={`/groups?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
+                        <FiUsers />
+                        <span>Groups</span>
+                      </Link>
+                    ) : (
+                      <span className="course-action-card disabled"><FiUsers /><span>Groups</span></span>
+                    )}
+                    {selectedCourseOperational ? (
+                      <Link className="course-action-card" to={`/sessions?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
+                        <FiCalendar />
+                        <span>Sessions</span>
+                      </Link>
+                    ) : (
+                      <span className="course-action-card disabled"><FiCalendar /><span>Sessions</span></span>
+                    )}
+                    {attendanceEnabled ? (
+                      selectedCourseOperational ? (
+                        <Link className="course-action-card" to={`/attendance?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
+                          <FiCheckSquare />
+                          <span>Attendance</span>
+                        </Link>
+                      ) : (
+                        <span className="course-action-card disabled"><FiCheckSquare /><span>Attendance</span></span>
+                      )
+                    ) : null}
+                    {homeworkEnabled ? (
+                      selectedCourseOperational ? (
+                        <Link className="course-action-card" to={`/homework?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
+                          <FiFileText />
+                          <span>Homework</span>
+                        </Link>
+                      ) : (
+                        <span className="course-action-card disabled"><FiFileText /><span>Homework</span></span>
+                      )
+                    ) : null}
+                    {certificatesEnabled ? (
+                      selectedCourseOperational ? (
+                        <Link className="course-action-card" to={`/certificates?courseId=${selectedCourse.id}&tab=rules`}>
+                          <FiBookOpen />
+                          <span>Certificates</span>
+                        </Link>
+                      ) : (
+                        <span className="course-action-card disabled"><FiBookOpen /><span>Certificates</span></span>
+                      )
+                    ) : null}
                   </div>
                   <div className="definition-grid">
                     <span>Course</span><strong>{selectedCourse.title}</strong>
@@ -398,7 +543,13 @@ export function CoursesPage() {
                     <span>Published</span><strong><span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>{selectedCourse.isPublished ? 'Published' : 'Draft'}</span></strong>
                   </div>
                   <div className="modal-actions">
-                    {canApproveTenantCourses && selectedCourse.status !== 'approved' ? (
+                    {canEditCourse ? (
+                      <button type="button" className="secondary-button" onClick={openEditModal}>
+                        <FiEdit2 />
+                        Edit course
+                      </button>
+                    ) : null}
+                    {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
                       <button
                         type="button"
                         className="primary-button"
@@ -408,7 +559,7 @@ export function CoursesPage() {
                         Approve
                       </button>
                     ) : null}
-                    {canApproveTenantCourses && selectedCourse.status !== 'rejected' ? (
+                    {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
                       <button
                         type="button"
                         className="secondary-button"
@@ -418,7 +569,9 @@ export function CoursesPage() {
                         Reject
                       </button>
                     ) : null}
-                    {activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id && ['draft', 'rejected'].includes(selectedCourse.status || 'draft') ? (
+                    {['draft', 'rejected'].includes(selectedCourse.status || 'draft') && (
+                      canApproveTenantCourses || (activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id)
+                    ) ? (
                       <button
                         type="button"
                         className="secondary-button"
@@ -582,6 +735,23 @@ export function CoursesPage() {
             />
             {createErrors.description ? <small className="field-error">{createErrors.description}</small> : null}
           </label>
+          <label>
+            Instructor
+            <select
+              className={createErrors.instructorId ? 'input-error' : undefined}
+              value={createForm.instructorId ?? ''}
+              onChange={(event) => setCreateForm((current) => ({ ...current, instructorId: Number(event.target.value) || undefined }))}
+              disabled={activeRole === 'instructor'}
+            >
+              <option value="">Select instructor</option>
+              {instructorMembers.map((member) => (
+                <option key={`${member.userId}-${member.role}`} value={member.userId}>
+                  {member.fullName || member.user?.fullName || member.email || member.user?.email || `User ${member.userId}`}
+                </option>
+              ))}
+            </select>
+            {createErrors.instructorId ? <small className="field-error">{createErrors.instructorId}</small> : null}
+          </label>
           {activeTenant?.featureFlags?.['courses.video.enabled'] !== true ? (
             <p className="muted-text">Video course creation is platform-controlled for this tenant.</p>
           ) : null}
@@ -589,6 +759,73 @@ export function CoursesPage() {
             <button type="button" className="secondary-button" onClick={() => setCreateModalOpen(false)}>Cancel</button>
             <button type="submit" className="primary-button" disabled={creatingCourse || !courseTypeOptions.length}>
               {creatingCourse ? 'Creating...' : 'Create course'}
+            </button>
+          </div>
+        </FormModal>
+      ) : null}
+      {editModalOpen && selectedCourse ? (
+        <FormModal labelledBy="edit-course-title" onClose={() => { setEditModalOpen(false); setCreateErrors({}); }} onSubmit={saveCourse}>
+          <div className="modal-header-block">
+            <span>Private tenant course</span>
+            <h2 id="edit-course-title">Edit course</h2>
+          </div>
+          <label>
+            Title
+            <input
+              className={createErrors.title ? 'input-error' : undefined}
+              value={createForm.title}
+              onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Course title"
+              autoFocus
+            />
+            {createErrors.title ? <small className="field-error">{createErrors.title}</small> : null}
+          </label>
+          <label>
+            Type
+            <select
+              className={createErrors.courseType ? 'input-error' : undefined}
+              value={createForm.courseType}
+              onChange={(event) => setCreateForm((current) => ({ ...current, courseType: event.target.value as TenantCourseType }))}
+            >
+              {courseTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            {createErrors.courseType ? <small className="field-error">{createErrors.courseType}</small> : null}
+          </label>
+          <label>
+            Description
+            <textarea
+              className={createErrors.description ? 'input-error' : undefined}
+              value={createForm.description}
+              onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
+              placeholder="Short description for staff and students"
+              rows={4}
+            />
+            {createErrors.description ? <small className="field-error">{createErrors.description}</small> : null}
+          </label>
+          <label>
+            Instructor
+            <select
+              className={createErrors.instructorId ? 'input-error' : undefined}
+              value={createForm.instructorId ?? ''}
+              onChange={(event) => setCreateForm((current) => ({ ...current, instructorId: Number(event.target.value) || undefined }))}
+              disabled={activeRole === 'instructor'}
+            >
+              <option value="">Select instructor</option>
+              {instructorMembers.map((member) => (
+                <option key={`${member.userId}-${member.role}`} value={member.userId}>
+                  {member.fullName || member.user?.fullName || member.email || member.user?.email || `User ${member.userId}`}
+                </option>
+              ))}
+            </select>
+            {createErrors.instructorId ? <small className="field-error">{createErrors.instructorId}</small> : null}
+          </label>
+          <p className="muted-text">Tenant courses remain private and scoped to this tenant.</p>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setEditModalOpen(false)} disabled={savingCourse}>Cancel</button>
+            <button type="submit" className="primary-button" disabled={savingCourse || !courseTypeOptions.length}>
+              {savingCourse ? 'Saving...' : 'Save course'}
             </button>
           </div>
         </FormModal>

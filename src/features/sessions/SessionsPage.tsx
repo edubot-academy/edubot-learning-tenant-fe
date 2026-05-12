@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
@@ -17,10 +18,12 @@ import {
   getSessionActivityResponses,
   getSessionAttendance,
   getSessionInsights,
+  inviteTenantMember,
   listCourseGroups,
   listGroupSessions,
   listGroupStudents,
   listSessionHomework,
+  listTenantMembers,
   listTenantCourses,
   previewGeneratedSessions,
   searchUsers,
@@ -29,21 +32,48 @@ import {
   updateGroupSession,
   updateLiveMeeting,
   updateSessionActivity,
+  unenrollUser,
   uploadSessionMaterial,
 } from '../../services/api';
-import type { AttendanceRecord, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
+import type { AttendanceRecord, CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
 import { formatDate } from '../../lib/format';
 import { useTenant } from '../tenant/TenantProvider';
+import { useAuth } from '../auth/AuthProvider';
+import { isTenantAdmin } from '../tenant/tenantRoles';
+
+function isCourseSessionReady(course: Course | undefined | null) {
+  return Boolean(
+    course
+    && ['offline', 'online_live'].includes(String(course.courseType ?? ''))
+    && course.status === 'approved'
+    && course.isPublished === true,
+  );
+}
+
+type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
+type ScheduleDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+type ScheduleBlockForm = { day: ScheduleDay; startTime: string; endTime: string };
+
+const emptyScheduleBlock = (): ScheduleBlockForm => ({
+  day: 'mon',
+  startTime: '',
+  endTime: '',
+});
 
 const emptyGroupForm = {
   name: '',
   code: '',
-  status: 'active' as const,
+  status: 'active' as GroupStatus,
   startDate: '',
   endDate: '',
+  seatLimit: '',
+  timezone: 'Asia/Bishkek',
   location: '',
   meetingProvider: '',
   meetingUrl: '',
+  scheduleNote: '',
+  scheduleBlocks: [emptyScheduleBlock()],
+  instructorId: '',
 };
 
 const emptySessionForm = {
@@ -56,17 +86,52 @@ const emptySessionForm = {
 const emptyEditGroupForm = {
   name: '',
   code: '',
-  status: 'active' as 'planned' | 'open' | 'active' | 'completed' | 'cancelled',
+  status: 'active' as GroupStatus,
   startDate: '',
   endDate: '',
+  seatLimit: '',
+  timezone: 'Asia/Bishkek',
   location: '',
   meetingProvider: '',
   meetingUrl: '',
   scheduleNote: '',
-  scheduleDay: 'mon' as 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun',
-  scheduleStartTime: '',
-  scheduleEndTime: '',
+  scheduleBlocks: [emptyScheduleBlock()],
+  instructorId: '',
 };
+
+const emptyStudentInviteForm = {
+  fullName: '',
+  email: '',
+  sendEmail: false,
+};
+
+function groupToForm(group?: CourseGroup | null) {
+  if (!group) return emptyEditGroupForm;
+  const scheduleBlocks = Array.isArray(group.scheduleBlocks) && group.scheduleBlocks.length
+    ? group.scheduleBlocks.map((block) => ({
+      day: (['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].includes(String(block.day)) ? block.day : 'mon') as ScheduleDay,
+      startTime: block.startTime ?? '',
+      endTime: block.endTime ?? '',
+    }))
+    : [emptyScheduleBlock()];
+  return {
+    name: group.name ?? '',
+    code: group.code ?? '',
+    status: ['planned', 'open', 'active', 'completed', 'cancelled'].includes(String(group.status))
+      ? group.status as GroupStatus
+      : 'active',
+    startDate: group.startDate ? group.startDate.slice(0, 10) : '',
+    endDate: group.endDate ? group.endDate.slice(0, 10) : '',
+    seatLimit: group.seatLimit ? String(group.seatLimit) : '',
+    timezone: group.timezone ?? 'Asia/Bishkek',
+    location: group.location ?? '',
+    meetingProvider: group.meetingProvider ?? '',
+    meetingUrl: group.meetingUrl ?? '',
+    scheduleNote: group.scheduleNote ?? '',
+    scheduleBlocks,
+    instructorId: group.instructorId ? String(group.instructorId) : '',
+  };
+}
 
 const emptyEditSessionForm = {
   title: '',
@@ -109,11 +174,18 @@ const sessionOperationTabs: Array<{ key: SessionOperationTab; label: string }> =
 
 export function SessionsPage() {
   const { activeTenant } = useTenant();
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
+  const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
+  const requestedGroupId = Number(searchParams.get('groupId')) || undefined;
+  const requestedSessionId = Number(searchParams.get('sessionId')) || undefined;
+  const searchParamsString = searchParams.toString();
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
   const [students, setStudents] = useState<GroupStudent[]>([]);
+  const [tenantMembers, setTenantMembers] = useState<CompanyMember[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [homework, setHomework] = useState<SessionHomework[]>([]);
   const [insights, setInsights] = useState<SessionInsights | null>(null);
@@ -134,6 +206,7 @@ export function SessionsPage() {
   const [reviewingSubmission, setReviewingSubmission] = useState<number | undefined>();
   const [generationLoading, setGenerationLoading] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
+  const [removingStudentId, setRemovingStudentId] = useState<number | undefined>();
   const [groupForm, setGroupForm] = useState(emptyGroupForm);
   const [editGroupForm, setEditGroupForm] = useState(emptyEditGroupForm);
   const [sessionForm, setSessionForm] = useState(emptySessionForm);
@@ -148,6 +221,7 @@ export function SessionsPage() {
   const [studentSearch, setStudentSearch] = useState('');
   const [studentResults, setStudentResults] = useState<UserSummary[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<number | undefined>();
+  const [studentInviteForm, setStudentInviteForm] = useState(emptyStudentInviteForm);
   const [createModal, setCreateModal] = useState<'group' | 'session' | 'enrollment' | 'activity' | null>(null);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [sessionEditErrors, setSessionEditErrors] = useState<Record<string, string>>({});
@@ -156,8 +230,14 @@ export function SessionsPage() {
   const [sessionOperationTab, setSessionOperationTab] = useState<SessionOperationTab>('overview');
 
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
+  const selectedCourseReady = isCourseSessionReady(selectedCourse);
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
+  const canAssignInstructor = isTenantAdmin(user, activeTenant);
+  const instructorOptions = useMemo(
+    () => tenantMembers.filter((member) => String(member.role).toLowerCase() === 'instructor'),
+    [tenantMembers],
+  );
   const nextSessionIndex = useMemo(
     () => Math.max(0, ...sessions.map((session) => session.sessionIndex ?? 0)) + 1,
     [sessions],
@@ -191,6 +271,7 @@ export function SessionsPage() {
     setGroups([]);
     setSessions([]);
     setStudents([]);
+    setTenantMembers([]);
     setAttendance([]);
     setHomework([]);
     setInsights(null);
@@ -203,7 +284,13 @@ export function SessionsPage() {
     setLoading(true);
     listTenantCourses(activeTenantId)
       .then((nextCourses) => {
-        if (!cancelled) setCourses(nextCourses);
+        if (cancelled) return;
+        const readyCourses = nextCourses.filter(isCourseSessionReady);
+        setCourses(readyCourses);
+        setCourseId((current) => {
+          if (requestedCourseId && readyCourses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
+          return current && readyCourses.some((course) => course.id === current) ? current : readyCourses[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load courses');
@@ -214,7 +301,23 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, requestedCourseId]);
+
+  useEffect(() => {
+    setTenantMembers([]);
+    if (!activeTenantId || !canAssignInstructor) return;
+    let cancelled = false;
+    listTenantMembers(activeTenantId)
+      .then((members) => {
+        if (!cancelled) setTenantMembers(members);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Could not load tenant instructors');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantId, canAssignInstructor]);
 
   useEffect(() => {
     setGroups([]);
@@ -229,7 +332,12 @@ export function SessionsPage() {
     setLoading(true);
     listCourseGroups(courseId)
       .then((nextGroups) => {
-        if (!cancelled) setGroups(nextGroups);
+        if (cancelled) return;
+        setGroups(nextGroups);
+        setGroupId((current) => {
+          if (requestedGroupId && nextGroups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
+          return current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load groups');
@@ -240,7 +348,7 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [courseId, requestedGroupId]);
 
   useEffect(() => {
     setSessions([]);
@@ -256,6 +364,10 @@ export function SessionsPage() {
         if (cancelled) return;
         setSessions(nextSessions);
         setStudents(nextStudents);
+        setSessionId((current) => {
+          if (requestedSessionId && nextSessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
+          return current && nextSessions.some((session) => session.id === current) ? current : nextSessions[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load group sessions');
@@ -266,7 +378,15 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, requestedSessionId]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParamsString);
+    if (courseId) next.set('courseId', String(courseId)); else next.delete('courseId');
+    if (groupId) next.set('groupId', String(groupId)); else next.delete('groupId');
+    if (sessionId) next.set('sessionId', String(sessionId)); else next.delete('sessionId');
+    if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
+  }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
 
   useEffect(() => {
     setAttendance([]);
@@ -314,25 +434,7 @@ export function SessionsPage() {
       return;
     }
 
-    setEditGroupForm({
-      name: selectedGroup.name ?? '',
-      code: selectedGroup.code ?? '',
-      status: selectedGroup.status === 'planned'
-        || selectedGroup.status === 'open'
-        || selectedGroup.status === 'completed'
-        || selectedGroup.status === 'cancelled'
-        ? selectedGroup.status
-        : 'active',
-      startDate: selectedGroup.startDate ? selectedGroup.startDate.slice(0, 10) : '',
-      endDate: selectedGroup.endDate ? selectedGroup.endDate.slice(0, 10) : '',
-      location: selectedGroup.location ?? '',
-      meetingProvider: selectedGroup.meetingProvider ?? '',
-      meetingUrl: selectedGroup.meetingUrl ?? '',
-      scheduleNote: selectedGroup.scheduleNote ?? '',
-      scheduleDay: (selectedGroup.scheduleBlocks?.[0]?.day as 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun') ?? 'mon',
-      scheduleStartTime: selectedGroup.scheduleBlocks?.[0]?.startTime ?? '',
-      scheduleEndTime: selectedGroup.scheduleBlocks?.[0]?.endTime ?? '',
-    });
+    setEditGroupForm(groupToForm(selectedGroup));
     setGenerationRange({
       fromDate: selectedGroup.startDate?.slice(0, 10) ?? '',
       toDate: selectedGroup.endDate?.slice(0, 10) ?? '',
@@ -390,6 +492,19 @@ export function SessionsPage() {
     }
   };
 
+  const optionalPositiveNumber = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  };
+
+  const scheduleBlocksPayload = (blocks: ScheduleBlockForm[]) => blocks
+    .map((block) => ({
+      day: block.day,
+      startTime: block.startTime,
+      endTime: block.endTime,
+    }))
+    .filter((block) => block.day && block.startTime && block.endTime);
+
   const submitGroup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
@@ -416,9 +531,14 @@ export function SessionsPage() {
         status: groupForm.status,
         startDate: groupForm.startDate || undefined,
         endDate: groupForm.endDate || undefined,
+        seatLimit: optionalPositiveNumber(groupForm.seatLimit),
+        timezone: groupForm.timezone.trim() || undefined,
         location: groupForm.location.trim() || undefined,
         meetingProvider: groupForm.meetingProvider.trim() || undefined,
         meetingUrl: groupForm.meetingUrl.trim() || undefined,
+        scheduleNote: groupForm.scheduleNote.trim() || undefined,
+        scheduleBlocks: scheduleBlocksPayload(groupForm.scheduleBlocks),
+        instructorId: canAssignInstructor ? optionalPositiveNumber(groupForm.instructorId) : undefined,
       });
       await reloadGroups(activeCourseId);
       setGroupId(saved.id);
@@ -449,17 +569,14 @@ export function SessionsPage() {
         status: editGroupForm.status,
         startDate: editGroupForm.startDate || undefined,
         endDate: editGroupForm.endDate || undefined,
+        seatLimit: optionalPositiveNumber(editGroupForm.seatLimit),
+        timezone: editGroupForm.timezone.trim() || undefined,
         location: editGroupForm.location.trim() || undefined,
         meetingProvider: editGroupForm.meetingProvider.trim() || undefined,
         meetingUrl: editGroupForm.meetingUrl.trim() || undefined,
         scheduleNote: editGroupForm.scheduleNote.trim() || undefined,
-        scheduleBlocks: editGroupForm.scheduleStartTime && editGroupForm.scheduleEndTime
-          ? [{
-              day: editGroupForm.scheduleDay,
-              startTime: editGroupForm.scheduleStartTime,
-              endTime: editGroupForm.scheduleEndTime,
-            }]
-          : null,
+        scheduleBlocks: scheduleBlocksPayload(editGroupForm.scheduleBlocks),
+        instructorId: canAssignInstructor ? optionalPositiveNumber(editGroupForm.instructorId) : undefined,
       });
       await reloadGroups(courseId);
       toast.success('Group updated');
@@ -596,6 +713,52 @@ export function SessionsPage() {
       toast.error('Could not enroll student');
     } finally {
       setEnrolling(false);
+    }
+  };
+
+  const submitInviteAndEnroll = async () => {
+    if (!activeTenantId || !courseId || !groupId) return;
+    if (!studentInviteForm.fullName.trim() || !studentInviteForm.email.trim()) {
+      toast.error('Student name and email are required');
+      return;
+    }
+
+    const activeCourseId = courseId;
+    const activeGroupId = groupId;
+    setEnrolling(true);
+    try {
+      const member = await inviteTenantMember(activeTenantId, {
+        fullName: studentInviteForm.fullName.trim(),
+        email: studentInviteForm.email.trim(),
+        role: 'student',
+        sendEmail: studentInviteForm.sendEmail,
+      });
+      await enrollUser({ courseId: activeCourseId, groupId: activeGroupId, userId: member.userId });
+      await reloadSessions(activeGroupId);
+      setStudentInviteForm(emptyStudentInviteForm);
+      setCreateModal(null);
+      toast.success(member.onboarding?.emailSent ? 'Student invited and enrolled' : 'Student created and enrolled');
+    } catch {
+      toast.error('Could not create and enroll student');
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
+  const removeStudentFromGroup = async (student: GroupStudent) => {
+    if (!courseId || !groupId) return;
+    const studentName = student.fullName || student.email || `student #${student.userId}`;
+    if (!window.confirm(`Remove ${studentName} from this group?`)) return;
+
+    setRemovingStudentId(student.userId);
+    try {
+      await unenrollUser(courseId, student.userId);
+      await reloadSessions(groupId);
+      toast.success('Student removed from group');
+    } catch {
+      toast.error('Could not remove student');
+    } finally {
+      setRemovingStudentId(undefined);
     }
   };
 
@@ -937,7 +1100,7 @@ export function SessionsPage() {
             <span>Create the container first, then schedule sessions and enroll learners.</span>
           </div>
           <div className="page-actions">
-            <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || savingGroup}>
+            <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup}>
               Create group
             </button>
             <button type="button" className="secondary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>
@@ -1011,6 +1174,29 @@ export function SessionsPage() {
           </div>
           <div className="two-col">
             <label>
+              Seat limit
+              <input type="number" min="1" value={editGroupForm.seatLimit} onChange={(event) => setEditGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder="No limit" />
+            </label>
+            <label>
+              Timezone
+              <input value={editGroupForm.timezone} onChange={(event) => setEditGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
+            </label>
+          </div>
+          {canAssignInstructor ? (
+            <label>
+              Group instructor
+              <select value={editGroupForm.instructorId} onChange={(event) => setEditGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
+                <option value="">Use course instructor</option>
+                {instructorOptions.map((member) => (
+                  <option key={member.userId} value={member.userId}>
+                    {member.fullName || member.user?.fullName || member.email || member.user?.email || `Instructor #${member.userId}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <div className="two-col">
+            <label>
               Meeting provider
               <input value={editGroupForm.meetingProvider} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} />
             </label>
@@ -1019,27 +1205,50 @@ export function SessionsPage() {
               <input value={editGroupForm.meetingUrl} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} />
             </label>
           </div>
-          <div className="three-col">
-            <label>
-              Schedule day
-              <select value={editGroupForm.scheduleDay} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleDay: event.target.value as 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun' }))}>
-                <option value="mon">Monday</option>
-                <option value="tue">Tuesday</option>
-                <option value="wed">Wednesday</option>
-                <option value="thu">Thursday</option>
-                <option value="fri">Friday</option>
-                <option value="sat">Saturday</option>
-                <option value="sun">Sunday</option>
-              </select>
-            </label>
-            <label>
-              Starts
-              <input type="time" value={editGroupForm.scheduleStartTime} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleStartTime: event.target.value }))} />
-            </label>
-            <label>
-              Ends
-              <input type="time" value={editGroupForm.scheduleEndTime} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleEndTime: event.target.value }))} />
-            </label>
+          <div className="schedule-block-list">
+            {editGroupForm.scheduleBlocks.map((block, index) => (
+              <div className="three-col" key={`${index}-${block.day}`}>
+                <label>
+                  Schedule day
+                  <select value={block.day} onChange={(event) => setEditGroupForm((current) => ({
+                    ...current,
+                    scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
+                  }))}>
+                    <option value="mon">Monday</option>
+                    <option value="tue">Tuesday</option>
+                    <option value="wed">Wednesday</option>
+                    <option value="thu">Thursday</option>
+                    <option value="fri">Friday</option>
+                    <option value="sat">Saturday</option>
+                    <option value="sun">Sunday</option>
+                  </select>
+                </label>
+                <label>
+                  Starts
+                  <input type="time" value={block.startTime} onChange={(event) => setEditGroupForm((current) => ({
+                    ...current,
+                    scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
+                  }))} />
+                </label>
+                <label>
+                  Ends
+                  <input type="time" value={block.endTime} onChange={(event) => setEditGroupForm((current) => ({
+                    ...current,
+                    scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
+                  }))} />
+                </label>
+                {editGroupForm.scheduleBlocks.length > 1 ? (
+                  <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
+                    ...current,
+                    scheduleBlocks: current.scheduleBlocks.filter((_, itemIndex) => itemIndex !== index),
+                  }))}>Remove block</button>
+                ) : null}
+              </div>
+            ))}
+            <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
+              ...current,
+              scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
+            }))}>Add schedule block</button>
           </div>
           <label>
             Schedule note
@@ -1089,6 +1298,39 @@ export function SessionsPage() {
               </div>
             ) : null}
           </div>
+          <div className="group-roster-panel">
+            <div className="section-heading-row compact">
+              <div>
+                <h3>Group roster</h3>
+                <span>{students.length} active learner{students.length === 1 ? '' : 's'}</span>
+              </div>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
+                Enroll student
+              </button>
+            </div>
+            <div className="stack-list">
+              {students.map((student) => (
+                <article key={student.userId} className="stack-list-item">
+                  <div>
+                    <strong>{student.fullName || student.email || `Student #${student.userId}`}</strong>
+                    <span>
+                      {student.email || 'No email'} · progress {Math.round(student.progressPercent ?? 0)}%
+                      {student.completed ? ' · completed' : ''}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="link-button danger"
+                    onClick={() => void removeStudentFromGroup(student)}
+                    disabled={removingStudentId === student.userId}
+                  >
+                    {removingStudentId === student.userId ? 'Removing...' : 'Remove'}
+                  </button>
+                </article>
+              ))}
+              {!students.length ? <span className="muted-text">No students enrolled in this group yet.</span> : null}
+            </div>
+          </div>
         </form>
       ) : null}
 
@@ -1098,7 +1340,7 @@ export function SessionsPage() {
           detail="Choose or create a course group, then schedule sessions for learners."
           action={(
             <>
-              <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || savingGroup}>Create group</button>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup}>Create group</button>
               <button type="button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>Schedule session</button>
             </>
           )}
@@ -1567,6 +1809,20 @@ export function SessionsPage() {
             </div>
             <div className="two-col">
               <label>
+                Status
+                <select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as 'planned' | 'open' | 'active' | 'completed' | 'cancelled' }))}>
+                  <option value="planned">Planned</option>
+                  <option value="open">Open</option>
+                  <option value="active">Active</option>
+                </select>
+              </label>
+              <label>
+                Seat limit
+                <input type="number" min="1" value={groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder="No limit" />
+              </label>
+            </div>
+            <div className="two-col">
+              <label>
                 Start date
                 <input type="date" value={groupForm.startDate} onChange={(event) => setGroupForm((current) => ({ ...current, startDate: event.target.value }))} />
               </label>
@@ -1575,9 +1831,87 @@ export function SessionsPage() {
                 <input type="date" value={groupForm.endDate} onChange={(event) => setGroupForm((current) => ({ ...current, endDate: event.target.value }))} />
               </label>
             </div>
+            <div className="two-col">
+              <label>
+                Timezone
+                <input value={groupForm.timezone} onChange={(event) => setGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
+              </label>
+              {canAssignInstructor ? (
+                <label>
+                  Group instructor
+                  <select value={groupForm.instructorId} onChange={(event) => setGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
+                    <option value="">Use course instructor</option>
+                    {instructorOptions.map((member) => (
+                      <option key={member.userId} value={member.userId}>
+                        {member.fullName || member.user?.fullName || member.email || member.user?.email || `Instructor #${member.userId}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
             <label>
               Location
               <input value={groupForm.location} onChange={(event) => setGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder="Room, branch, or city" />
+            </label>
+            <div className="two-col">
+              <label>
+                Meeting provider
+                <input value={groupForm.meetingProvider} onChange={(event) => setGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder="Zoom, Google Meet, branch room" />
+              </label>
+              <label>
+                Meeting URL
+                <input value={groupForm.meetingUrl} onChange={(event) => setGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} placeholder="https://..." />
+              </label>
+            </div>
+            <div className="schedule-block-list">
+              {groupForm.scheduleBlocks.map((block, index) => (
+                <div className="three-col" key={`${index}-${block.day}`}>
+                  <label>
+                    Schedule day
+                    <select value={block.day} onChange={(event) => setGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
+                    }))}>
+                      <option value="mon">Monday</option>
+                      <option value="tue">Tuesday</option>
+                      <option value="wed">Wednesday</option>
+                      <option value="thu">Thursday</option>
+                      <option value="fri">Friday</option>
+                      <option value="sat">Saturday</option>
+                      <option value="sun">Sunday</option>
+                    </select>
+                  </label>
+                  <label>
+                    Starts
+                    <input type="time" value={block.startTime} onChange={(event) => setGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
+                    }))} />
+                  </label>
+                  <label>
+                    Ends
+                    <input type="time" value={block.endTime} onChange={(event) => setGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
+                    }))} />
+                  </label>
+                  {groupForm.scheduleBlocks.length > 1 ? (
+                    <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.filter((_, itemIndex) => itemIndex !== index),
+                    }))}>Remove block</button>
+                  ) : null}
+                </div>
+              ))}
+              <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
+                ...current,
+                scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
+              }))}>Add schedule block</button>
+            </div>
+            <label>
+              Schedule note
+              <input value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder="Optional recurring schedule note" />
             </label>
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingGroup}>Cancel</button>
@@ -1652,7 +1986,7 @@ export function SessionsPage() {
             <div>
               <span className="status-badge published">{selectedGroup?.name ?? 'Group required'}</span>
               <h2 id="enroll-student-title">Enroll student</h2>
-              <p>Add an existing learner account to this group.</p>
+              <p>Add an existing learner account or create a tenant student and enroll them.</p>
             </div>
             <div className="student-search-row">
               <label>
@@ -1684,6 +2018,38 @@ export function SessionsPage() {
               </select>
               {createErrors.student ? <span className="field-error">{createErrors.student}</span> : null}
             </label>
+            <div className="two-col">
+              <label>
+                New student
+                <input
+                  value={studentInviteForm.fullName}
+                  onChange={(event) => setStudentInviteForm((current) => ({ ...current, fullName: event.target.value }))}
+                  placeholder="Full name"
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={studentInviteForm.email}
+                  onChange={(event) => setStudentInviteForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="student@example.com"
+                />
+              </label>
+            </div>
+            <div className="student-search-row">
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={studentInviteForm.sendEmail}
+                  onChange={(event) => setStudentInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))}
+                />
+                Send setup email
+              </label>
+              <button type="button" className="secondary-button" onClick={() => void submitInviteAndEnroll()} disabled={!courseId || !groupId || enrolling}>
+                {enrolling ? 'Working...' : 'Create and enroll'}
+              </button>
+            </div>
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={enrolling}>Cancel</button>
               <button type="submit" disabled={!courseId || !groupId || !selectedStudentId || enrolling}>

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiBookOpen, FiCalendar, FiCheckCircle, FiClipboard, FiPlus, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
@@ -13,6 +13,7 @@ import {
   getHomeworkSummary,
   listCourseGroups,
   listGroupSessions,
+  listGroupStudents,
   listHomework,
   listSessionHomework,
   listTenantCourses,
@@ -20,7 +21,7 @@ import {
   reviewHomeworkSubmission,
   updateSessionHomework,
 } from '../../services/api';
-import type { Course, CourseGroup, CourseSession, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
+import type { Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate, readable } from '../../lib/format';
 
@@ -30,7 +31,21 @@ const emptyForm = {
   dueAt: '',
   maxScore: '',
   isPublished: true,
+  assignedStudentIds: [] as number[],
 };
+
+function isHomeworkCourseReady(course: Course | undefined | null) {
+  return Boolean(
+    course
+    && ['offline', 'online_live'].includes(String(course.courseType ?? ''))
+    && course.status === 'approved'
+    && course.isPublished === true,
+  );
+}
+
+function isHomeworkSessionReady(session: CourseSession | undefined | null) {
+  return Boolean(session && ['scheduled', 'completed'].includes(String(session.status ?? 'scheduled')));
+}
 
 const summaryLabels: Record<string, string> = {
   total: 'Assignments',
@@ -45,10 +60,16 @@ const reviewFilters: ReviewFilter[] = ['total', 'needsReview', 'missing', 'appro
 
 export function HomeworkPage() {
   const { activeTenant } = useTenant();
+  const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
+  const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
+  const requestedGroupId = Number(searchParams.get('groupId')) || undefined;
+  const requestedSessionId = Number(searchParams.get('sessionId')) || undefined;
+  const searchParamsString = searchParams.toString();
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
+  const [students, setStudents] = useState<GroupStudent[]>([]);
   const [courseId, setCourseId] = useState<number | undefined>();
   const [groupId, setGroupId] = useState<number | undefined>();
   const [sessionId, setSessionId] = useState<number | undefined>();
@@ -73,6 +94,7 @@ export function HomeworkPage() {
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
+  const selectedSessionReady = isHomeworkSessionReady(selectedSession);
 
   const workflowSteps = [
     {
@@ -114,6 +136,7 @@ export function HomeworkPage() {
     setCourses([]);
     setGroups([]);
     setSessions([]);
+    setStudents([]);
     setCourseId(undefined);
     setGroupId(undefined);
     setSessionId(undefined);
@@ -126,7 +149,13 @@ export function HomeworkPage() {
     let cancelled = false;
     listTenantCourses(activeTenantId)
       .then((nextCourses) => {
-        if (!cancelled) setCourses(nextCourses);
+        if (cancelled) return;
+        const readyCourses = nextCourses.filter(isHomeworkCourseReady);
+        setCourses(readyCourses);
+        setCourseId((current) => {
+          if (requestedCourseId && readyCourses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
+          return current && readyCourses.some((course) => course.id === current) ? current : readyCourses[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load courses');
@@ -134,7 +163,7 @@ export function HomeworkPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, requestedCourseId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +188,7 @@ export function HomeworkPage() {
   useEffect(() => {
     setGroups([]);
     setSessions([]);
+    setStudents([]);
     setSessionItems([]);
     setSelectedHomeworkId(undefined);
     setReviewRoster(null);
@@ -170,7 +200,12 @@ export function HomeworkPage() {
     let cancelled = false;
     listCourseGroups(courseId)
       .then((nextGroups) => {
-        if (!cancelled) setGroups(nextGroups);
+        if (cancelled) return;
+        setGroups(nextGroups);
+        setGroupId((current) => {
+          if (requestedGroupId && nextGroups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
+          return current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load groups');
@@ -178,10 +213,11 @@ export function HomeworkPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [courseId, requestedGroupId]);
 
   useEffect(() => {
     setSessions([]);
+    setStudents([]);
     setSessionItems([]);
     setSelectedHomeworkId(undefined);
     setReviewRoster(null);
@@ -191,9 +227,16 @@ export function HomeworkPage() {
     setSessionId(undefined);
     if (!groupId) return;
     let cancelled = false;
-    listGroupSessions(groupId)
-      .then((nextSessions) => {
-        if (!cancelled) setSessions(nextSessions);
+    Promise.all([listGroupSessions(groupId), listGroupStudents(groupId)])
+      .then(([nextSessions, nextStudents]) => {
+        if (cancelled) return;
+        const readySessions = nextSessions.filter(isHomeworkSessionReady);
+        setSessions(readySessions);
+        setStudents(nextStudents);
+        setSessionId((current) => {
+          if (requestedSessionId && readySessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
+          return current && readySessions.some((session) => session.id === current) ? current : readySessions[0]?.id;
+        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load sessions');
@@ -201,7 +244,15 @@ export function HomeworkPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, requestedSessionId]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParamsString);
+    if (courseId) next.set('courseId', String(courseId)); else next.delete('courseId');
+    if (groupId) next.set('groupId', String(groupId)); else next.delete('groupId');
+    if (sessionId) next.set('sessionId', String(sessionId)); else next.delete('sessionId');
+    if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
+  }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
 
   useEffect(() => {
     setSessionItems([]);
@@ -268,14 +319,32 @@ export function HomeworkPage() {
       dueAt: (homework.deadline ?? homework.dueAt ?? '').slice(0, 16),
       maxScore: homework.maxScore === undefined || homework.maxScore === null ? '' : String(homework.maxScore),
       isPublished: homework.isPublished ?? true,
+      assignedStudentIds: homework.assignedStudentIds ?? [],
     });
   };
+
+  const toggleAssignee = (
+    setter: Dispatch<SetStateAction<typeof emptyForm>>,
+    studentId: number,
+  ) => {
+    setter((current) => ({
+      ...current,
+      assignedStudentIds: current.assignedStudentIds.includes(studentId)
+        ? current.assignedStudentIds.filter((id) => id !== studentId)
+        : [...current.assignedStudentIds, studentId],
+    }));
+  };
+
+  const assigneePayload = (ids: number[]) => (ids.length ? ids : undefined);
 
   const submitHomework = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     if (!sessionId) {
       nextErrors.session = 'Select a session before creating homework.';
+    }
+    if (!selectedSessionReady) {
+      nextErrors.session = 'Select a scheduled or completed session before creating homework.';
     }
     if (!form.title.trim()) {
       nextErrors.title = 'Homework title is required.';
@@ -299,6 +368,7 @@ export function HomeworkPage() {
         dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : undefined,
         maxScore: form.maxScore ? Number(form.maxScore) : undefined,
         isPublished: form.isPublished,
+        assignedStudentIds: assigneePayload(form.assignedStudentIds),
       });
       await reloadHomeworkLists();
       setForm(emptyForm);
@@ -348,6 +418,7 @@ export function HomeworkPage() {
         dueAt: editForm.dueAt ? new Date(editForm.dueAt).toISOString() : null,
         maxScore: editForm.maxScore ? Number(editForm.maxScore) : null,
         isPublished: editForm.isPublished,
+        assignedStudentIds: editForm.assignedStudentIds.length ? editForm.assignedStudentIds : null,
       });
       await reloadHomeworkLists();
       if (selectedHomeworkId === editHomeworkId) {
@@ -433,7 +504,7 @@ export function HomeworkPage() {
         title="Homework"
         eyebrow={activeTenant?.name}
         actions={(
-          <button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || saving}>
+          <button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady || saving}>
             <FiPlus />
             Create homework
           </button>
@@ -504,7 +575,7 @@ export function HomeworkPage() {
             <EmptyState
               title="No homework in this session"
               detail="Create the first assignment for this selected session."
-              action={<button type="button" onClick={() => setIsCreateModalOpen(true)}>Create homework</button>}
+              action={<button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!selectedSessionReady}>Create homework</button>}
             />
           ) : (
             <div className="stack-list">
@@ -586,6 +657,30 @@ export function HomeworkPage() {
             />
             Published
           </label>
+          <div className="settings-panel compact">
+            <div className="section-heading-row compact">
+              <div>
+                <h3>Assignees</h3>
+                <span>{editForm.assignedStudentIds.length ? `${editForm.assignedStudentIds.length} selected` : 'All students in this group'}</span>
+              </div>
+              <button type="button" className="secondary-button" onClick={() => setEditForm((current) => ({ ...current, assignedStudentIds: [] }))}>
+                All students
+              </button>
+            </div>
+            <div className="stack-list compact">
+              {students.map((student) => (
+                <label className="checkbox-row" key={student.userId}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.assignedStudentIds.includes(student.userId)}
+                    onChange={() => toggleAssignee(setEditForm, student.userId)}
+                  />
+                  {student.fullName || student.email || `Student #${student.userId}`}
+                </label>
+              ))}
+              {!students.length ? <span className="muted-text">No students enrolled in this group yet.</span> : null}
+            </div>
+          </div>
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={closeEditModal} disabled={saving}>Cancel</button>
             <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save homework'}</button>
@@ -686,7 +781,7 @@ export function HomeworkPage() {
         <EmptyState
           title="No homework found"
           detail="Homework appears here after assignments are created for course sessions."
-          action={<button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId}>Create homework</button>}
+          action={<button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady}>Create homework</button>}
         />
       ) : null}
       {!loading && !!items.length ? (
@@ -783,9 +878,33 @@ export function HomeworkPage() {
               />
               Publish immediately
             </label>
+            <div className="settings-panel compact">
+              <div className="section-heading-row compact">
+                <div>
+                  <h3>Assignees</h3>
+                  <span>{form.assignedStudentIds.length ? `${form.assignedStudentIds.length} selected` : 'All students in this group'}</span>
+                </div>
+                <button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, assignedStudentIds: [] }))}>
+                  All students
+                </button>
+              </div>
+              <div className="stack-list compact">
+                {students.map((student) => (
+                  <label className="checkbox-row" key={student.userId}>
+                    <input
+                      type="checkbox"
+                      checked={form.assignedStudentIds.includes(student.userId)}
+                      onChange={() => toggleAssignee(setForm, student.userId)}
+                    />
+                    {student.fullName || student.email || `Student #${student.userId}`}
+                  </label>
+                ))}
+                {!students.length ? <span className="muted-text">No students enrolled in this group yet.</span> : null}
+              </div>
+            </div>
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={saving}>Cancel</button>
-              <button type="submit" disabled={!sessionId || saving}>{saving ? 'Creating...' : 'Create homework'}</button>
+              <button type="submit" disabled={!sessionId || !selectedSessionReady || saving}>{saving ? 'Creating...' : 'Create homework'}</button>
             </div>
         </FormModal>
       ) : null}

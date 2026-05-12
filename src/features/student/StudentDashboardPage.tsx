@@ -5,6 +5,8 @@ import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal } from '../../components/Modal';
 import {
+  downloadCertificatePdf,
+  listStudentAttendance,
   listStudentCertificates,
   listStudentCourses,
   listStudentHomework,
@@ -21,6 +23,7 @@ import {
 import { formatDate, readable } from '../../lib/format';
 import { useTenant } from '../tenant/TenantProvider';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
+import type { AttendanceRecord } from '../../types/domain';
 
 type StudentCourse = {
   id?: number;
@@ -121,6 +124,7 @@ export function StudentDashboardPage() {
   const [sessions, setSessions] = useState<StudentSession[]>([]);
   const [homework, setHomework] = useState<StudentHomework[]>([]);
   const [certificates, setCertificates] = useState<StudentCertificate[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [tasks, setTasks] = useState<StudentTask[]>([]);
   const [resources, setResources] = useState<StudentSession[]>([]);
   const [recordings, setRecordings] = useState<StudentSession[]>([]);
@@ -131,6 +135,7 @@ export function StudentDashboardPage() {
   const [submitting, setSubmitting] = useState(false);
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
   const certificatesEnabled = isTenantFeatureEnabled(activeTenant, 'certificates.enabled');
+  const attendanceEnabled = isTenantFeatureEnabled(activeTenant, 'attendance.enabled');
 
   useEffect(() => {
     setLoading(true);
@@ -139,22 +144,24 @@ export function StudentDashboardPage() {
       listStudentUpcomingSessions({ limit: 6 }),
       homeworkEnabled ? listStudentHomework({ limit: 8 }) : Promise.resolve([]),
       certificatesEnabled ? listStudentCertificates() : Promise.resolve([]),
+      attendanceEnabled ? listStudentAttendance({ limit: 8 }) : Promise.resolve([]),
       listStudentTasks({ limit: 8 }),
       listStudentResources({ limit: 6 }),
       listStudentRecordings({ limit: 6 }),
     ])
-      .then(([nextCourses, nextSessions, nextHomework, nextCertificates, nextTasks, nextResources, nextRecordings]) => {
+      .then(([nextCourses, nextSessions, nextHomework, nextCertificates, nextAttendance, nextTasks, nextResources, nextRecordings]) => {
         setCourses(nextCourses);
         setSessions(nextSessions);
         setHomework(nextHomework);
         setCertificates(nextCertificates);
+        setAttendance(nextAttendance);
         setTasks(homeworkEnabled ? nextTasks : nextTasks.filter((task: StudentTask) => task.kind !== 'homework'));
         setResources(nextResources);
         setRecordings(nextRecordings);
       })
       .catch(() => toast.error('Could not load student workspace'))
       .finally(() => setLoading(false));
-  }, [activeTenant?.id, certificatesEnabled, homeworkEnabled]);
+  }, [activeTenant?.id, attendanceEnabled, certificatesEnabled, homeworkEnabled]);
 
   const reloadStudentData = async () => {
     const [nextHomework, nextTasks] = await Promise.all([
@@ -240,6 +247,17 @@ export function StudentDashboardPage() {
     });
   };
 
+  const attendanceRate = useMemo(() => {
+    if (!attendance.length) return 0;
+    const positive = attendance.filter((record) => record.status === 'present' || record.status === 'late').length;
+    return Math.round((positive / attendance.length) * 100);
+  }, [attendance]);
+
+  const missedAttendanceCount = useMemo(
+    () => attendance.filter((record) => record.status === 'absent' || record.status === 'late').length,
+    [attendance],
+  );
+
   const stats = useMemo(() => {
     const pendingHomework = homework.filter((item) => {
       const status = String(item.status ?? item.reviewState ?? '').toLowerCase();
@@ -248,10 +266,11 @@ export function StudentDashboardPage() {
     return [
       { label: 'Courses', value: courses.length, icon: FiBookOpen },
       { label: 'Upcoming sessions', value: sessions.length, icon: FiCalendar },
+      ...(attendanceEnabled ? [{ label: 'Attendance', value: attendance.length ? `${attendanceRate}%` : 'N/A', icon: FiCheckCircle }] : []),
       ...(homeworkEnabled ? [{ label: 'Open homework', value: pendingHomework, icon: FiFileText }] : []),
       ...(certificatesEnabled ? [{ label: 'Certificates', value: certificates.length, icon: FiAward }] : []),
     ];
-  }, [certificates.length, certificatesEnabled, courses.length, homework, homeworkEnabled, sessions.length]);
+  }, [attendance.length, attendanceEnabled, attendanceRate, certificates.length, certificatesEnabled, courses.length, homework, homeworkEnabled, sessions.length]);
 
   const nextSession = useMemo(() => sessions[0] ?? null, [sessions]);
 
@@ -443,6 +462,35 @@ export function StudentDashboardPage() {
           )}
         </section>
 
+        {attendanceEnabled ? (
+          <section className="content-section">
+            <div className="student-panel-heading">
+              <FiCheckCircle />
+              <h2>Attendance</h2>
+            </div>
+            {!attendance.length ? <EmptyState title="No attendance marked yet" /> : (
+              <>
+                <div className="student-attendance-summary">
+                  <strong>{attendanceRate}%</strong>
+                  <span>{missedAttendanceCount} absence or late mark{missedAttendanceCount === 1 ? '' : 's'} in recent sessions</span>
+                </div>
+                <div className="stack-list">
+                  {attendance.slice(0, 6).map((record, index) => (
+                    <article className="stack-list-item" key={record.id ?? `${record.sessionId}-${index}`}>
+                      <div>
+                        <strong>{formatDate(record.sessionDate)}</strong>
+                        <span>Course #{record.courseId ?? 'unknown'}</span>
+                        {record.notes ? <span>{record.notes}</span> : null}
+                      </div>
+                      <span className={`status-badge ${statusClass(record.status)}`}>{readable(record.status)}</span>
+                    </article>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        ) : null}
+
         {homeworkEnabled ? (
           <section className="content-section">
             <div className="student-panel-heading">
@@ -484,7 +532,11 @@ export function StudentDashboardPage() {
                       <span>{formatDate(certificate.issuedAt)}</span>
                       <span className={`status-badge ${statusClass(certificate.status)}`}>{readable(certificate.status)}</span>
                     </div>
-                    {certificate.downloadUrl ? <a href={certificate.downloadUrl} target="_blank" rel="noreferrer">Download</a> : null}
+                    {certificate.downloadUrl ? (
+                      <button type="button" className="secondary-button" onClick={() => void downloadCertificatePdf(certificate.downloadUrl!, `certificate-${certificate.publicId ?? certificate.id ?? 'issued'}.pdf`).catch(() => toast.error('Could not download certificate'))}>
+                        Download
+                      </button>
+                    ) : null}
                   </article>
                 ))}
               </div>

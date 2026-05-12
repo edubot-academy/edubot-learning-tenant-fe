@@ -21,6 +21,44 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - No unreleased changes yet.
 
+## 0.3.0 - 2026-05-12
+
+### Added
+
+- Tenant groups workspace with course/group selection, group creation/editing, instructor assignment, schedule blocks, session generation, student search, student creation, enrollment, and quick links into sessions, attendance, and homework.
+- Course detail workflow parity for tenant-private courses, including query-param deep links, instructor assignment, edit flow, approval/submission actions, and operational gating for draft/unapproved courses.
+- Session workspace expansion with group creation/editing, session scheduling/editing, live meeting management, materials, insights, activities, attendance, homework review, student enrollment, and schedule generation.
+- Attendance workspace support for deep-linked course/group/session selection, scheduled/completed session gating, bulk marking, and marked-row-only saves.
+- Homework workspace support for deep-linked course/group/session selection, session homework creation/editing/deletion, submission review, missing/late filters, score/comment drafts, and roster workflow.
+- Certificate page parity for tenant workflows, including branding, course rules, registry, inline preview, modal preview, manual issue, eligibility warning/override, approval/rejection, revoke, regenerate, and PDF download.
+- Tenant settings tabs for profile, branding, policies, access, platform-managed data, features, and activity.
+- Role-aware overview backed by the tenant overview API with setup readiness, course/session/homework/certificate metrics, attention items, feature state, and activity.
+- Account setup and password reset screens for tenant-created users.
+- Student dashboard additions for attendance, tasks, certificates, and tenant course progress signals.
+
+### Changed
+
+- Tenant certificate colors now default from company branding where course-specific branding is not configured.
+- Offline and online-live course certificates are treated as manual issue flows in tenant UI.
+- Instructor certificate actions now include manual issue when the instructor manages the course or assigned group.
+- Course, group, session, attendance, and homework navigation now preserves selected IDs through query parameters without repeated URL rewrites.
+- Tenant member loading is avoided for instructor-only pages where admins are the only users who need full member lists.
+- Certificate downloads use authenticated Axios only for same-origin API URLs and direct browser links for external or presigned URLs.
+- Package version updated to `0.3.0`.
+
+### Fixed
+
+- Reduced page flicker caused by unconditional query-param replacement in groups, attendance, homework, and sessions.
+- Fixed instructor 403s from certificate roster/student API usage by relying on tenant-scoped course student access.
+- Fixed certificate preview sizing and overflow behavior for inline and modal previews.
+- Removed admin-only certificate course-rule controls from instructor-only views.
+- Fixed stale course/group/session state when selected resources become unavailable after tenant or course changes.
+
+### Tests
+
+- `npm run lint` passes.
+- `npm run build` passes.
+
 ## 0.2.0 - 2026-05-12
 
 ### Added

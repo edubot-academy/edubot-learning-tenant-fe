@@ -27,6 +27,7 @@ export type Tenant = {
   billingStatus?: string | null;
   featureFlags?: Record<string, boolean>;
   branding?: Record<string, unknown> | null;
+  settings?: Record<string, unknown> | null;
   timezone?: string | null;
   locale?: string | null;
   website?: string | null;
@@ -58,9 +59,54 @@ export type TenantActivityLog = {
   createdAt: string;
 };
 
+export type TenantOverview = {
+  tenant: Pick<Tenant, 'id' | 'name' | 'timezone' | 'locale' | 'featureFlags' | 'branding'>;
+  role?: string | null;
+  permissions: {
+    canManageMembers: boolean;
+    canViewActivity: boolean;
+    canManageCertificates: boolean;
+    canCreateCourses: boolean;
+  };
+  stats: Record<string, number | string | null>;
+  courses: Course[];
+  sessions: {
+    upcoming: Array<Partial<CourseSession> & {
+      id: number;
+      title: string;
+      groupName?: string | null;
+      courseTitle?: string | null;
+    }>;
+    today: number;
+    unmarkedAttendance: number;
+    cancelled: number;
+  };
+  homework: {
+    summary: Record<string, number>;
+    queue: SessionHomework[];
+  };
+  certificates: {
+    pending: number;
+    issued: number;
+    rejected: number;
+    revoked: number;
+    configuredCourses: number;
+    coursesWithoutConfig: number;
+    waiting?: number;
+    eligibleWaiting: number;
+  };
+  setup: {
+    progress: number;
+    items: Array<{ label: string; value: string; hint: string }>;
+  };
+  features: Array<{ key: string; enabled: boolean; explicit: boolean }>;
+  activity: TenantActivityLog[];
+};
+
 export type Course = {
   id: number;
   title: string;
+  description?: string | null;
   courseType?: 'video' | 'offline' | 'online_live';
   status?: string;
   isPublished?: boolean;
@@ -249,6 +295,45 @@ export type GroupStudent = {
   enrolledAt?: string;
   progressPercent?: number;
   completed?: boolean;
+  certificateEligible?: boolean;
+  certificateEligibility?: {
+    eligible: boolean;
+    progressPercent: number;
+    completed: boolean;
+    reasons?: string[];
+    attendance?: {
+      required: boolean;
+      passed: boolean;
+      percent: number;
+      requiredPercent: number;
+      attendedSessions: number;
+      completedSessions: number;
+      requiredSessions: number;
+    };
+    homework?: {
+      required: boolean;
+      passed: boolean;
+      percent: number;
+      requiredPercent: number;
+      approved: number;
+      requiredItems: number;
+    };
+    activities?: {
+      required: boolean;
+      passed: boolean;
+      percent: number;
+      requiredPercent: number;
+      completed: number;
+      requiredItems: number;
+    };
+  } | null;
+  certificateId?: number | null;
+  certificatePublicId?: string | null;
+  certificateStatus?: string | null;
+  certificateIssuedAt?: string | null;
+  hasCertificate?: boolean;
+  certificateDownloadUrl?: string | null;
+  certificateVerificationUrl?: string | null;
   lastViewedLessonId?: number | null;
   lastVideoTime?: number | null;
 };
@@ -260,6 +345,7 @@ export type AttendanceRecord = {
   sessionId?: number;
   userId: number;
   courseId?: number;
+  sessionDate?: string | null;
   status: AttendanceStatus;
   joinedAt?: string | null;
   leftAt?: string | null;
@@ -275,6 +361,7 @@ export type SessionHomework = {
   deadline?: string | null;
   maxScore?: number | null;
   isPublished?: boolean;
+  assignedStudentIds?: number[] | null;
   courseId?: number | null;
   groupId?: number | null;
   sessionTitle?: string | null;
@@ -371,9 +458,12 @@ export type CourseCertificateSettings = {
   accentColor?: string | null;
   secondaryBrandName?: string | null;
   secondaryBrandLogoKey?: string | null;
+  secondaryBrandLogoUrl?: string | null;
   certificateTitle?: string | null;
   certificateLanguage?: 'en' | 'ru' | 'ky' | null;
   pageOrientation?: 'landscape' | 'portrait' | null;
+  signatureAssetKey?: string | null;
+  signatureAssetUrl?: string | null;
   eligibilityAttendanceRequired?: boolean;
   eligibilityAttendancePercent?: number;
   eligibilityHomeworkRequired?: boolean;

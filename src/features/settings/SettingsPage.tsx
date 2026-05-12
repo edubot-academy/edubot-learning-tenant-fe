@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FiCreditCard, FiGlobe, FiLock, FiSliders, FiUserCheck } from 'react-icons/fi';
+import { FiActivity, FiCreditCard, FiGlobe, FiLock, FiSliders, FiUserCheck } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import { readable } from '../../lib/format';
 import { useTenant } from '../tenant/TenantProvider';
 import { useTheme } from '../theme/themeContext';
 import { useAuth } from '../auth/AuthProvider';
-import { updateTenant, uploadTenantLogo } from '../../services/api';
+import { listTenantActivity, updateTenant, updateTenantBranding, updateTenantSettings, uploadTenantLogo } from '../../services/api';
 import { canManageTenantProfile, getEffectiveTenantRole } from '../tenant/tenantRoles';
+import type { TenantActivityLog } from '../../types/domain';
 
 const knownFeatures = [
   { key: 'courses.video.enabled', label: 'Video courses' },
@@ -17,6 +18,7 @@ const knownFeatures = [
   { key: 'attendance.enabled', label: 'Attendance' },
   { key: 'homework.enabled', label: 'Homework' },
   { key: 'certificates.enabled', label: 'Certificates' },
+  { key: 'crmSync.enabled', label: 'CRM sync' },
   { key: 'aiAssistant.enabled', label: 'AI assistant' },
 ];
 
@@ -40,6 +42,21 @@ const emptyProfileForm = {
   notes: '',
 };
 
+const emptyBrandingForm = {
+  displayName: '',
+  certificateLogoUrl: '',
+  primaryColor: '#122144',
+  secondaryColor: '#14b8a6',
+  accentColor: '#f17e22',
+};
+
+const emptyTenantSettingsForm = {
+  supportEmail: '',
+  defaultCourseVisibility: 'PRIVATE' as 'PUBLIC' | 'PRIVATE' | 'TENANT_ONLY',
+  allowSelfEnrollment: false,
+  requireEnrollmentApproval: false,
+};
+
 function isHttpUrl(value: string) {
   try {
     const url = new URL(value);
@@ -49,13 +66,25 @@ function isHttpUrl(value: string) {
   }
 }
 
-type SettingsTab = 'profile' | 'access' | 'platform' | 'features';
+function recordText(record: Record<string, unknown> | null | undefined, key: string) {
+  const value = record?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function recordBoolean(record: Record<string, unknown> | null | undefined, key: string) {
+  return record?.[key] === true;
+}
+
+type SettingsTab = 'profile' | 'branding' | 'policies' | 'access' | 'platform' | 'features' | 'activity';
 
 const settingsTabs: Array<{ key: SettingsTab; label: string; description: string }> = [
   { key: 'profile', label: 'Profile', description: 'Tenant-facing brand, contact, and local profile details.' },
+  { key: 'branding', label: 'Branding', description: 'Tenant colors used by tenant screens and certificate defaults.' },
+  { key: 'policies', label: 'Policies', description: 'Tenant-scoped enrollment and support defaults.' },
   { key: 'access', label: 'Access', description: 'Your account context and personal display preference.' },
   { key: 'platform', label: 'Platform', description: 'Read-only status, billing, and domain controls.' },
   { key: 'features', label: 'Features', description: 'Tools visible for this tenant workspace.' },
+  { key: 'activity', label: 'Activity', description: 'Recent tenant changes and audit history.' },
 ];
 
 export function SettingsPage() {
@@ -63,11 +92,20 @@ export function SettingsPage() {
   const { tenants, activeTenant, reloadTenants } = useTenant();
   const { preference, resolvedTheme, setPreference } = useTheme();
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
+  const [brandingForm, setBrandingForm] = useState(emptyBrandingForm);
+  const [tenantSettingsForm, setTenantSettingsForm] = useState(emptyTenantSettingsForm);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [editingBranding, setEditingBranding] = useState(false);
+  const [editingPolicies, setEditingPolicies] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [savingPolicies, setSavingPolicies] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile');
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
+  const [brandingErrors, setBrandingErrors] = useState<Record<string, string>>({});
+  const [activityRows, setActivityRows] = useState<TenantActivityLog[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const flags = useMemo(() => activeTenant?.featureFlags ?? {}, [activeTenant?.featureFlags]);
   const tenantRole = getEffectiveTenantRole(user, activeTenant);
   const canEditTenantProfile = canManageTenantProfile(user, activeTenant);
@@ -106,8 +144,12 @@ export function SettingsPage() {
   useEffect(() => {
     if (!activeTenant) {
       setProfileForm(emptyProfileForm);
+      setBrandingForm(emptyBrandingForm);
+      setTenantSettingsForm(emptyTenantSettingsForm);
       return;
     }
+    const branding = activeTenant.branding ?? {};
+    const settings = activeTenant.settings ?? {};
 
     setProfileForm({
       name: activeTenant.name ?? '',
@@ -128,7 +170,42 @@ export function SettingsPage() {
       taxId: activeTenant.taxId ?? '',
       notes: activeTenant.notes ?? '',
     });
+    setBrandingForm({
+      displayName: typeof branding.displayName === 'string' ? branding.displayName : '',
+      certificateLogoUrl: typeof branding.certificateLogoUrl === 'string' ? branding.certificateLogoUrl : '',
+      primaryColor: typeof branding.primaryColor === 'string' ? branding.primaryColor : '#122144',
+      secondaryColor: typeof branding.secondaryColor === 'string' ? branding.secondaryColor : '#14b8a6',
+      accentColor: typeof branding.accentColor === 'string' ? branding.accentColor : '#f17e22',
+    });
+    setTenantSettingsForm({
+      supportEmail: typeof settings.supportEmail === 'string' ? settings.supportEmail : '',
+      defaultCourseVisibility:
+        settings.defaultCourseVisibility === 'PUBLIC' || settings.defaultCourseVisibility === 'TENANT_ONLY'
+          ? settings.defaultCourseVisibility
+          : 'PRIVATE',
+      allowSelfEnrollment: settings.allowSelfEnrollment === true,
+      requireEnrollmentApproval: settings.requireEnrollmentApproval === true,
+    });
   }, [activeTenant]);
+
+  useEffect(() => {
+    if (!activeTenant || settingsTab !== 'activity') return;
+    let cancelled = false;
+    setActivityLoading(true);
+    listTenantActivity(activeTenant.id, { limit: 20 })
+      .then((rows) => {
+        if (!cancelled) setActivityRows(rows);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Could not load tenant activity');
+      })
+      .finally(() => {
+        if (!cancelled) setActivityLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenant, settingsTab]);
 
   const uploadLogo = async (file: File | undefined) => {
     if (!activeTenant || !file) return;
@@ -172,22 +249,22 @@ export function SettingsPage() {
     try {
       await updateTenant(activeTenant.id, {
         name: profileForm.name.trim(),
-        timezone: profileForm.timezone.trim() || undefined,
-        locale: profileForm.locale.trim() || undefined,
-        website: profileForm.website.trim() || undefined,
-        email: profileForm.email.trim() || undefined,
-        phone: profileForm.phone.trim() || undefined,
-        contactName: profileForm.contactName.trim() || undefined,
-        contactEmail: profileForm.contactEmail.trim() || undefined,
-        contactPhone: profileForm.contactPhone.trim() || undefined,
-        address: profileForm.address.trim() || undefined,
-        city: profileForm.city.trim() || undefined,
-        country: profileForm.country.trim() || undefined,
-        telegram: profileForm.telegram.trim() || undefined,
-        whatsapp: profileForm.whatsapp.trim() || undefined,
-        instagram: profileForm.instagram.trim() || undefined,
-        taxId: profileForm.taxId.trim() || undefined,
-        notes: profileForm.notes.trim() || undefined,
+        timezone: profileForm.timezone.trim() || null,
+        locale: profileForm.locale.trim() || null,
+        website: profileForm.website.trim() || null,
+        email: profileForm.email.trim() || null,
+        phone: profileForm.phone.trim() || null,
+        contactName: profileForm.contactName.trim() || null,
+        contactEmail: profileForm.contactEmail.trim() || null,
+        contactPhone: profileForm.contactPhone.trim() || null,
+        address: profileForm.address.trim() || null,
+        city: profileForm.city.trim() || null,
+        country: profileForm.country.trim() || null,
+        telegram: profileForm.telegram.trim() || null,
+        whatsapp: profileForm.whatsapp.trim() || null,
+        instagram: profileForm.instagram.trim() || null,
+        taxId: profileForm.taxId.trim() || null,
+        notes: profileForm.notes.trim() || null,
       });
       await reloadTenants();
       setEditingProfile(false);
@@ -197,6 +274,70 @@ export function SettingsPage() {
       toast.error('Could not save tenant profile');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const saveTenantBranding = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!activeTenant) return;
+    const nextErrors: Record<string, string> = {};
+    const hexColorPattern = /^#?[0-9a-fA-F]{6}$/;
+    if (brandingForm.primaryColor && !hexColorPattern.test(brandingForm.primaryColor)) {
+      nextErrors.primaryColor = 'Use a 6-digit hex color.';
+    }
+    if (brandingForm.secondaryColor && !hexColorPattern.test(brandingForm.secondaryColor)) {
+      nextErrors.secondaryColor = 'Use a 6-digit hex color.';
+    }
+    if (brandingForm.accentColor && !hexColorPattern.test(brandingForm.accentColor)) {
+      nextErrors.accentColor = 'Use a 6-digit hex color.';
+    }
+    if (brandingForm.certificateLogoUrl.trim() && !isHttpUrl(brandingForm.certificateLogoUrl.trim())) {
+      nextErrors.certificateLogoUrl = 'Use a full URL, for example https://example.com/logo.png.';
+    }
+    if (Object.keys(nextErrors).length) {
+      setBrandingErrors(nextErrors);
+      toast.error(nextErrors.primaryColor ?? nextErrors.secondaryColor ?? nextErrors.accentColor ?? nextErrors.certificateLogoUrl);
+      return;
+    }
+
+    setBrandingErrors({});
+    setSavingBranding(true);
+    try {
+      await updateTenantBranding(activeTenant.id, {
+        displayName: brandingForm.displayName.trim() || null,
+        certificateLogoUrl: brandingForm.certificateLogoUrl.trim() || null,
+        primaryColor: brandingForm.primaryColor.trim() || null,
+        secondaryColor: brandingForm.secondaryColor.trim() || null,
+        accentColor: brandingForm.accentColor.trim() || null,
+      });
+      await reloadTenants();
+      setEditingBranding(false);
+      toast.success('Tenant branding saved');
+    } catch {
+      toast.error('Could not save tenant branding');
+    } finally {
+      setSavingBranding(false);
+    }
+  };
+
+  const saveTenantPolicies = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!activeTenant) return;
+    setSavingPolicies(true);
+    try {
+      await updateTenantSettings(activeTenant.id, {
+        supportEmail: tenantSettingsForm.supportEmail.trim() || null,
+        defaultCourseVisibility: tenantSettingsForm.defaultCourseVisibility,
+        allowSelfEnrollment: tenantSettingsForm.allowSelfEnrollment,
+        requireEnrollmentApproval: tenantSettingsForm.requireEnrollmentApproval,
+      });
+      await reloadTenants();
+      setEditingPolicies(false);
+      toast.success('Tenant policies saved');
+    } catch {
+      toast.error('Could not save tenant policies');
+    } finally {
+      setSavingPolicies(false);
     }
   };
 
@@ -438,6 +579,138 @@ export function SettingsPage() {
       </form>
       ) : null}
 
+      {settingsTab === 'branding' ? (
+      <form className="settings-panel full" onSubmit={saveTenantBranding}>
+        <div className="section-heading-row">
+          <div>
+            <h2>Tenant branding</h2>
+            <span>Colors here are used as tenant UI and certificate defaults.</span>
+          </div>
+          <div className="profile-actions">
+            {canEditTenantProfile && editingBranding ? (
+              <>
+                <button type="button" className="secondary-button" onClick={() => setEditingBranding(false)} disabled={savingBranding}>Cancel</button>
+                <button type="submit" disabled={savingBranding}>{savingBranding ? 'Saving...' : 'Save branding'}</button>
+              </>
+            ) : canEditTenantProfile ? (
+              <button type="button" onClick={() => setEditingBranding(true)}>Edit branding</button>
+            ) : null}
+          </div>
+        </div>
+        {editingBranding && canEditTenantProfile ? (
+          <div className="settings-grid embedded">
+            <div className="two-col">
+              <label>Display name<input value={brandingForm.displayName} onChange={(event) => setBrandingForm((current) => ({ ...current, displayName: event.target.value }))} placeholder={activeTenant?.name ?? 'Tenant name'} /></label>
+              <label>
+                Certificate logo URL
+                <input
+                  value={brandingForm.certificateLogoUrl}
+                  onChange={(event) => {
+                    setBrandingForm((current) => ({ ...current, certificateLogoUrl: event.target.value }));
+                    setBrandingErrors((current) => ({ ...current, certificateLogoUrl: '' }));
+                  }}
+                  className={brandingErrors.certificateLogoUrl ? 'input-error' : ''}
+                  aria-invalid={!!brandingErrors.certificateLogoUrl}
+                  placeholder="https://example.com/logo.png"
+                />
+                {brandingErrors.certificateLogoUrl ? <span className="field-error">{brandingErrors.certificateLogoUrl}</span> : null}
+              </label>
+            </div>
+            <div className="three-col">
+              {([
+                ['primaryColor', 'Primary color'],
+                ['secondaryColor', 'Secondary color'],
+                ['accentColor', 'Accent color'],
+              ] as const).map(([field, label]) => (
+                <label key={field}>
+                  {label}
+                  <span className="color-input-row">
+                    <input type="color" value={brandingForm[field] || '#122144'} onChange={(event) => setBrandingForm((current) => ({ ...current, [field]: event.target.value }))} />
+                    <input
+                      value={brandingForm[field]}
+                      onChange={(event) => {
+                        setBrandingForm((current) => ({ ...current, [field]: event.target.value }));
+                        setBrandingErrors((current) => ({ ...current, [field]: '' }));
+                      }}
+                      className={brandingErrors[field] ? 'input-error' : ''}
+                      aria-invalid={!!brandingErrors[field]}
+                      placeholder="#122144"
+                    />
+                  </span>
+                  {brandingErrors[field] ? <span className="field-error">{brandingErrors[field]}</span> : null}
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="settings-grid embedded">
+            <div className="definition-grid">
+              <span>Display name</span><strong>{readable(recordText(activeTenant?.branding, 'displayName'))}</strong>
+              <span>Certificate logo URL</span><strong>{readable(recordText(activeTenant?.branding, 'certificateLogoUrl'))}</strong>
+            </div>
+            <div className="definition-grid">
+              <span>Primary color</span><strong>{readable(recordText(activeTenant?.branding, 'primaryColor'))}</strong>
+              <span>Secondary color</span><strong>{readable(recordText(activeTenant?.branding, 'secondaryColor'))}</strong>
+              <span>Accent color</span><strong>{readable(recordText(activeTenant?.branding, 'accentColor'))}</strong>
+            </div>
+          </div>
+        )}
+      </form>
+      ) : null}
+
+      {settingsTab === 'policies' ? (
+      <form className="settings-panel full" onSubmit={saveTenantPolicies}>
+        <div className="section-heading-row">
+          <div>
+            <h2>Tenant policies</h2>
+            <span>Tenant-scoped defaults used by enrollment and support workflows.</span>
+          </div>
+          <div className="profile-actions">
+            {canEditTenantProfile && editingPolicies ? (
+              <>
+                <button type="button" className="secondary-button" onClick={() => setEditingPolicies(false)} disabled={savingPolicies}>Cancel</button>
+                <button type="submit" disabled={savingPolicies}>{savingPolicies ? 'Saving...' : 'Save policies'}</button>
+              </>
+            ) : canEditTenantProfile ? (
+              <button type="button" onClick={() => setEditingPolicies(true)}>Edit policies</button>
+            ) : null}
+          </div>
+        </div>
+        {editingPolicies && canEditTenantProfile ? (
+          <div className="settings-grid embedded">
+            <div className="two-col">
+              <label>Support email<input type="email" value={tenantSettingsForm.supportEmail} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, supportEmail: event.target.value }))} /></label>
+              <label>
+                Default course visibility
+                <select value={tenantSettingsForm.defaultCourseVisibility} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, defaultCourseVisibility: event.target.value as typeof tenantSettingsForm.defaultCourseVisibility }))}>
+                  <option value="PUBLIC">Public</option>
+                  <option value="PRIVATE">Private</option>
+                  <option value="TENANT_ONLY">Tenant only</option>
+                </select>
+              </label>
+            </div>
+            <div className="two-col">
+              <label className="checkbox-row">
+                <input type="checkbox" checked={tenantSettingsForm.allowSelfEnrollment} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, allowSelfEnrollment: event.target.checked }))} />
+                Allow self enrollment
+              </label>
+              <label className="checkbox-row">
+                <input type="checkbox" checked={tenantSettingsForm.requireEnrollmentApproval} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, requireEnrollmentApproval: event.target.checked }))} />
+                Require enrollment approval
+              </label>
+            </div>
+          </div>
+        ) : (
+          <div className="definition-grid">
+            <span>Support email</span><strong>{readable(recordText(activeTenant?.settings, 'supportEmail'))}</strong>
+            <span>Default course visibility</span><strong>{readable(recordText(activeTenant?.settings, 'defaultCourseVisibility'))}</strong>
+            <span>Allow self enrollment</span><strong>{recordBoolean(activeTenant?.settings, 'allowSelfEnrollment') ? 'Enabled' : 'Disabled'}</strong>
+            <span>Require enrollment approval</span><strong>{recordBoolean(activeTenant?.settings, 'requireEnrollmentApproval') ? 'Enabled' : 'Disabled'}</strong>
+          </div>
+        )}
+      </form>
+      ) : null}
+
       {settingsTab === 'features' ? (
       <section className="settings-panel full">
         <div className="section-heading-row">
@@ -461,6 +734,33 @@ export function SettingsPage() {
           ))}
         </div>
         <p className="panel-note">Missing feature flags are treated as enabled by default. Only explicit false values disable a tenant feature.</p>
+      </section>
+      ) : null}
+
+      {settingsTab === 'activity' ? (
+      <section className="settings-panel full">
+        <div className="section-heading-row">
+          <div>
+            <h2>Activity</h2>
+            <span>Recent tenant changes recorded by the backend.</span>
+          </div>
+          <FiActivity />
+        </div>
+        {activityLoading ? <p className="panel-note">Loading activity...</p> : null}
+        {!activityLoading ? (
+          <div className="stack-list">
+            {activityRows.map((row) => (
+              <article key={row.id} className="stack-list-item">
+                <div>
+                  <strong>{readable(row.action)}</strong>
+                  <span>{row.actorFullName || row.actorEmail || 'System'} · {new Date(row.createdAt).toLocaleString()}</span>
+                </div>
+                <span className="muted-text">{row.metadata ? Object.keys(row.metadata).join(', ') : row.targetType || 'tenant'}</span>
+              </article>
+            ))}
+            {!activityRows.length ? <span className="muted-text">No tenant activity recorded yet.</span> : null}
+          </div>
+        ) : null}
       </section>
       ) : null}
     </>

@@ -4,8 +4,11 @@ import { AppLayout } from '../components/AppLayout';
 import { useAuth } from '../features/auth/AuthProvider';
 import { useTenant } from '../features/tenant/TenantProvider';
 import { LoginPage } from '../features/auth/LoginPage';
+import { PasswordResetPage } from '../features/auth/PasswordResetPage';
+import { SetupAccountPage } from '../features/auth/SetupAccountPage';
 import { OverviewPage } from '../features/dashboard/OverviewPage';
 import { CoursesPage } from '../features/courses/CoursesPage';
+import { GroupsPage } from '../features/groups/GroupsPage';
 import { SessionsPage } from '../features/sessions/SessionsPage';
 import { AttendancePage } from '../features/attendance/AttendancePage';
 import { HomeworkPage } from '../features/homework/HomeworkPage';
@@ -19,8 +22,11 @@ import { canManageTenantCertificates, canManageTenantMembers, canOperateTenantLe
 
 const routeTitles: Record<string, string> = {
   '/': 'Overview',
+  '/forgot-password': 'Password reset',
+  '/setup-account': 'Account setup',
   '/student': 'My learning',
   '/courses': 'Courses',
+  '/groups': 'Groups',
   '/sessions': 'Sessions',
   '/attendance': 'Attendance',
   '/homework': 'Homework',
@@ -50,6 +56,12 @@ function DocumentMetadata() {
 
   const title = useMemo(() => {
     if (pathname === '/login') return activeTenant?.name ? `Sign in | ${activeTenant.name}` : 'Sign in | Learning Workspace';
+    if (pathname === '/forgot-password') {
+      return activeTenant?.name ? `Password reset | ${activeTenant.name}` : 'Password reset | Learning Workspace';
+    }
+    if (pathname === '/setup-account') {
+      return activeTenant?.name ? `Account setup | ${activeTenant.name}` : 'Account setup | Learning Workspace';
+    }
 
     const sectionTitle = routeTitles[pathname] ?? 'Tenant Workspace';
     const tenantName = activeTenant?.name ?? 'Tenant Workspace';
@@ -139,7 +151,7 @@ function ProtectedRoutes() {
           <strong>Use platform admin</strong>
           <span>Super admin accounts cannot access tenant workspaces.</span>
           <div className="page-actions">
-            <button type="button" className="secondary-button" onClick={signOut}>Sign out</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
           </div>
         </section>
       </main>
@@ -152,7 +164,7 @@ function ProtectedRoutes() {
           <strong>Tenant domain unavailable</strong>
           <span>{resolutionError}</span>
           <div className="page-actions">
-            <button type="button" className="secondary-button" onClick={signOut}>Sign out</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
           </div>
         </section>
       </main>
@@ -166,7 +178,7 @@ function ProtectedRoutes() {
           <span>{tenantError}</span>
           <div className="page-actions">
             <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>Retry</button>
-            <button type="button" className="secondary-button" onClick={signOut}>Sign out</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
           </div>
         </section>
       </main>
@@ -180,7 +192,7 @@ function ProtectedRoutes() {
           <span>Your account is valid, but it is not assigned to a learning tenant yet.</span>
           <div className="page-actions">
             <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>Refresh</button>
-            <button type="button" className="secondary-button" onClick={signOut}>Sign out</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
           </div>
           {tenants.length ? <span>{tenants.length} tenants loaded, but none is active.</span> : null}
         </section>
@@ -197,10 +209,13 @@ export function App() {
       <DocumentMetadata />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<PasswordResetPage />} />
+        <Route path="/setup-account" element={<SetupAccountPage />} />
         <Route element={<ProtectedRoutes />}>
           <Route index element={<HomeRoute />} />
           <Route path="/student" element={<StudentRoute><StudentDashboardPage /></StudentRoute>} />
           <Route path="/courses" element={<StaffRoute><CoursesPage /></StaffRoute>} />
+          <Route path="/groups" element={<StaffRoute><GroupsPage /></StaffRoute>} />
           <Route path="/sessions" element={<StaffRoute><SessionsPage /></StaffRoute>} />
           <Route path="/attendance" element={<StaffRoute><FeatureRoute feature="attendance.enabled"><AttendancePage /></FeatureRoute></StaffRoute>} />
           <Route path="/homework" element={<StaffRoute><FeatureRoute feature="homework.enabled"><HomeworkPage /></FeatureRoute></StaffRoute>} />

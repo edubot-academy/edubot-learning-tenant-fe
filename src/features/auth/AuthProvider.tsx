@@ -1,13 +1,22 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AUTH_EXPIRED_EVENT, getCurrentUser, login, tenantStore, tokenStore } from '../../services/api';
+import {
+  AUTH_EXPIRED_EVENT,
+  completeAccountSetup,
+  getCurrentUser,
+  login,
+  logout,
+  tenantStore,
+  tokenStore,
+} from '../../services/api';
 import type { AuthUser } from '../../types/domain';
 
 type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => void;
+  completeSetup: (token: string, newPassword: string) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -18,10 +27,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    if (!tokenStore.get()) {
-      setLoading(false);
-      return;
-    }
     getCurrentUser()
       .then((currentUser) => {
         if (mounted) setUser(currentUser);
@@ -54,7 +59,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const currentUser = await login(email, password);
       setUser(currentUser);
     },
-    signOut: () => {
+    completeSetup: async (token, newPassword) => {
+      const currentUser = await completeAccountSetup({ token, newPassword });
+      setUser(currentUser);
+    },
+    signOut: async () => {
+      try {
+        await logout();
+      } catch {
+        // Local session cleanup must still happen if the backend cookie is already gone.
+      }
       tokenStore.clear();
       tenantStore.clear();
       setUser(null);

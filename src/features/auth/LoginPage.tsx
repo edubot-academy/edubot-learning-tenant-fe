@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiAward, FiBookOpen, FiCalendar, FiCheckCircle, FiUsers } from 'react-icons/fi';
 import { useAuth } from './AuthProvider';
@@ -112,6 +112,9 @@ export function LoginPage() {
         <button type="submit" disabled={submitting || resolvingTenant || Boolean(resolutionError)}>
           {submitting ? 'Signing in...' : resolvingTenant ? 'Preparing workspace...' : 'Sign in'}
         </button>
+        <p className="login-support-note">
+          Forgot your password? <Link to="/forgot-password">Reset it</Link>
+        </p>
         <p className="login-support-note">Need access? Ask your organization administrator to add you to this workspace.</p>
       </form>
     </main>

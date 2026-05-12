@@ -6,6 +6,15 @@ import { EmptyState, LoadingState } from '../../components/DataState';
 import { CountFilterRow } from '../../components/CountFilterRow';
 import { useTenant } from '../tenant/TenantProvider';
 import {
+  attendanceStatuses,
+  filterAttendanceStudents,
+  getAttendanceCounts,
+  getAttendanceSaveBlocker,
+  getChangedAttendanceRows,
+  isAttendanceSessionReady,
+  type EditableAttendance,
+} from './attendanceWorkflow';
+import {
   getSessionAttendance,
   listCourseGroups,
   listGroupSessions,
@@ -14,27 +23,12 @@ import {
   saveSessionAttendance,
 } from '../../services/api';
 import type { AttendanceRecord, AttendanceStatus, Course, CourseGroup, CourseSession, GroupStudent } from '../../types/domain';
-import { formatDate } from '../../lib/format';
-
-const attendanceStatuses: AttendanceStatus[] = ['present', 'late', 'absent', 'excused'];
+import { formatDate, readable } from '../../lib/format';
+import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 function isAttendanceCourseReady(course: Course | undefined | null) {
-  return Boolean(
-    course
-    && ['offline', 'online_live'].includes(String(course.courseType ?? ''))
-    && course.status === 'approved'
-    && course.isPublished === true,
-  );
+  return isCourseWorkflowReady(course);
 }
-
-function isAttendanceSessionReady(session: CourseSession | undefined | null) {
-  return Boolean(session && ['scheduled', 'completed'].includes(String(session.status ?? 'scheduled')));
-}
-
-type EditableAttendance = {
-  status: AttendanceStatus;
-  notes: string;
-};
 
 export function AttendancePage() {
   const { activeTenant } = useTenant();
@@ -57,52 +51,61 @@ export function AttendancePage() {
   const [statusFilter, setStatusFilter] = useState<AttendanceStatus | 'all' | 'unmarked'>('all');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === sessionId),
     [sessionId, sessions],
   );
+  const selectedCourse = useMemo(
+    () => courses.find((course) => course.id === courseId),
+    [courseId, courses],
+  );
+  const selectedGroup = useMemo(
+    () => groups.find((group) => group.id === groupId),
+    [groupId, groups],
+  );
   const selectedSessionReady = isAttendanceSessionReady(selectedSession);
 
   const filteredStudents = useMemo(() => {
-    const normalizedQuery = studentQuery.trim().toLowerCase();
-    return students.filter((student) => {
-      const row = attendance[student.userId];
-      const matchesQuery = !normalizedQuery
-        || (student.fullName ?? '').toLowerCase().includes(normalizedQuery)
-        || (student.email ?? '').toLowerCase().includes(normalizedQuery)
-        || String(student.userId).includes(normalizedQuery);
-      const matchesStatus = statusFilter === 'all'
-        || (statusFilter === 'unmarked' ? !row : row?.status === statusFilter);
-      return matchesQuery && matchesStatus;
-    });
+    return filterAttendanceStudents(students, attendance, studentQuery, statusFilter);
   }, [attendance, statusFilter, studentQuery, students]);
 
   const attendanceCounts = useMemo(() => {
-    const counts = attendanceStatuses.reduce(
-      (acc, status) => ({ ...acc, [status]: 0 }),
-      {} as Record<AttendanceStatus, number>,
-    );
-    students.forEach((student) => {
-      const status = attendance[student.userId]?.status;
-      if (status) counts[status] += 1;
-    });
-    return {
-      ...counts,
-      marked: Object.keys(attendance).length,
-      unmarked: Math.max(0, students.length - Object.keys(attendance).length),
-      total: students.length,
-    };
+    return getAttendanceCounts(students, attendance);
   }, [attendance, students]);
 
   const changedAttendanceRows = useMemo(() => {
-    return students.filter((student) => {
-      const current = attendance[student.userId] ?? { status: 'present' as AttendanceStatus, notes: '' };
-      const saved = savedAttendance[student.userId] ?? { status: 'present' as AttendanceStatus, notes: '' };
-      return current.status !== saved.status || current.notes.trim() !== saved.notes.trim();
-    });
+    return getChangedAttendanceRows(students, attendance, savedAttendance);
   }, [attendance, savedAttendance, students]);
+  const hasAttendanceChanges = changedAttendanceRows.length > 0;
+  const attendanceSaveBlocker = getAttendanceSaveBlocker({
+    sessionReady: selectedSessionReady,
+    studentCount: students.length,
+    markedCount: attendanceCounts.marked,
+    changedCount: changedAttendanceRows.length,
+  });
+  const workflowSteps = useMemo(() => [
+    {
+      label: 'Course',
+      value: selectedCourse?.title ?? 'Choose course',
+      state: selectedCourse ? 'ready' : 'current',
+    },
+    {
+      label: 'Group',
+      value: selectedGroup?.name ?? (selectedCourse ? 'Choose group' : 'Waiting for course'),
+      state: selectedGroup ? 'ready' : selectedCourse ? 'current' : 'locked',
+    },
+    {
+      label: 'Session',
+      value: selectedSession?.title ?? (selectedGroup ? 'Choose session' : 'Waiting for group'),
+      state: selectedSession ? 'ready' : selectedGroup ? 'current' : 'locked',
+    },
+    {
+      label: 'Mark',
+      value: selectedSession ? `${attendanceCounts.marked} of ${attendanceCounts.total} marked` : 'Attendance unlocks here',
+      state: selectedSession ? 'current' : 'locked',
+    },
+  ], [attendanceCounts.marked, attendanceCounts.total, selectedCourse, selectedGroup, selectedSession]);
 
   useEffect(() => {
     setCourses([]);
@@ -114,7 +117,6 @@ export function AttendancePage() {
     setCourseId(undefined);
     setGroupId(undefined);
     setSessionId(undefined);
-    setHasUnsavedChanges(false);
     if (!activeTenantId) return;
     let cancelled = false;
     setLoading(true);
@@ -123,10 +125,6 @@ export function AttendancePage() {
         if (cancelled) return;
         const readyCourses = nextCourses.filter(isAttendanceCourseReady);
         setCourses(readyCourses);
-        setCourseId((current) => {
-          if (requestedCourseId && readyCourses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
-          return current && readyCourses.some((course) => course.id === current) ? current : readyCourses[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load courses');
@@ -137,7 +135,15 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, requestedCourseId]);
+  }, [activeTenantId]);
+
+  useEffect(() => {
+    setCourseId((current) => {
+      if (!courses.length) return undefined;
+      if (requestedCourseId && courses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
+      return current && courses.some((course) => course.id === current) ? current : courses[0]?.id;
+    });
+  }, [courses, requestedCourseId]);
 
   useEffect(() => {
     setGroups([]);
@@ -145,7 +151,6 @@ export function AttendancePage() {
     setStudents([]);
     setAttendance({});
     setSavedAttendance({});
-    setHasUnsavedChanges(false);
     setStudentQuery('');
     setStatusFilter('all');
     setGroupId(undefined);
@@ -157,10 +162,6 @@ export function AttendancePage() {
       .then((nextGroups) => {
         if (cancelled) return;
         setGroups(nextGroups);
-        setGroupId((current) => {
-          if (requestedGroupId && nextGroups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
-          return current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load groups');
@@ -171,14 +172,21 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId, requestedGroupId]);
+  }, [courseId]);
+
+  useEffect(() => {
+    setGroupId((current) => {
+      if (!groups.length) return undefined;
+      if (requestedGroupId && groups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
+      return current && groups.some((group) => group.id === current) ? current : groups[0]?.id;
+    });
+  }, [groups, requestedGroupId]);
 
   useEffect(() => {
     setSessions([]);
     setStudents([]);
     setAttendance({});
     setSavedAttendance({});
-    setHasUnsavedChanges(false);
     setStudentQuery('');
     setStatusFilter('all');
     setSessionId(undefined);
@@ -191,10 +199,6 @@ export function AttendancePage() {
         const readySessions = nextSessions.filter(isAttendanceSessionReady);
         setSessions(readySessions);
         setStudents(nextStudents);
-        setSessionId((current) => {
-          if (requestedSessionId && readySessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
-          return current && readySessions.some((session) => session.id === current) ? current : readySessions[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load group attendance data');
@@ -205,20 +209,24 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId, requestedSessionId]);
+  }, [groupId]);
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParamsString);
-    if (courseId) next.set('courseId', String(courseId)); else next.delete('courseId');
-    if (groupId) next.set('groupId', String(groupId)); else next.delete('groupId');
-    if (sessionId) next.set('sessionId', String(sessionId)); else next.delete('sessionId');
+    setSessionId((current) => {
+      if (!sessions.length) return undefined;
+      if (requestedSessionId && sessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
+      return current && sessions.some((session) => session.id === current) ? current : sessions[0]?.id;
+    });
+  }, [sessions, requestedSessionId]);
+
+  useEffect(() => {
+    const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId, sessionId });
     if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
   }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
 
   useEffect(() => {
     setAttendance({});
     setSavedAttendance({});
-    setHasUnsavedChanges(false);
     if (!sessionId) return;
     let cancelled = false;
     setLoading(true);
@@ -234,7 +242,6 @@ export function AttendancePage() {
         });
         setAttendance(nextAttendance);
         setSavedAttendance(nextAttendance);
-        setHasUnsavedChanges(false);
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load saved attendance');
@@ -256,7 +263,6 @@ export function AttendancePage() {
         ...patch,
       },
     }));
-    setHasUnsavedChanges(true);
   };
 
   const markVisible = (status: AttendanceStatus) => {
@@ -270,7 +276,6 @@ export function AttendancePage() {
       });
       return nextAttendance;
     });
-    setHasUnsavedChanges(true);
   };
 
   const markUnmarked = (status: AttendanceStatus) => {
@@ -286,26 +291,16 @@ export function AttendancePage() {
       });
       return nextAttendance;
     });
-    setHasUnsavedChanges(true);
   };
 
   const saveAttendance = async () => {
     if (!sessionId) return;
-    if (!students.length) {
-      toast.error('No students in this group');
-      return;
-    }
-    if (!selectedSessionReady) {
-      toast.error('Attendance can only be saved for scheduled or completed sessions');
+    if (attendanceSaveBlocker) {
+      toast.error(attendanceSaveBlocker);
       return;
     }
 
     const markedStudents = students.filter((student) => attendance[student.userId]);
-    if (!markedStudents.length) {
-      toast.error('Mark at least one student before saving');
-      return;
-    }
-
     setSaving(true);
     try {
       const nextAttendance = markedStudents.reduce<Record<number, EditableAttendance>>((acc, student) => {
@@ -325,7 +320,6 @@ export function AttendancePage() {
       );
       setAttendance(nextAttendance);
       setSavedAttendance(nextAttendance);
-      setHasUnsavedChanges(false);
       toast.success('Attendance saved');
     } catch {
       toast.error('Could not save attendance');
@@ -340,14 +334,9 @@ export function AttendancePage() {
         title="Attendance"
         eyebrow={activeTenant?.name}
         actions={sessionId ? (
-          <>
-            <button type="button" className="secondary-button" onClick={() => markUnmarked('present')} disabled={!students.length || !attendanceCounts.unmarked || saving}>
-              Mark unmarked present
-            </button>
-            <button type="button" onClick={saveAttendance} disabled={!students.length || saving || !hasUnsavedChanges || !selectedSessionReady}>
-              {saving ? 'Saving...' : 'Save attendance'}
-            </button>
-          </>
+          <button type="button" onClick={saveAttendance} disabled={saving || Boolean(attendanceSaveBlocker)} title={attendanceSaveBlocker || undefined}>
+            {saving ? 'Saving...' : 'Save attendance'}
+          </button>
         ) : null}
       />
 
@@ -380,6 +369,18 @@ export function AttendancePage() {
 
       {loading ? <LoadingState label="Loading attendance" /> : null}
 
+      <section className="session-workflow-strip attendance-workflow-strip" aria-label="Attendance workflow">
+        {workflowSteps.map((step, index) => (
+          <article key={step.label} className={`workflow-step ${step.state}`}>
+            <span>{index + 1}</span>
+            <div>
+              <strong>{step.label}</strong>
+              <small>{step.value}</small>
+            </div>
+          </article>
+        ))}
+      </section>
+
       {!loading && !courseId ? (
         <EmptyState title="Choose a course" detail="Select a tenant course, then choose a group and session to mark attendance." />
       ) : null}
@@ -401,17 +402,35 @@ export function AttendancePage() {
       ) : null}
 
       {!loading && sessionId && (
-        <section className="content-section">
+        <section className="content-section workflow-context-panel">
           <div className="section-heading-row">
             <div>
               <h2>{selectedSession?.title ?? 'Session attendance'}</h2>
               <span>{attendanceCounts.marked} marked of {attendanceCounts.total}</span>
             </div>
             <div className="attendance-save-state">
-              <span className={`status-badge ${hasUnsavedChanges ? 'pending_approval' : 'published'}`}>
-                {hasUnsavedChanges ? `${changedAttendanceRows.length} changed` : 'Saved'}
+              <span className={`status-badge ${hasAttendanceChanges ? 'pending_approval' : 'published'}`}>
+                {hasAttendanceChanges ? `${changedAttendanceRows.length} changed` : 'Saved'}
               </span>
             </div>
+          </div>
+          <div className="attendance-session-summary" aria-label="Attendance summary">
+            <section>
+              <span>Marked</span>
+              <strong>{attendanceCounts.marked}</strong>
+            </section>
+            <section>
+              <span>Unmarked</span>
+              <strong>{attendanceCounts.unmarked}</strong>
+            </section>
+            <section>
+              <span>Changed</span>
+              <strong>{changedAttendanceRows.length}</strong>
+            </section>
+            <section>
+              <span>Session</span>
+              <strong>{selectedSessionReady ? readable(selectedSession?.status ?? 'scheduled') : 'Not ready'}</strong>
+            </section>
           </div>
           <CountFilterRow
             className="attendance-summary-row"
@@ -419,13 +438,13 @@ export function AttendancePage() {
             items={[
               ...attendanceStatuses.map((status) => ({
                 key: status,
-                label: status,
+                label: readable(status),
                 count: attendanceCounts[status],
                 active: statusFilter === status,
               })),
               {
                 key: 'unmarked' as const,
-                label: 'unmarked',
+                label: 'Unmarked',
                 count: attendanceCounts.unmarked,
                 active: statusFilter === 'unmarked',
               },
@@ -433,16 +452,22 @@ export function AttendancePage() {
             onSelect={(nextStatus) => setStatusFilter(statusFilter === nextStatus ? 'all' : nextStatus)}
           />
           <div className="filters-row three attendance-tools">
-            <input
-              value={studentQuery}
-              onChange={(event) => setStudentQuery(event.target.value)}
-              placeholder="Search student"
-            />
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AttendanceStatus | 'all' | 'unmarked')}>
-              <option value="all">All statuses</option>
-              <option value="unmarked">Unmarked</option>
-              {attendanceStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
-            </select>
+            <label>
+              Find student
+              <input
+                value={studentQuery}
+                onChange={(event) => setStudentQuery(event.target.value)}
+                placeholder="Name, email, or ID"
+              />
+            </label>
+            <label>
+              Status filter
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AttendanceStatus | 'all' | 'unmarked')}>
+                <option value="all">All statuses</option>
+                <option value="unmarked">Unmarked</option>
+                {attendanceStatuses.map((status) => <option key={status} value={status}>{readable(status)}</option>)}
+              </select>
+            </label>
             <div className="attendance-bulk-actions">
               <button type="button" className="secondary-button" onClick={() => markVisible('present')} disabled={!filteredStudents.length || saving}>
                 Visible present
@@ -450,22 +475,25 @@ export function AttendancePage() {
               <button type="button" className="secondary-button" onClick={() => markVisible('absent')} disabled={!filteredStudents.length || saving}>
                 Visible absent
               </button>
+              <button type="button" className="secondary-button" onClick={() => markUnmarked('present')} disabled={!students.length || !attendanceCounts.unmarked || saving}>
+                Unmarked present
+              </button>
             </div>
           </div>
           <div className="attendance-review-banner">
             <div>
-              <strong>{hasUnsavedChanges ? 'Review changes before saving' : 'Attendance is up to date'}</strong>
+              <strong>{hasAttendanceChanges ? 'Review changes before saving' : 'Attendance is up to date'}</strong>
               <span>
-                {hasUnsavedChanges
+                {hasAttendanceChanges
                   ? `${changedAttendanceRows.length} student${changedAttendanceRows.length === 1 ? '' : 's'} changed from the saved roster.`
                   : 'No unsaved attendance changes for this session.'}
               </span>
             </div>
-            <span className="status-badge draft">{attendanceCounts.unmarked} unmarked</span>
+            <span className={`status-badge ${attendanceCounts.unmarked ? 'draft' : 'published'}`}>{attendanceCounts.unmarked} unmarked</span>
           </div>
           <p className="panel-note attendance-note">Only marked rows are saved. Use bulk actions before saving when the whole class has the same status.</p>
-          <div className="table-wrap">
-            <table>
+          <div className="table-wrap attendance-table-wrap">
+            <table className="attendance-roster-table">
               <thead>
                 <tr>
                   <th>Student</th>
@@ -476,39 +504,42 @@ export function AttendancePage() {
               </thead>
               <tbody>
                 {filteredStudents.map((student) => {
-                  const row = attendance[student.userId] ?? { status: 'present', notes: '' };
+                  const row = attendance[student.userId];
                   const progress = Math.round(student.progressPercent ?? 0);
                   return (
-                    <tr key={student.userId} className={`attendance-row ${attendance[student.userId] ? row.status : 'unmarked'}`}>
-                      <td>
+                    <tr key={student.userId} className={`attendance-row ${row ? row.status : 'unmarked'}`}>
+                      <td data-label="Student">
                         <strong>{student.fullName || student.email || `Student ${student.userId}`}</strong>
                         {student.email ? <small>{student.email}</small> : null}
                       </td>
-                      <td>
-                        <span className={`status-badge attendance-${attendance[student.userId] ? row.status : 'unmarked'}`}>
-                          {attendance[student.userId] ? row.status : 'unmarked'}
+                      <td data-label="Status">
+                        <span className={`status-badge attendance-${row ? row.status : 'unmarked'}`}>
+                          {row ? readable(row.status) : 'Unmarked'}
                         </span>
                         <select
                           className="attendance-status-select"
-                          value={row.status}
+                          aria-label={`Attendance status for ${student.fullName || student.email || `student ${student.userId}`}`}
+                          value={row?.status ?? ''}
                           onChange={(event) => updateStudentAttendance(student.userId, { status: event.target.value as AttendanceStatus })}
                         >
+                          <option value="" disabled>Choose status</option>
                           {attendanceStatuses.map((status) => (
-                            <option key={status} value={status}>{status}</option>
+                            <option key={status} value={status}>{readable(status)}</option>
                           ))}
                         </select>
                       </td>
-                      <td>
+                      <td data-label="Progress">
                         <div className="progress-cell attendance-progress-cell">
                           <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
                           <strong>{progress}%</strong>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Notes">
                         <input
-                          value={row.notes}
+                          value={row?.notes ?? ''}
                           onChange={(event) => updateStudentAttendance(student.userId, { notes: event.target.value })}
-                          placeholder="Optional note"
+                          placeholder={row ? 'Optional note' : 'Choose status first'}
+                          disabled={!row}
                         />
                       </td>
                     </tr>

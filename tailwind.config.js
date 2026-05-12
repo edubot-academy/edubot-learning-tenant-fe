@@ -4,6 +4,18 @@ export default {
   theme: {
     extend: {
       colors: {
+        ui: {
+          surface: 'var(--surface)',
+          muted: 'var(--surface-muted)',
+          line: 'var(--line)',
+          lineStrong: 'var(--line-strong)',
+          text: 'var(--text)',
+          textMuted: 'var(--text-muted)',
+          primary: 'var(--brand-primary)',
+          primaryStrong: 'var(--brand-primary-strong)',
+          primarySoft: 'var(--brand-primary-soft)',
+          hover: 'var(--surface-hover)',
+        },
         brand: {
           dark: '#122144',
           ink: '#162033',

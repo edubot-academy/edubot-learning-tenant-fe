@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest';
+import type { GroupStudent } from '../../types/domain';
+import {
+  filterAttendanceStudents,
+  getAttendanceCounts,
+  getAttendanceSaveBlocker,
+  getChangedAttendanceRows,
+  type EditableAttendance,
+} from './attendanceWorkflow';
+
+const students: GroupStudent[] = [
+  { id: 1, userId: 10, fullName: 'Ava Stone', email: 'ava@example.com' },
+  { id: 2, userId: 20, fullName: 'Ben Park', email: 'ben@example.com' },
+];
+
+describe('attendance workflow helpers', () => {
+  it('counts marked and unmarked attendance against enrolled students', () => {
+    const attendance: Record<number, EditableAttendance> = {
+      10: { status: 'present', notes: '' },
+    };
+
+    expect(getAttendanceCounts(students, attendance)).toMatchObject({
+      present: 1,
+      late: 0,
+      absent: 0,
+      excused: 0,
+      marked: 1,
+      unmarked: 1,
+      total: 2,
+    });
+  });
+
+  it('detects note and status changes from saved attendance', () => {
+    const current: Record<number, EditableAttendance> = {
+      10: { status: 'present', notes: 'Arrived early' },
+      20: { status: 'late', notes: '' },
+    };
+    const saved: Record<number, EditableAttendance> = {
+      10: { status: 'present', notes: '' },
+      20: { status: 'late', notes: '' },
+    };
+
+    expect(getChangedAttendanceRows(students, current, saved).map((student) => student.userId)).toEqual([10]);
+  });
+
+  it('filters by query and unmarked status', () => {
+    const attendance: Record<number, EditableAttendance> = {
+      10: { status: 'present', notes: '' },
+    };
+
+    expect(filterAttendanceStudents(students, attendance, 'ben', 'unmarked').map((student) => student.userId)).toEqual([20]);
+  });
+
+  it('returns concrete save blockers', () => {
+    expect(getAttendanceSaveBlocker({ sessionReady: false, studentCount: 2, markedCount: 1, changedCount: 1 })).toContain('scheduled or completed');
+    expect(getAttendanceSaveBlocker({ sessionReady: true, studentCount: 2, markedCount: 1, changedCount: 1 })).toBe('');
+  });
+});

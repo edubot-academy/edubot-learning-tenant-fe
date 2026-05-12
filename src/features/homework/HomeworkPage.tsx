@@ -7,6 +7,15 @@ import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
 import { CountFilterRow } from '../../components/CountFilterRow';
 import {
+  filterHomeworkReviewItems,
+  getHomeworkFormErrors,
+  getHomeworkReviewBlocker,
+  isHomeworkSessionReady,
+  reviewFilterLabels,
+  reviewFilters,
+  type ReviewFilter,
+} from './homeworkWorkflow';
+import {
   createSessionHomework,
   deleteSessionHomework,
   getHomeworkReviewRoster,
@@ -24,6 +33,7 @@ import {
 import type { Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate, readable } from '../../lib/format';
+import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 const emptyForm = {
   title: '',
@@ -35,16 +45,7 @@ const emptyForm = {
 };
 
 function isHomeworkCourseReady(course: Course | undefined | null) {
-  return Boolean(
-    course
-    && ['offline', 'online_live'].includes(String(course.courseType ?? ''))
-    && course.status === 'approved'
-    && course.isPublished === true,
-  );
-}
-
-function isHomeworkSessionReady(session: CourseSession | undefined | null) {
-  return Boolean(session && ['scheduled', 'completed'].includes(String(session.status ?? 'scheduled')));
+  return isCourseWorkflowReady(course);
 }
 
 const summaryLabels: Record<string, string> = {
@@ -53,10 +54,6 @@ const summaryLabels: Record<string, string> = {
   missing: 'Missing',
   overdue: 'Overdue',
 };
-
-type ReviewFilter = 'total' | 'needsReview' | 'missing' | 'approved' | 'needsRevision' | 'late';
-
-const reviewFilters: ReviewFilter[] = ['total', 'needsReview', 'missing', 'approved', 'needsRevision', 'late'];
 
 export function HomeworkPage() {
   const { activeTenant } = useTenant();
@@ -80,6 +77,8 @@ export function HomeworkPage() {
   const [reviewRoster, setReviewRoster] = useState<HomeworkReviewRoster | null>(null);
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('needsReview');
   const [reviewDrafts, setReviewDrafts] = useState<Record<number, { score: string; reviewComment: string }>>({});
+  const [expandedReviewStudentId, setExpandedReviewStudentId] = useState<number | undefined>();
+  const [assigneeQuery, setAssigneeQuery] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editHomeworkId, setEditHomeworkId] = useState<number | undefined>();
@@ -95,6 +94,25 @@ export function HomeworkPage() {
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
   const selectedSessionReady = isHomeworkSessionReady(selectedSession);
+  const selectedHomework = useMemo(
+    () => sessionItems.find((item) => item.id === selectedHomeworkId),
+    [selectedHomeworkId, sessionItems],
+  );
+  const sessionHomeworkSummary = useMemo(() => {
+    const needsReview = sessionItems.reduce((total, item) => total + (item.queue?.needsReview ?? 0), 0);
+    const missing = sessionItems.reduce((total, item) => total + (item.queue?.missing ?? 0), 0);
+    const assigned = sessionItems.reduce((total, item) => total + (item.queue?.assigned ?? 0), 0);
+    return { total: sessionItems.length, needsReview, missing, assigned };
+  }, [sessionItems]);
+  const visibleAssignees = useMemo(() => {
+    const normalized = assigneeQuery.trim().toLowerCase();
+    if (!normalized) return students;
+    return students.filter((student) => (
+      (student.fullName ?? '').toLowerCase().includes(normalized)
+      || (student.email ?? '').toLowerCase().includes(normalized)
+      || String(student.userId).includes(normalized)
+    ));
+  }, [assigneeQuery, students]);
 
   const workflowSteps = [
     {
@@ -117,7 +135,7 @@ export function HomeworkPage() {
     },
     {
       label: 'Review',
-      value: selectedHomeworkId ? sessionItems.find((item) => item.id === selectedHomeworkId)?.title ?? 'Selected homework' : 'Select homework',
+      value: selectedHomework?.title ?? 'Select homework',
       icon: FiCheckCircle,
       state: selectedHomeworkId ? 'ready' : sessionId ? 'current' : 'locked',
     },
@@ -125,11 +143,7 @@ export function HomeworkPage() {
 
   const filteredReviewItems = useMemo(() => {
     const rows = reviewRoster?.items ?? [];
-    if (reviewFilter === 'total') return rows;
-    if (reviewFilter === 'late') return rows.filter((item) => item.isLate);
-    if (reviewFilter === 'needsReview') return rows.filter((item) => item.reviewState === 'needs_review');
-    if (reviewFilter === 'needsRevision') return rows.filter((item) => item.reviewState === 'needs_revision');
-    return rows.filter((item) => item.reviewState === reviewFilter);
+    return filterHomeworkReviewItems(rows, reviewFilter);
   }, [reviewFilter, reviewRoster?.items]);
 
   useEffect(() => {
@@ -152,10 +166,6 @@ export function HomeworkPage() {
         if (cancelled) return;
         const readyCourses = nextCourses.filter(isHomeworkCourseReady);
         setCourses(readyCourses);
-        setCourseId((current) => {
-          if (requestedCourseId && readyCourses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
-          return current && readyCourses.some((course) => course.id === current) ? current : readyCourses[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load courses');
@@ -163,9 +173,24 @@ export function HomeworkPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, requestedCourseId]);
+  }, [activeTenantId]);
 
   useEffect(() => {
+    setCourseId((current) => {
+      if (!courses.length) return undefined;
+      if (requestedCourseId && courses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
+      return current && courses.some((course) => course.id === current) ? current : courses[0]?.id;
+    });
+  }, [courses, requestedCourseId]);
+
+  useEffect(() => {
+    if (!courseId) {
+      setSummary(null);
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     Promise.all([getHomeworkSummary(courseId, groupId), listHomework(courseId, groupId)])
@@ -194,6 +219,7 @@ export function HomeworkPage() {
     setReviewRoster(null);
     setReviewFilter('needsReview');
     setReviewDrafts({});
+    setExpandedReviewStudentId(undefined);
     setGroupId(undefined);
     setSessionId(undefined);
     if (!courseId) return;
@@ -202,10 +228,6 @@ export function HomeworkPage() {
       .then((nextGroups) => {
         if (cancelled) return;
         setGroups(nextGroups);
-        setGroupId((current) => {
-          if (requestedGroupId && nextGroups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
-          return current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load groups');
@@ -213,7 +235,15 @@ export function HomeworkPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId, requestedGroupId]);
+  }, [courseId]);
+
+  useEffect(() => {
+    setGroupId((current) => {
+      if (!groups.length) return undefined;
+      if (requestedGroupId && groups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
+      return current && groups.some((group) => group.id === current) ? current : groups[0]?.id;
+    });
+  }, [groups, requestedGroupId]);
 
   useEffect(() => {
     setSessions([]);
@@ -223,6 +253,7 @@ export function HomeworkPage() {
     setReviewRoster(null);
     setReviewFilter('needsReview');
     setReviewDrafts({});
+    setExpandedReviewStudentId(undefined);
     setEditHomeworkId(undefined);
     setSessionId(undefined);
     if (!groupId) return;
@@ -233,10 +264,6 @@ export function HomeworkPage() {
         const readySessions = nextSessions.filter(isHomeworkSessionReady);
         setSessions(readySessions);
         setStudents(nextStudents);
-        setSessionId((current) => {
-          if (requestedSessionId && readySessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
-          return current && readySessions.some((session) => session.id === current) ? current : readySessions[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load sessions');
@@ -244,13 +271,18 @@ export function HomeworkPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId, requestedSessionId]);
+  }, [groupId]);
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParamsString);
-    if (courseId) next.set('courseId', String(courseId)); else next.delete('courseId');
-    if (groupId) next.set('groupId', String(groupId)); else next.delete('groupId');
-    if (sessionId) next.set('sessionId', String(sessionId)); else next.delete('sessionId');
+    setSessionId((current) => {
+      if (!sessions.length) return undefined;
+      if (requestedSessionId && sessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
+      return current && sessions.some((session) => session.id === current) ? current : sessions[0]?.id;
+    });
+  }, [sessions, requestedSessionId]);
+
+  useEffect(() => {
+    const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId, sessionId });
     if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
   }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
 
@@ -260,6 +292,7 @@ export function HomeworkPage() {
     setReviewRoster(null);
     setReviewFilter('needsReview');
     setReviewDrafts({});
+    setExpandedReviewStudentId(undefined);
     setEditHomeworkId(undefined);
     if (!sessionId) return;
     let cancelled = false;
@@ -279,6 +312,7 @@ export function HomeworkPage() {
     if (!sessionId) return;
     setSelectedHomeworkId(homeworkId);
     setReviewFilter('needsReview');
+    setExpandedReviewStudentId(undefined);
     setReviewLoading(true);
     try {
       const roster = await getHomeworkReviewRoster(sessionId, homeworkId);
@@ -339,18 +373,9 @@ export function HomeworkPage() {
 
   const submitHomework = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextErrors: Record<string, string> = {};
+    const nextErrors = getHomeworkFormErrors(form, Boolean(sessionId && selectedSessionReady));
     if (!sessionId) {
       nextErrors.session = 'Select a session before creating homework.';
-    }
-    if (!selectedSessionReady) {
-      nextErrors.session = 'Select a scheduled or completed session before creating homework.';
-    }
-    if (!form.title.trim()) {
-      nextErrors.title = 'Homework title is required.';
-    }
-    if (form.maxScore && Number(form.maxScore) < 0) {
-      nextErrors.maxScore = 'Max score cannot be negative.';
     }
     if (Object.keys(nextErrors).length) {
       setFormErrors(nextErrors);
@@ -385,12 +410,14 @@ export function HomeworkPage() {
     setIsCreateModalOpen(false);
     setForm(emptyForm);
     setFormErrors({});
+    setAssigneeQuery('');
   };
 
   const closeEditModal = () => {
     setEditHomeworkId(undefined);
     setEditForm(emptyForm);
     setFormErrors({});
+    setAssigneeQuery('');
   };
 
   const saveHomeworkEdit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -464,12 +491,9 @@ export function HomeworkPage() {
     const draft = reviewDrafts[submissionId] ?? { score: '', reviewComment: '' };
     const score = draft.score.trim() ? Number(draft.score) : undefined;
 
-    if ((status === 'rejected' || status === 'needs_revision') && !draft.reviewComment.trim()) {
-      toast.error('Review comment is required');
-      return;
-    }
-    if (score !== undefined && !Number.isFinite(score)) {
-      toast.error('Score must be a number');
+    const blocker = getHomeworkReviewBlocker(status, draft);
+    if (blocker) {
+      toast.error(blocker);
       return;
     }
 
@@ -504,7 +528,7 @@ export function HomeworkPage() {
         title="Homework"
         eyebrow={activeTenant?.name}
         actions={(
-          <button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady || saving}>
+          <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady || saving}>
             <FiPlus />
             Create homework
           </button>
@@ -512,15 +536,15 @@ export function HomeworkPage() {
       />
       <div className="filters-row three">
         <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
-          <option value="">All courses</option>
+          <option value="">Choose course</option>
           {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
         </select>
         <select value={groupId ?? ''} onChange={(event) => setGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
-          <option value="">All groups</option>
+          <option value="">Choose group</option>
           {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
         </select>
         <select value={sessionId ?? ''} onChange={(event) => setSessionId(Number(event.target.value) || undefined)} disabled={!sessions.length}>
-          <option value="">Select session to create</option>
+          <option value="">Choose session</option>
           {sessions.map((session) => (
             <option key={session.id} value={session.id}>
               {session.title} {session.startsAt ? `- ${formatDate(session.startsAt)}` : ''}
@@ -556,14 +580,20 @@ export function HomeworkPage() {
         </div>
       ) : null}
 
-      <div className="homework-session-layout">
-        <section className="settings-panel full">
+      <div className="workspace-grid homework-workspace-grid">
+        <section className="settings-panel full workflow-context-panel">
           <div className="settings-panel-heading">
             <FiCalendar />
             <div>
-              <h2>Selected session</h2>
-              <span className="panel-note">{selectedSession ? formatDate(selectedSession.startsAt) : 'Choose a session to manage assignments.'}</span>
+              <h2>Session assignments</h2>
+              <span className="panel-note">{selectedSession ? `${selectedSession.title} · ${formatDate(selectedSession.startsAt)}` : 'Choose a session to manage assignments.'}</span>
             </div>
+          </div>
+          <div className="homework-session-summary" aria-label="Selected session homework summary">
+            <section><span>Assignments</span><strong>{sessionHomeworkSummary.total}</strong></section>
+            <section><span>Need review</span><strong>{sessionHomeworkSummary.needsReview}</strong></section>
+            <section><span>Missing</span><strong>{sessionHomeworkSummary.missing}</strong></section>
+            <section><span>Assigned</span><strong>{sessionHomeworkSummary.assigned}</strong></section>
           </div>
           {!sessionId ? (
             <EmptyState
@@ -575,18 +605,19 @@ export function HomeworkPage() {
             <EmptyState
               title="No homework in this session"
               detail="Create the first assignment for this selected session."
-              action={<button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!selectedSessionReady}>Create homework</button>}
+              action={<button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!selectedSessionReady}>Create homework</button>}
             />
           ) : (
-            <div className="stack-list">
+            <div className="stack-list homework-assignment-list">
               {sessionItems.map((homework) => (
                 <article
                   key={homework.id}
-                  className={`stack-list-item ${selectedHomeworkId === homework.id ? 'active' : ''}`}
+                  className={`stack-list-item homework-assignment-item ${selectedHomeworkId === homework.id ? 'active' : ''}`}
                 >
                   <button type="button" className="stack-list-content-button" onClick={() => void loadReviewRoster(homework.id)}>
                     <strong>{homework.title}</strong>
                     <span><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? 'Published' : 'Draft'}</span>{homework.deadline || homework.dueAt ? ` · due ${formatDate(homework.deadline ?? homework.dueAt)}` : ''}</span>
+                    <small>{selectedHomeworkId === homework.id ? 'Review roster open' : 'Open review roster'}</small>
                   </button>
                   <div className="activity-actions">
                     <span className={`status-badge ${(homework.queue?.needsReview ?? 0) > 0 ? 'pending_approval' : 'approved'}`}>
@@ -600,12 +631,120 @@ export function HomeworkPage() {
             </div>
           )}
         </section>
+
+        <aside className="settings-panel homework-review-panel workflow-context-panel">
+          <div className="section-heading-row compact">
+            <div>
+              <h2>Review roster</h2>
+              <span>{selectedHomework?.title ?? 'Select an assignment'}</span>
+            </div>
+          </div>
+          {reviewLoading ? <LoadingState label="Loading review roster" /> : null}
+          {!selectedHomeworkId ? (
+            <EmptyState title="Select homework to review" detail="Choose an assignment from the session list." />
+          ) : reviewRoster ? (
+            <>
+              <CountFilterRow
+                className="review-summary-row"
+                ariaLabel="Homework review filters"
+                items={reviewFilters.map((key) => ({
+                  key,
+                  label: reviewFilterLabels[key],
+                  count: reviewRoster.summary[key] ?? 0,
+                  active: reviewFilter === key,
+                }))}
+                onSelect={setReviewFilter}
+              />
+              <div className="stack-list">
+                {filteredReviewItems.map((item) => {
+                  const isExpanded = expandedReviewStudentId === item.studentId;
+                  return (
+                    <article key={item.studentId} className={`stack-list-item homework-review-item ${item.reviewState}`}>
+                      <div className="homework-review-summary">
+                        <strong>{item.fullName || item.email || `Student #${item.studentId}`}</strong>
+                        <span>
+                          <span className={`status-badge ${item.reviewState}`}>{readable(item.reviewState)}</span>
+                          {item.isLate ? ' · late' : ''}
+                        </span>
+                        {item.submission?.answerText ? <p>{isExpanded ? item.submission.answerText : `${item.submission.answerText.slice(0, 110)}${item.submission.answerText.length > 110 ? '...' : ''}`}</p> : null}
+                        {item.submission?.attachmentUrl && item.submission.id ? (
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => void openHomeworkSubmissionAttachment(sessionId!, selectedHomeworkId!, item.submission!.id)}
+                          >
+                            Open attachment
+                          </button>
+                        ) : null}
+                      </div>
+                      {item.submission?.id ? (
+                        <div className="review-controls homework-review-controls">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => setExpandedReviewStudentId(isExpanded ? undefined : item.studentId)}
+                          >
+                            {isExpanded ? 'Hide review' : 'Review'}
+                          </button>
+                          {isExpanded ? (
+                            <>
+                              <label>
+                                Score
+                                <input
+                                  value={reviewDrafts[item.submission.id]?.score ?? ''}
+                                  onChange={(event) => setReviewDrafts((current) => ({
+                                    ...current,
+                                    [item.submission!.id]: {
+                                      score: event.target.value,
+                                      reviewComment: current[item.submission!.id]?.reviewComment ?? '',
+                                    },
+                                  }))}
+                                  inputMode="numeric"
+                                />
+                              </label>
+                              <label>
+                                Review comment
+                                <textarea
+                                  value={reviewDrafts[item.submission.id]?.reviewComment ?? ''}
+                                  onChange={(event) => setReviewDrafts((current) => ({
+                                    ...current,
+                                    [item.submission!.id]: {
+                                      score: current[item.submission!.id]?.score ?? '',
+                                      reviewComment: event.target.value,
+                                    },
+                                  }))}
+                                  placeholder="Required for revision or rejection"
+                                />
+                              </label>
+                              <div className="activity-actions">
+                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'approved')} disabled={reviewingSubmission === item.submission.id}>Approve</button>
+                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'needs_revision')} disabled={reviewingSubmission === item.submission.id}>Revise</button>
+                                <button type="button" className="link-button danger" onClick={() => void submitReview(item.submission!.id, 'rejected')} disabled={reviewingSubmission === item.submission.id}>Reject</button>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className={`status-badge ${item.hasSubmission ? 'pending_approval' : 'destructive'}`}>
+                          {item.hasSubmission ? 'No review' : 'No submission'}
+                        </span>
+                      )}
+                    </article>
+                  );
+                })}
+                {!filteredReviewItems.length ? <EmptyState title="No students in this filter" detail="Choose another review status or select a different homework item." /> : null}
+              </div>
+            </>
+          ) : (
+            <EmptyState title="Review roster not loaded" detail="Choose an assignment again if the roster did not load." />
+          )}
+        </aside>
       </div>
 
       {editHomeworkId ? (
         <FormModal labelledBy="edit-homework-title" onClose={closeEditModal} onSubmit={saveHomeworkEdit}>
-          <div>
-            <span className="status-badge draft">Edit</span>
+          <div className="modal-header-block">
+            <span>{selectedSession?.title ?? 'Selected session'}</span>
             <h2 id="edit-homework-title">Edit homework</h2>
             <p>{sessionItems.find((item) => item.id === editHomeworkId)?.title ?? 'Selected homework'}</p>
           </div>
@@ -657,7 +796,7 @@ export function HomeworkPage() {
             />
             Published
           </label>
-          <div className="settings-panel compact">
+          <div className="settings-panel compact assignee-panel">
             <div className="section-heading-row compact">
               <div>
                 <h3>Assignees</h3>
@@ -667,8 +806,12 @@ export function HomeworkPage() {
                 All students
               </button>
             </div>
-            <div className="stack-list compact">
-              {students.map((student) => (
+            <label>
+              Find student
+              <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder="Name, email, or ID" />
+            </label>
+            <div className="stack-list compact assignee-list">
+              {visibleAssignees.map((student) => (
                 <label className="checkbox-row" key={student.userId}>
                   <input
                     type="checkbox"
@@ -678,7 +821,15 @@ export function HomeworkPage() {
                   {student.fullName || student.email || `Student #${student.userId}`}
                 </label>
               ))}
-              {!students.length ? <span className="muted-text">No students enrolled in this group yet.</span> : null}
+              {!students.length ? (
+                <EmptyState
+                  title="No students enrolled in this group"
+                  detail="Homework can be assigned after learners are enrolled in the selected group."
+                />
+              ) : null}
+              {students.length > 0 && !visibleAssignees.length ? (
+                <EmptyState title="No matching students" detail="Clear the assignee search to see the full roster." />
+              ) : null}
             </div>
           </div>
           <div className="modal-actions">
@@ -688,100 +839,11 @@ export function HomeworkPage() {
         </FormModal>
       ) : null}
 
-      {selectedHomeworkId ? (
-        <section className="content-section homework-review-section">
-          <div className="section-heading-row">
-            <div>
-              <h2>Review roster</h2>
-              <span>{sessionItems.find((item) => item.id === selectedHomeworkId)?.title ?? 'Selected homework'}</span>
-            </div>
-          </div>
-          {reviewLoading ? <LoadingState label="Loading review roster" /> : null}
-          {reviewRoster ? (
-            <>
-              <CountFilterRow
-                className="review-summary-row"
-                ariaLabel="Homework review filters"
-                items={reviewFilters.map((key) => ({
-                  key,
-                  label: readable(key),
-                  count: reviewRoster.summary[key] ?? 0,
-                  active: reviewFilter === key,
-                }))}
-                onSelect={setReviewFilter}
-              />
-              <div className="stack-list">
-                {filteredReviewItems.map((item) => (
-                  <article key={item.studentId} className={`stack-list-item homework-review-item ${item.reviewState}`}>
-                    <div>
-                      <strong>{item.fullName || item.email || `Student #${item.studentId}`}</strong>
-                      <span>
-                        <span className={`status-badge ${item.reviewState}`}>{item.reviewState.replace('_', ' ')}</span>
-                        {item.isLate ? ' · late' : ''}
-                      </span>
-                      {item.submission?.answerText ? <p>{item.submission.answerText}</p> : null}
-                      {item.submission?.attachmentUrl && item.submission.id ? (
-                        <button
-                          type="button"
-                          className="link-button"
-                          onClick={() => void openHomeworkSubmissionAttachment(sessionId!, selectedHomeworkId!, item.submission!.id)}
-                        >
-                          Open attachment
-                        </button>
-                      ) : null}
-                    </div>
-                    {item.submission?.id ? (
-                      <div className="review-controls">
-                        <input
-                          value={reviewDrafts[item.submission.id]?.score ?? ''}
-                          onChange={(event) => setReviewDrafts((current) => ({
-                            ...current,
-                            [item.submission!.id]: {
-                              score: event.target.value,
-                              reviewComment: current[item.submission!.id]?.reviewComment ?? '',
-                            },
-                          }))}
-                          placeholder="Score"
-                          inputMode="numeric"
-                        />
-                        <input
-                          value={reviewDrafts[item.submission.id]?.reviewComment ?? ''}
-                          onChange={(event) => setReviewDrafts((current) => ({
-                            ...current,
-                            [item.submission!.id]: {
-                              score: current[item.submission!.id]?.score ?? '',
-                              reviewComment: event.target.value,
-                            },
-                          }))}
-                          placeholder="Review comment"
-                        />
-                        <div className="activity-actions">
-                          <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'approved')} disabled={reviewingSubmission === item.submission.id}>Approve</button>
-                          <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'needs_revision')} disabled={reviewingSubmission === item.submission.id}>Revise</button>
-                          <button type="button" className="link-button danger" onClick={() => void submitReview(item.submission!.id, 'rejected')} disabled={reviewingSubmission === item.submission.id}>Reject</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className={`status-badge ${item.hasSubmission ? 'pending_approval' : 'destructive'}`}>
-                        {item.hasSubmission ? 'No review' : 'No submission'}
-                      </span>
-                    )}
-                  </article>
-                ))}
-                {!filteredReviewItems.length ? <EmptyState title="No students in this filter" detail="Choose another review status or select a different homework item." /> : null}
-              </div>
-            </>
-          ) : (
-            <EmptyState title="Select homework to review" detail="Choose an item in the selected session panel." />
-          )}
-        </section>
-      ) : null}
-
       {!loading && !items.length ? (
         <EmptyState
-          title="No homework found"
-          detail="Homework appears here after assignments are created for course sessions."
-          action={<button type="button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady}>Create homework</button>}
+          title={sessionId ? 'No homework in this scope' : 'No homework scope selected'}
+          detail={sessionId ? 'Homework appears here after assignments are created for the selected session.' : 'Choose a course, group, and session to create or review homework.'}
+          action={<button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady}>Create homework</button>}
         />
       ) : null}
       {!loading && !!items.length ? (
@@ -808,7 +870,21 @@ export function HomeworkPage() {
                 {items.map((homework) => (
                   <tr key={homework.id}>
                     <td>
-                      <strong>{homework.title}</strong>
+                      <button
+                        type="button"
+                        className="table-row-button"
+                        onClick={() => {
+                          const next = new URLSearchParams(searchParamsString);
+                          if (homework.courseId) next.set('courseId', String(homework.courseId));
+                          if (homework.groupId) next.set('groupId', String(homework.groupId));
+                          next.set('sessionId', String(homework.sessionId));
+                          setSearchParams(next);
+                          setSelectedHomeworkId(undefined);
+                          setReviewRoster(null);
+                        }}
+                      >
+                        <strong>{homework.title}</strong>
+                      </button>
                       <small>{homework.sessionTitle}</small>
                     </td>
                     <td>{homework.courseTitle ?? '-'}</td>
@@ -825,8 +901,8 @@ export function HomeworkPage() {
       ) : null}
       {isCreateModalOpen ? (
         <FormModal labelledBy="create-homework-title" onClose={closeCreateModal} onSubmit={submitHomework}>
-            <div>
-              <span className="status-badge published">{selectedSession ? formatDate(selectedSession.startsAt) : 'Session required'}</span>
+            <div className="modal-header-block">
+              <span>{selectedSession ? formatDate(selectedSession.startsAt) : 'Session required'}</span>
               <h2 id="create-homework-title">Create homework</h2>
               <p>{selectedSession ? `This assignment will be added to ${selectedSession.title}.` : 'Choose a session before creating homework.'}</p>
             </div>
@@ -878,7 +954,7 @@ export function HomeworkPage() {
               />
               Publish immediately
             </label>
-            <div className="settings-panel compact">
+            <div className="settings-panel compact assignee-panel">
               <div className="section-heading-row compact">
                 <div>
                   <h3>Assignees</h3>
@@ -888,8 +964,12 @@ export function HomeworkPage() {
                   All students
                 </button>
               </div>
-              <div className="stack-list compact">
-                {students.map((student) => (
+              <label>
+                Find student
+                <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder="Name, email, or ID" />
+              </label>
+              <div className="stack-list compact assignee-list">
+                {visibleAssignees.map((student) => (
                   <label className="checkbox-row" key={student.userId}>
                     <input
                       type="checkbox"
@@ -899,7 +979,15 @@ export function HomeworkPage() {
                     {student.fullName || student.email || `Student #${student.userId}`}
                   </label>
                 ))}
-                {!students.length ? <span className="muted-text">No students enrolled in this group yet.</span> : null}
+                {!students.length ? (
+                  <EmptyState
+                    title="No students enrolled in this group"
+                    detail="Homework can be assigned after learners are enrolled in the selected group."
+                  />
+                ) : null}
+                {students.length > 0 && !visibleAssignees.length ? (
+                  <EmptyState title="No matching students" detail="Clear the assignee search to see the full roster." />
+                ) : null}
               </div>
             </div>
             <div className="modal-actions">
@@ -910,8 +998,8 @@ export function HomeworkPage() {
       ) : null}
       {homeworkPendingDelete ? (
         <Modal labelledBy="delete-homework-title" onClose={() => setHomeworkPendingDelete(null)}>
-            <div>
-              <span className="status-badge destructive">Delete</span>
+            <div className="modal-header-block">
+              <span>Delete</span>
               <h2 id="delete-homework-title">Delete homework</h2>
               <p>{homeworkPendingDelete.title}</p>
             </div>

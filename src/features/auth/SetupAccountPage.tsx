@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { FiCheckCircle, FiLock } from 'react-icons/fi';
 import { useAuth } from './AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
+import { getPasswordSetupError } from './authPassword';
 
 function getSetupErrorMessage(error: unknown) {
   if (
@@ -42,12 +43,9 @@ export function SetupAccountPage() {
       setError('Setup token is missing. Ask your organization administrator for a new invite link.');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+    const passwordError = getPasswordSetupError(password, confirmPassword);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -78,7 +76,8 @@ export function SetupAccountPage() {
           </span>
           <h1>Set up your account</h1>
           <p>Create a password for your organization workspace. You will use this email and password for future sign-ins.</p>
-          {resolutionError ? <p className="field-error">{resolutionError}</p> : null}
+          {resolutionError ? <p className="field-error auth-error-banner">{resolutionError}</p> : null}
+          {!token ? <p className="field-error auth-error-banner">Setup token is missing. Ask your organization administrator for a new invite link.</p> : null}
         </div>
         <div className="landing-proof-grid">
           <article>
@@ -108,8 +107,11 @@ export function SetupAccountPage() {
             type="password"
             autoComplete="new-password"
             minLength={8}
+            aria-invalid={Boolean(error && password.length < 8)}
+            disabled={submitting || resolvingTenant || Boolean(resolutionError) || !token}
             required
           />
+          <span className="field-help">Use at least 8 characters.</span>
         </label>
         <label>
           Confirm password
@@ -119,11 +121,13 @@ export function SetupAccountPage() {
             type="password"
             autoComplete="new-password"
             minLength={8}
+            aria-invalid={Boolean(error && password !== confirmPassword)}
+            disabled={submitting || resolvingTenant || Boolean(resolutionError) || !token}
             required
           />
         </label>
         {error ? <p className="field-error">{error}</p> : null}
-        <button type="submit" disabled={submitting || resolvingTenant || Boolean(resolutionError)}>
+        <button type="submit" disabled={submitting || resolvingTenant || Boolean(resolutionError) || !token}>
           {submitting ? 'Setting up...' : resolvingTenant ? 'Preparing workspace...' : 'Set up account'}
         </button>
         <p className="login-support-note">

@@ -17,12 +17,15 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   if (user) return <Navigate to="/" replace />;
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    setErrorMessage('');
     if (resolutionError) {
+      setErrorMessage(resolutionError);
       toast.error(resolutionError);
       return;
     }
@@ -30,7 +33,9 @@ export function LoginPage() {
     try {
       await signIn(email, password);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Login failed');
+      const message = error instanceof Error ? error.message : 'Login failed';
+      setErrorMessage(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -55,7 +60,7 @@ export function LoginPage() {
             configured for your organization.
           </p>
           <p className="login-support-note">Powered by EduBot Learning.</p>
-          {resolutionError ? <p className="field-error">{resolutionError}</p> : null}
+          {resolutionError ? <p className="field-error auth-error-banner">{resolutionError}</p> : null}
         </div>
         <div className="landing-proof-grid">
           {proofPoints.map((item) => {
@@ -83,11 +88,11 @@ export function LoginPage() {
             </div>
             <div className="preview-stat-row">
               <span><strong>92%</strong> attendance</span>
-              <span><strong>18</strong> reviews</span>
-              <span><strong>7</strong> certificates</span>
+              <span><strong>18</strong> homework reviews</span>
+              <span><strong>7</strong> certificate approvals</span>
             </div>
             <div className="preview-list">
-              <span><FiBookOpen /> English A2 · 10:00</span>
+              <span><FiBookOpen /> English A2 · 10:00 session</span>
               <span><FiUsers /> Group B1 · homework queue</span>
               <span><FiAward /> Certificate approvals ready</span>
             </div>
@@ -103,12 +108,29 @@ export function LoginPage() {
         </div>
         <label>
           Email
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
+          <input
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            type="email"
+            autoComplete="email"
+            disabled={submitting || resolvingTenant || Boolean(resolutionError)}
+            aria-invalid={Boolean(errorMessage)}
+            required
+          />
         </label>
         <label>
           Password
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            autoComplete="current-password"
+            disabled={submitting || resolvingTenant || Boolean(resolutionError)}
+            aria-invalid={Boolean(errorMessage)}
+            required
+          />
         </label>
+        {errorMessage ? <p className="field-error">{errorMessage}</p> : null}
         <button type="submit" disabled={submitting || resolvingTenant || Boolean(resolutionError)}>
           {submitting ? 'Signing in...' : resolvingTenant ? 'Preparing workspace...' : 'Sign in'}
         </button>

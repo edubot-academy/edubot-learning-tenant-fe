@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiActivity, FiCreditCard, FiGlobe, FiLock, FiSliders, FiUserCheck } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
+import { EmptyState, LoadingState } from '../../components/DataState';
 import { readable } from '../../lib/format';
 import { useTenant } from '../tenant/TenantProvider';
 import { useTheme } from '../theme/themeContext';
@@ -66,6 +67,10 @@ function isHttpUrl(value: string) {
   }
 }
 
+function isEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function recordText(record: Record<string, unknown> | null | undefined, key: string) {
   const value = record?.[key];
   return typeof value === 'string' ? value : null;
@@ -73,6 +78,14 @@ function recordText(record: Record<string, unknown> | null | undefined, key: str
 
 function recordBoolean(record: Record<string, unknown> | null | undefined, key: string) {
   return record?.[key] === true;
+}
+
+function activityDetail(row: TenantActivityLog) {
+  if (row.targetType && row.targetId) return `${readable(row.targetType)} ${row.targetId}`;
+  if (row.targetType) return readable(row.targetType);
+  const metadataKeys = row.metadata ? Object.keys(row.metadata) : [];
+  if (metadataKeys.length) return `${metadataKeys.length} detail${metadataKeys.length === 1 ? '' : 's'} updated`;
+  return 'Tenant workspace';
 }
 
 type SettingsTab = 'profile' | 'branding' | 'policies' | 'access' | 'platform' | 'features' | 'activity';
@@ -104,6 +117,7 @@ export function SettingsPage() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile');
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
   const [brandingErrors, setBrandingErrors] = useState<Record<string, string>>({});
+  const [policyErrors, setPolicyErrors] = useState<Record<string, string>>({});
   const [activityRows, setActivityRows] = useState<TenantActivityLog[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const flags = useMemo(() => activeTenant?.featureFlags ?? {}, [activeTenant?.featureFlags]);
@@ -140,6 +154,11 @@ export function SettingsPage() {
     () => featureRows.filter((feature) => feature.enabled).length,
     [featureRows],
   );
+  const brandingPreviewStyle = {
+    '--settings-preview-primary': brandingForm.primaryColor || '#122144',
+    '--settings-preview-secondary': brandingForm.secondaryColor || '#14b8a6',
+    '--settings-preview-accent': brandingForm.accentColor || '#f17e22',
+  } as CSSProperties;
 
   useEffect(() => {
     if (!activeTenant) {
@@ -229,10 +248,10 @@ export function SettingsPage() {
     if (!profileForm.name.trim()) {
       nextErrors.name = 'Tenant name is required.';
     }
-    if (profileForm.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileForm.email.trim())) {
+    if (profileForm.email.trim() && !isEmail(profileForm.email.trim())) {
       nextErrors.email = 'Enter a valid tenant email.';
     }
-    if (profileForm.contactEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileForm.contactEmail.trim())) {
+    if (profileForm.contactEmail.trim() && !isEmail(profileForm.contactEmail.trim())) {
       nextErrors.contactEmail = 'Enter a valid contact email.';
     }
     if (profileForm.website.trim() && !isHttpUrl(profileForm.website.trim())) {
@@ -323,6 +342,17 @@ export function SettingsPage() {
   const saveTenantPolicies = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activeTenant) return;
+    const nextErrors: Record<string, string> = {};
+    if (tenantSettingsForm.supportEmail.trim() && !isEmail(tenantSettingsForm.supportEmail.trim())) {
+      nextErrors.supportEmail = 'Enter a valid support email.';
+    }
+    if (Object.keys(nextErrors).length) {
+      setPolicyErrors(nextErrors);
+      toast.error(nextErrors.supportEmail);
+      return;
+    }
+
+    setPolicyErrors({});
     setSavingPolicies(true);
     try {
       await updateTenantSettings(activeTenant.id, {
@@ -474,7 +504,9 @@ export function SettingsPage() {
         {canEditTenantProfile && editingProfile ? (
           <>
             <div className="settings-grid embedded">
-              <div className="two-col">
+              <section className="form-section">
+                <h3>Workspace identity</h3>
+                <div className="two-col">
                 <label>
                   Name
                   <input
@@ -518,8 +550,11 @@ export function SettingsPage() {
                   {profileErrors.email ? <span className="field-error">{profileErrors.email}</span> : null}
                 </label>
                 <label>Phone<input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} /></label>
-              </div>
-              <div className="two-col">
+                </div>
+              </section>
+              <section className="form-section">
+                <h3>Primary contact</h3>
+                <div className="two-col">
                 <label>Contact name<input value={profileForm.contactName} onChange={(event) => setProfileForm((current) => ({ ...current, contactName: event.target.value }))} /></label>
                 <label>
                   Contact email
@@ -536,32 +571,38 @@ export function SettingsPage() {
                   {profileErrors.contactEmail ? <span className="field-error">{profileErrors.contactEmail}</span> : null}
                 </label>
                 <label>Contact phone<input value={profileForm.contactPhone} onChange={(event) => setProfileForm((current) => ({ ...current, contactPhone: event.target.value }))} /></label>
+                </div>
+              </section>
+              <section className="form-section">
+                <h3>Location and legal</h3>
+                <div className="two-col">
                 <label>City<input value={profileForm.city} onChange={(event) => setProfileForm((current) => ({ ...current, city: event.target.value }))} /></label>
                 <label>Country<input value={profileForm.country} onChange={(event) => setProfileForm((current) => ({ ...current, country: event.target.value }))} /></label>
                 <label>Address<input value={profileForm.address} onChange={(event) => setProfileForm((current) => ({ ...current, address: event.target.value }))} /></label>
+                <label>Tax ID<input value={profileForm.taxId} onChange={(event) => setProfileForm((current) => ({ ...current, taxId: event.target.value }))} /></label>
+                </div>
+              </section>
+              <section className="form-section">
+                <h3>Social and notes</h3>
+                <div className="two-col">
                 <label>Telegram<input value={profileForm.telegram} onChange={(event) => setProfileForm((current) => ({ ...current, telegram: event.target.value }))} /></label>
                 <label>WhatsApp<input value={profileForm.whatsapp} onChange={(event) => setProfileForm((current) => ({ ...current, whatsapp: event.target.value }))} /></label>
                 <label>Instagram<input value={profileForm.instagram} onChange={(event) => setProfileForm((current) => ({ ...current, instagram: event.target.value }))} /></label>
-                <label>Tax ID<input value={profileForm.taxId} onChange={(event) => setProfileForm((current) => ({ ...current, taxId: event.target.value }))} /></label>
                 <label className="wide-field">Notes<textarea value={profileForm.notes} onChange={(event) => setProfileForm((current) => ({ ...current, notes: event.target.value }))} rows={4} /></label>
-              </div>
+                </div>
+              </section>
             </div>
           </>
         ) : (
           <div className="settings-grid embedded">
             <div className="definition-grid">
               <span>Name</span><strong>{readable(activeTenant?.name)}</strong>
-              <span>Status</span><strong>{readable(activeTenant?.status)}</strong>
-              <span>Plan</span><strong>{readable(activeTenant?.plan)}</strong>
-              <span>Billing</span><strong>{readable(activeTenant?.billingStatus)}</strong>
               <span>Website</span><strong>{readable(activeTenant?.website)}</strong>
               <span>Email</span><strong>{readable(activeTenant?.email)}</strong>
               <span>Phone</span><strong>{readable(activeTenant?.phone)}</strong>
               <span>Tax ID</span><strong>{readable(activeTenant?.taxId)}</strong>
             </div>
             <div className="definition-grid">
-              <span>Subdomain</span><strong>{readable(activeTenant?.subdomain)}</strong>
-              <span>Custom domain</span><strong>{readable(activeTenant?.customDomain)}</strong>
               <span>Timezone</span><strong>{readable(activeTenant?.timezone)}</strong>
               <span>Locale</span><strong>{readable(activeTenant?.locale)}</strong>
               <span>Contact</span><strong>{readable(activeTenant?.contactName)}</strong>
@@ -599,6 +640,7 @@ export function SettingsPage() {
         </div>
         {editingBranding && canEditTenantProfile ? (
           <div className="settings-grid embedded">
+            <section className="form-section">
             <div className="two-col">
               <label>Display name<input value={brandingForm.displayName} onChange={(event) => setBrandingForm((current) => ({ ...current, displayName: event.target.value }))} placeholder={activeTenant?.name ?? 'Tenant name'} /></label>
               <label>
@@ -616,6 +658,10 @@ export function SettingsPage() {
                 {brandingErrors.certificateLogoUrl ? <span className="field-error">{brandingErrors.certificateLogoUrl}</span> : null}
               </label>
             </div>
+            <p className="panel-note">Tenant logo upload controls the main app mark. Certificate logo URL is an optional certificate-specific image when the certificate template needs a separate mark.</p>
+            </section>
+            <section className="form-section">
+              <h3>Color system</h3>
             <div className="three-col">
               {([
                 ['primaryColor', 'Primary color'],
@@ -641,6 +687,7 @@ export function SettingsPage() {
                 </label>
               ))}
             </div>
+            </section>
           </div>
         ) : (
           <div className="settings-grid embedded">
@@ -655,6 +702,21 @@ export function SettingsPage() {
             </div>
           </div>
         )}
+        <section className="settings-brand-preview" style={brandingPreviewStyle}>
+          <div className="settings-brand-preview-header">
+            <div className="settings-brand-mark">
+              {activeTenant?.logoUrl ? <img src={activeTenant.logoUrl} alt="" /> : (brandingForm.displayName || activeTenant?.name || 'T').slice(0, 1)}
+            </div>
+            <div>
+              <strong>{brandingForm.displayName || recordText(activeTenant?.branding, 'displayName') || activeTenant?.name || 'Tenant'}</strong>
+              <span>Tenant-facing UI preview</span>
+            </div>
+          </div>
+          <div className="settings-brand-preview-body">
+            <span>Primary action</span>
+            <button type="button">Continue</button>
+          </div>
+        </section>
       </form>
       ) : null}
 
@@ -679,7 +741,20 @@ export function SettingsPage() {
         {editingPolicies && canEditTenantProfile ? (
           <div className="settings-grid embedded">
             <div className="two-col">
-              <label>Support email<input type="email" value={tenantSettingsForm.supportEmail} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, supportEmail: event.target.value }))} /></label>
+              <label>
+                Support email
+                <input
+                  type="email"
+                  value={tenantSettingsForm.supportEmail}
+                  onChange={(event) => {
+                    setTenantSettingsForm((current) => ({ ...current, supportEmail: event.target.value }));
+                    setPolicyErrors((current) => ({ ...current, supportEmail: '' }));
+                  }}
+                  className={policyErrors.supportEmail ? 'input-error' : ''}
+                  aria-invalid={!!policyErrors.supportEmail}
+                />
+                {policyErrors.supportEmail ? <span className="field-error">{policyErrors.supportEmail}</span> : null}
+              </label>
               <label>
                 Default course visibility
                 <select value={tenantSettingsForm.defaultCourseVisibility} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, defaultCourseVisibility: event.target.value as typeof tenantSettingsForm.defaultCourseVisibility }))}>
@@ -692,11 +767,17 @@ export function SettingsPage() {
             <div className="two-col">
               <label className="checkbox-row">
                 <input type="checkbox" checked={tenantSettingsForm.allowSelfEnrollment} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, allowSelfEnrollment: event.target.checked }))} />
-                Allow self enrollment
+                <span>
+                  <strong>Allow self enrollment</strong>
+                  <small>Learners can request or join available courses when the course allows it.</small>
+                </span>
               </label>
               <label className="checkbox-row">
                 <input type="checkbox" checked={tenantSettingsForm.requireEnrollmentApproval} onChange={(event) => setTenantSettingsForm((current) => ({ ...current, requireEnrollmentApproval: event.target.checked }))} />
-                Require enrollment approval
+                <span>
+                  <strong>Require enrollment approval</strong>
+                  <small>Self-enrollment requests wait for staff approval before access is granted.</small>
+                </span>
               </label>
             </div>
           </div>
@@ -720,7 +801,7 @@ export function SettingsPage() {
           </div>
           <span className="status-badge role-owner">Platform managed</span>
         </div>
-        <div className="flag-grid">
+        <div className="flag-grid settings-status-grid">
           {featureRows.map((feature) => (
             <div key={feature.key} className="flag-row">
               <div>
@@ -746,7 +827,7 @@ export function SettingsPage() {
           </div>
           <FiActivity />
         </div>
-        {activityLoading ? <p className="panel-note">Loading activity...</p> : null}
+        {activityLoading ? <LoadingState label="Loading tenant activity" /> : null}
         {!activityLoading ? (
           <div className="stack-list">
             {activityRows.map((row) => (
@@ -755,10 +836,15 @@ export function SettingsPage() {
                   <strong>{readable(row.action)}</strong>
                   <span>{row.actorFullName || row.actorEmail || 'System'} · {new Date(row.createdAt).toLocaleString()}</span>
                 </div>
-                <span className="muted-text">{row.metadata ? Object.keys(row.metadata).join(', ') : row.targetType || 'tenant'}</span>
+                <span className="muted-text">{activityDetail(row)}</span>
               </article>
             ))}
-            {!activityRows.length ? <span className="muted-text">No tenant activity recorded yet.</span> : null}
+            {!activityRows.length ? (
+              <EmptyState
+                title="No tenant activity recorded yet"
+                detail="Backend activity events will appear here when tenant changes are recorded."
+              />
+            ) : null}
           </div>
         ) : null}
       </section>

@@ -21,6 +21,62 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - No unreleased changes yet.
 
+## 1.0.0 - 2026-05-13
+
+### Added
+
+- UI/UX roadmap documentation for the completed 0.1 through 1.0 improvement plan.
+- Design-system documentation and a visual QA checklist for future page-level changes.
+- Shared workflow helpers for course readiness, blocker copy, workflow paths, and URL parameter preservation.
+- Shared tested helpers for attendance counts, attendance change detection, attendance save blocking, and attendance roster filtering.
+- Shared tested helpers for homework review filtering, homework form validation, session readiness, and review blocking.
+- Shared tested helpers for certificate tabs, eligibility messaging, student/certificate filtering, certificate settings validation, and decision blocking.
+- Shared tested helpers for auth password validation, tenant member display/role duplication, tenant feature defaults, and app navigation visibility.
+- Route-level lazy loading for auth, dashboard, course, group, session, attendance, homework, certificate, member, settings, and student pages.
+- Route-level recovery UI for failed workspace views.
+- Mobile bottom tab bar with More menu, Escape/outside-click behavior, and mobile Sign out access.
+- Focus-trapped modals with Escape handling, backdrop close, focus restoration, hidden-control filtering, and regression tests.
+- Keyboard-tested workspace tabs with roving tab index, arrow navigation, Home, and End behavior.
+- Reduced-motion handling for transitions and loading animation.
+
+### Changed
+
+- Stabilized the shared visual language across buttons, panels, cards, tables, status badges, stat tiles, modals, tabs, filters, empty states, loading states, dark mode, and responsive layouts.
+- Reworked the app shell and sidebar for clearer tenant branding, less duplicate tenant/role information, aligned Sign out controls, and feature/role-safe navigation.
+- Reworked the student dashboard around a stronger continue-learning priority, responsive task cards, clearer material/recording grouping, learner-facing status labels, and better certificate actions.
+- Reworked the staff overview with clearer operational hierarchy, priority items, role-aware stats, feature-disabled explanations, existing queues, and responsive layout using current tenant data.
+- Improved Courses, Groups, and Sessions workflow consistency with shared context panels, readiness copy, selected ID preservation, deep links, session setup flow, group summaries, and generated-session previews.
+- Improved Attendance and Homework ergonomics with clearer workflow hierarchy, mobile rosters/review layouts, save states, bulk actions, validation copy, and destructive confirmations where supported.
+- Refined Certificates with stronger tab structure, branding/course preview context, exact preview behavior, eligibility and issue flows, searchable student picker, registry pagination, mobile actions, and decision modals.
+- Improved Settings, Members, and Auth flows with better grouping, validation, save/disabled states, feature visibility presentation, tenant branding, member cards, invite/add-existing messaging, duplicate-role prevention, and actionable auth/setup errors.
+- Replaced broad initial route imports with dynamic route chunks, reducing the initial JavaScript bundle and removing the Vite oversized initial chunk warning.
+- Updated package version to `1.0.0`.
+
+### Fixed
+
+- Fixed mobile tab bar flicker and disappearing behavior caused by overflowing page content and unstable navigation layout.
+- Fixed Sessions repeated API calls by separating data-fetch effects from URL-driven selection effects.
+- Fixed Attendance and Homework repeated API calls by applying the same fetch/selection separation pattern.
+- Fixed Groups deep links so requested group IDs are preserved after group data loads.
+- Fixed mobile overflows in overview/course session panels and table-heavy workflows.
+- Fixed certificate preview overflow and dense registry scanability issues.
+- Fixed modal focus cycling so hidden file inputs and inert/hidden content are skipped.
+- Fixed member role changes and invite/add-existing flows so duplicate tenant-role assignments are blocked.
+- Fixed tenant/setup-token and auth error states so they are visible and actionable.
+
+### Tests
+
+- Added focused Vitest coverage for workflow readiness and URL helpers.
+- Added focused Vitest coverage for attendance, homework, certificate, auth password, member access, tenant role, tenant feature, navigation, workspace tab, and modal focus behavior.
+- `npm run lint` passes.
+- `npm test` passes with 12 test files and 43 tests.
+- `npm run build` passes with route chunks and no oversized initial chunk warning.
+
+### Migration Notes
+
+- This release is a frontend production-readiness release. No backend API migration is required.
+- Browser spot checks are still recommended for mobile and dark-mode views when deploying to a tenant with real rosters, certificates, and long course/session names.
+
 ## 0.3.0 - 2026-05-12
 
 ### Added

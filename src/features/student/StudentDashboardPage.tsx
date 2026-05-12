@@ -118,6 +118,44 @@ function statusClass(value?: string | null) {
   return String(value || 'draft').toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
 }
 
+function displayDate(value?: string | null, fallback = 'Date not scheduled') {
+  return value ? formatDate(value) : fallback;
+}
+
+function displayText(value?: string | number | boolean | null, fallback = 'Not set') {
+  return value === null || value === undefined || value === '' ? fallback : readable(value);
+}
+
+function dueLabel(value?: string | null) {
+  return value ? `Due ${formatDate(value)}` : 'No due date';
+}
+
+function taskContext(task?: StudentTask | StudentHomework | null) {
+  if (!task) return '';
+  return task.courseTitle ?? (!isActivityTask(task) ? task.sessionTitle : undefined) ?? '';
+}
+
+function taskDueDate(task?: StudentTask | StudentHomework | null) {
+  if (!task) return undefined;
+  return isActivityTask(task) ? task.dueAt : task.deadline ?? task.dueAt;
+}
+
+function progressLabel(value: number) {
+  if (value >= 100) return 'Completed';
+  if (value <= 0) return 'Not started';
+  return 'In progress';
+}
+
+function taskStatusLabel(value?: string | null) {
+  const status = String(value ?? '').trim();
+  return status ? readable(status) : 'Open';
+}
+
+function certificateStatusLabel(value?: string | null) {
+  const status = String(value ?? '').trim();
+  return status ? readable(status) : 'Pending';
+}
+
 export function StudentDashboardPage() {
   const { activeTenant } = useTenant();
   const [courses, setCourses] = useState<StudentCourse[]>([]);
@@ -289,12 +327,48 @@ export function StudentDashboardPage() {
   }, [homework]);
 
   const featuredTask = openTasks[0] ?? tasks[0] ?? null;
+  const primaryTask = featuredTask ?? nextHomework;
+  const primaryAction = nextSession?.liveJoinUrl
+    ? {
+      eyebrow: 'Continue learning',
+      title: nextSession.title ?? nextSession.sessionTitle ?? 'Join your next session',
+      detail: `${displayText(nextSession.courseTitle, 'Course not set')} · ${displayDate(nextSession.startsAt)}`,
+      action: <a className="primary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">Join session</a>,
+      icon: FiClock,
+    }
+    : primaryTask
+      ? {
+        eyebrow: 'Continue learning',
+        title: primaryTask.title ?? 'Open your next task',
+        detail: `${displayText(taskContext(primaryTask), 'Course not set')} · ${dueLabel(taskDueDate(primaryTask))}`,
+        action: <button type="button" onClick={() => selectTask(primaryTask)}>Open task</button>,
+        icon: FiCheckCircle,
+      }
+      : {
+        eyebrow: 'Continue learning',
+        title: 'Nothing due right now',
+        detail: 'New sessions, homework, and activities will appear here when assigned.',
+        action: <span className="status-badge approved">Clear</span>,
+        icon: FiCheckCircle,
+      };
 
   const averageProgress = useMemo(() => {
     if (!courses.length) return 0;
     const total = courses.reduce((sum, course) => sum + (course.progressPercent ?? course.progress ?? 0), 0);
     return Math.round(total / courses.length);
   }, [courses]);
+  const materialItems = useMemo(() => [
+    ...resources.map((session, index) => ({ kind: 'resource' as const, session, key: `resource-${session.id ?? index}` })),
+    ...recordings.map((session, index) => ({ kind: 'recording' as const, session, key: `recording-${session.id ?? index}` })),
+  ].slice(0, 8), [recordings, resources]);
+  const selectedQuizTotal = selectedTask && isActivityTask(selectedTask) && selectedTask.taskType === 'quiz'
+    ? selectedTask.questions?.length ?? 0
+    : 0;
+  const selectedQuizAnswered = selectedTask && isActivityTask(selectedTask) && selectedTask.taskType === 'quiz'
+    ? selectedTask.questions?.filter((question) => (quizAnswers[question.id] ?? []).length > 0).length ?? 0
+    : 0;
+  const canSubmitSelectedTask = !selectedQuizTotal || selectedQuizAnswered === selectedQuizTotal;
+  const PrimaryActionIcon = primaryAction.icon;
 
   if (loading) return <LoadingState label="Loading student workspace" />;
 
@@ -302,7 +376,46 @@ export function StudentDashboardPage() {
     <>
       <PageHeader title="My learning" eyebrow={activeTenant?.name} />
 
-      <div className="stat-grid compact">
+      <section className="student-focus-grid">
+        <article className="student-focus-card primary">
+          <div className="student-focus-icon"><PrimaryActionIcon /></div>
+          <div>
+            <span className="eyebrow">{primaryAction.eyebrow}</span>
+            <h2>{primaryAction.title}</h2>
+            <p>{primaryAction.detail}</p>
+          </div>
+          <div className="student-focus-actions">{primaryAction.action}</div>
+        </article>
+
+        <article className="student-focus-card">
+          <div className="student-focus-icon"><FiClock /></div>
+          <div>
+            <span className="eyebrow">Next live session</span>
+            <h2>{nextSession?.title ?? nextSession?.sessionTitle ?? 'No upcoming session'}</h2>
+            <p>{nextSession ? `${displayText(nextSession.courseTitle, 'Course not set')} · ${displayDate(nextSession.startsAt)}` : 'You are clear for now. New sessions will appear here when scheduled.'}</p>
+          </div>
+          {nextSession?.liveJoinUrl ? (
+            <a className="secondary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">Join</a>
+          ) : (
+            <span className="status-badge draft">{nextSession ? readable(nextSession.groupName) : 'Clear'}</span>
+          )}
+        </article>
+
+        <article className="student-focus-card">
+          <div className="student-focus-icon"><FiPlayCircle /></div>
+          <div>
+            <span className="eyebrow">Course progress</span>
+            <h2>{averageProgress}% average</h2>
+            <p>{courses.length ? `${courses.length} active course${courses.length === 1 ? '' : 's'} · ${progressLabel(averageProgress)}` : 'Enrollments will appear once your instructor adds you to a group.'}</p>
+          </div>
+          <div className="progress-cell student-focus-progress">
+            <span style={{ width: `${Math.max(0, Math.min(100, averageProgress))}%` }} />
+            <strong>{averageProgress}%</strong>
+          </div>
+        </article>
+      </section>
+
+      <div className="stat-grid compact student-stat-grid">
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
@@ -315,59 +428,30 @@ export function StudentDashboardPage() {
         })}
       </div>
 
-      <section className="student-focus-grid">
-        <article className="student-focus-card primary">
-          <div className="student-focus-icon"><FiClock /></div>
+      <section className="content-section student-task-section">
+        <div className="section-heading-row">
           <div>
-            <span className="eyebrow">Next live session</span>
-            <h2>{nextSession?.title ?? nextSession?.sessionTitle ?? 'No upcoming session'}</h2>
-            <p>{nextSession ? `${readable(nextSession.courseTitle)} · ${formatDate(nextSession.startsAt)}` : 'You are clear for now. New sessions will appear here when scheduled.'}</p>
+            <h2>Tasks</h2>
+            <span>{openTasks.length} open task{openTasks.length === 1 ? '' : 's'} need attention</span>
           </div>
-          <div className="student-focus-actions">
-            {nextSession?.liveJoinUrl ? (
-              <a className="primary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">
-                Join session
-              </a>
-            ) : (
-              <span className="status-badge draft">{nextSession ? readable(nextSession.groupName) : 'Clear'}</span>
-            )}
+        </div>
+        {!tasks.length ? <EmptyState title="No tasks right now" detail="Assigned homework and required learning actions will appear here when they are available." /> : (
+          <div className="student-task-list">
+            {tasks.map((task, index) => (
+              <article className="student-task-card" key={task.id ?? index}>
+                <div>
+                  <strong>{task.title ?? readable(task.type)}</strong>
+                  <span>{displayText(task.courseTitle, 'Course not set')} · {dueLabel(task.dueAt)}</span>
+                  <small>{displayText(task.type ?? task.taskType ?? task.activityType, 'Activity')}</small>
+                </div>
+                <div className="student-task-action">
+                  <span className={`status-badge ${statusClass(task.status)}`}>{taskStatusLabel(task.status)}</span>
+                  <button type="button" className="secondary-button" onClick={() => selectTask(task)}>Open</button>
+                </div>
+              </article>
+            ))}
           </div>
-        </article>
-
-        <article className="student-focus-card">
-          <div className="student-focus-icon"><FiCheckCircle /></div>
-          <div>
-            <span className="eyebrow">Next task</span>
-            <h2>{featuredTask?.title ?? nextHomework?.title ?? 'No open tasks'}</h2>
-            <p>
-              {featuredTask
-                ? `${readable(featuredTask.courseTitle)} · due ${formatDate(featuredTask.dueAt)}`
-                : nextHomework
-                  ? `${readable(nextHomework.courseTitle ?? nextHomework.sessionTitle)} · due ${formatDate(nextHomework.deadline ?? nextHomework.dueAt)}`
-                  : 'Assignments and quizzes will appear here.'}
-            </p>
-          </div>
-          {featuredTask ? (
-            <button type="button" className="secondary-button" onClick={() => selectTask(featuredTask)}>Open</button>
-          ) : nextHomework ? (
-            <button type="button" className="secondary-button" onClick={() => selectTask(nextHomework)}>Open</button>
-          ) : (
-            <span className="status-badge approved">Complete</span>
-          )}
-        </article>
-
-        <article className="student-focus-card">
-          <div className="student-focus-icon"><FiPlayCircle /></div>
-          <div>
-            <span className="eyebrow">Course progress</span>
-            <h2>{averageProgress}% average</h2>
-            <p>{courses.length ? `${courses.length} active course${courses.length === 1 ? '' : 's'} in progress` : 'Enrollments will appear once your instructor adds you to a group.'}</p>
-          </div>
-          <div className="progress-cell student-focus-progress">
-            <span style={{ width: `${Math.max(0, Math.min(100, averageProgress))}%` }} />
-            <strong>{averageProgress}%</strong>
-          </div>
-        </article>
+        )}
       </section>
 
       <div className="student-workspace-grid">
@@ -376,7 +460,7 @@ export function StudentDashboardPage() {
             <FiBookOpen />
             <h2>My courses</h2>
           </div>
-          {!courses.length ? <EmptyState title="No active courses" /> : (
+          {!courses.length ? <EmptyState title="No active courses" detail="Courses appear here after your account is enrolled in a tenant course or group." /> : (
             <div className="stack-list">
               {courses.slice(0, 6).map((course, index) => {
                 const progress = course.progressPercent ?? course.progress ?? 0;
@@ -384,8 +468,9 @@ export function StudentDashboardPage() {
                   <article className="stack-list-item" key={course.id ?? course.courseId ?? index}>
                     <div>
                       <strong>{course.title ?? course.courseTitle ?? `Course ${index + 1}`}</strong>
-                      <span>{readable(course.groupName)}</span>
-                      <span className={`status-badge ${statusClass(course.status)}`}>{readable(course.status)}</span>
+                      <span>{displayText(course.groupName, 'Group not assigned')}</span>
+                      <span className={`status-badge ${statusClass(course.status)}`}>{displayText(course.status, 'Active')}</span>
+                      <span>{progressLabel(progress)}</span>
                     </div>
                     <div className="progress-cell">
                       <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
@@ -401,40 +486,27 @@ export function StudentDashboardPage() {
         <section className="content-section">
           <div className="student-panel-heading">
             <FiFileText />
-            <h2>Resources</h2>
+            <h2>Materials</h2>
           </div>
-          {!resources.length ? <EmptyState title="No resources yet" /> : (
+          {!materialItems.length ? <EmptyState title="No materials yet" detail="Session resources and recordings will appear here when instructors publish them." /> : (
             <div className="stack-list">
-              {resources.map((session, index) => (
-                <article className="stack-list-item" key={session.id ?? index}>
+              {materialItems.map(({ kind, session, key }, index) => (
+                <article className="stack-list-item" key={key}>
                   <div>
-                    <strong>{session.sessionTitle ?? session.title ?? `Session ${index + 1}`}</strong>
-                    <span>{readable(session.courseTitle)} · {formatDate(session.startsAt)}</span>
-                    {session.materials?.slice(0, 3).map((material, materialIndex) => (
-                      <a key={`${material.url}-${materialIndex}`} href={material.url} target="_blank" rel="noreferrer">{material.title ?? readable(material.type)}</a>
-                    ))}
+                    <strong>{session.sessionTitle ?? session.title ?? `${kind === 'recording' ? 'Recording' : 'Session'} ${index + 1}`}</strong>
+                    <span>{displayText(session.courseTitle, 'Course not set')} · {displayDate(session.startsAt)}</span>
+                    <span className="status-badge draft">{kind === 'recording' ? 'Recording' : 'Resource'}</span>
                   </div>
-                  {session.liveJoinUrl ? <a href={session.liveJoinUrl} target="_blank" rel="noreferrer">Join</a> : null}
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="content-section">
-          <div className="student-panel-heading">
-            <FiPlayCircle />
-            <h2>Recordings</h2>
-          </div>
-          {!recordings.length ? <EmptyState title="No recordings yet" /> : (
-            <div className="stack-list">
-              {recordings.map((recording, index) => (
-                <article className="stack-list-item" key={recording.id ?? index}>
-                  <div>
-                    <strong>{recording.title ?? recording.sessionTitle ?? `Recording ${index + 1}`}</strong>
-                    <span>{readable(recording.courseTitle)} · {formatDate(recording.startsAt)}</span>
+                  <div className="student-material-actions">
+                    {kind === 'resource' ? session.materials?.slice(0, 3).map((material, materialIndex) => (
+                      material.url ? (
+                        <a className="secondary-link-button" key={`${material.url}-${materialIndex}`} href={material.url} target="_blank" rel="noreferrer">
+                          {material.title ?? displayText(material.type, 'Open')}
+                        </a>
+                      ) : null
+                    )) : null}
+                    {kind === 'recording' && typeof session.url === 'string' ? <a className="secondary-link-button" href={session.url} target="_blank" rel="noreferrer">Open</a> : null}
                   </div>
-                  {'url' in recording && typeof recording.url === 'string' ? <a href={recording.url} target="_blank" rel="noreferrer">Open</a> : null}
                 </article>
               ))}
             </div>
@@ -446,14 +518,14 @@ export function StudentDashboardPage() {
             <FiCalendar />
             <h2>Upcoming sessions</h2>
           </div>
-          {!sessions.length ? <EmptyState title="No upcoming sessions" /> : (
+          {!sessions.length ? <EmptyState title="No upcoming sessions" detail="Scheduled live or offline classes will appear here once your groups have upcoming sessions." /> : (
             <div className="stack-list">
               {sessions.map((session, index) => (
                 <article className="stack-list-item" key={session.id ?? index}>
                   <div>
                     <strong>{session.title ?? `Session ${index + 1}`}</strong>
-                    <span>{readable(session.courseTitle)} · {formatDate(session.startsAt)}</span>
-                    <span className="status-badge draft">{readable(session.groupName)}</span>
+                    <span>{displayText(session.courseTitle, 'Course not set')} · {displayDate(session.startsAt)}</span>
+                    <span className="status-badge draft">{displayText(session.groupName, 'Group not set')}</span>
                   </div>
                   {session.liveJoinUrl ? <a href={session.liveJoinUrl} target="_blank" rel="noreferrer">Join</a> : null}
                 </article>
@@ -468,7 +540,7 @@ export function StudentDashboardPage() {
               <FiCheckCircle />
               <h2>Attendance</h2>
             </div>
-            {!attendance.length ? <EmptyState title="No attendance marked yet" /> : (
+            {!attendance.length ? <EmptyState title="No attendance marked yet" detail="Attendance records will appear after instructors mark your session attendance." /> : (
               <>
                 <div className="student-attendance-summary">
                   <strong>{attendanceRate}%</strong>
@@ -478,8 +550,8 @@ export function StudentDashboardPage() {
                   {attendance.slice(0, 6).map((record, index) => (
                     <article className="stack-list-item" key={record.id ?? `${record.sessionId}-${index}`}>
                       <div>
-                        <strong>{formatDate(record.sessionDate)}</strong>
-                        <span>Course #{record.courseId ?? 'unknown'}</span>
+                        <strong>{displayDate(record.sessionDate)}</strong>
+                        <span>Session attendance</span>
                         {record.notes ? <span>{record.notes}</span> : null}
                       </div>
                       <span className={`status-badge ${statusClass(record.status)}`}>{readable(record.status)}</span>
@@ -497,14 +569,14 @@ export function StudentDashboardPage() {
               <FiCheckCircle />
               <h2>Homework</h2>
             </div>
-            {!homework.length ? <EmptyState title="No homework assigned" /> : (
+            {!homework.length ? <EmptyState title="No homework assigned" detail="Homework appears here when an instructor assigns work to your course, group, or session." /> : (
               <div className="stack-list">
                 {homework.slice(0, 8).map((item, index) => (
                   <article className="stack-list-item" key={item.id ?? index}>
                     <div>
                       <strong>{item.title ?? `Homework ${index + 1}`}</strong>
-                      <span>{readable(item.courseTitle ?? item.sessionTitle)} · due {formatDate(item.deadline ?? item.dueAt)}</span>
-                      <span className={`status-badge ${statusClass(item.reviewState ?? item.status)}`}>{readable(item.reviewState ?? item.status)}</span>
+                      <span>{displayText(item.courseTitle ?? item.sessionTitle, 'Course not set')} · {dueLabel(item.deadline ?? item.dueAt)}</span>
+                      <span className={`status-badge ${statusClass(item.reviewState ?? item.status)}`}>{taskStatusLabel(item.reviewState ?? item.status)}</span>
                       {item.mySubmission?.reviewComment ? <span>{item.mySubmission.reviewComment}</span> : null}
                     </div>
                     <button type="button" className="secondary-button" onClick={() => selectTask(item)}>
@@ -523,20 +595,25 @@ export function StudentDashboardPage() {
               <FiAward />
               <h2>Certificates</h2>
             </div>
-            {!certificates.length ? <EmptyState title="No certificates yet" /> : (
+            {!certificates.length ? <EmptyState title="No certificates yet" detail="Issued certificates will appear here when you become eligible and a certificate is released." /> : (
               <div className="stack-list">
                 {certificates.slice(0, 6).map((certificate, index) => (
                   <article className="stack-list-item" key={certificate.id ?? certificate.publicId ?? index}>
                     <div>
                       <strong>{certificate.courseTitle ?? certificate.publicId ?? `Certificate ${index + 1}`}</strong>
-                      <span>{formatDate(certificate.issuedAt)}</span>
-                      <span className={`status-badge ${statusClass(certificate.status)}`}>{readable(certificate.status)}</span>
+                      <span>{displayDate(certificate.issuedAt, 'Not issued yet')}</span>
+                      <span className={`status-badge ${statusClass(certificate.status)}`}>{certificateStatusLabel(certificate.status)}</span>
                     </div>
-                    {certificate.downloadUrl ? (
-                      <button type="button" className="secondary-button" onClick={() => void downloadCertificatePdf(certificate.downloadUrl!, `certificate-${certificate.publicId ?? certificate.id ?? 'issued'}.pdf`).catch(() => toast.error('Could not download certificate'))}>
-                        Download
-                      </button>
-                    ) : null}
+                    <div className="student-certificate-actions">
+                      {certificate.verificationUrl ? (
+                        <a className="secondary-link-button" href={certificate.verificationUrl} target="_blank" rel="noreferrer">Verify</a>
+                      ) : null}
+                      {certificate.downloadUrl ? (
+                        <button type="button" className="secondary-button" onClick={() => void downloadCertificatePdf(certificate.downloadUrl!, `certificate-${certificate.publicId ?? certificate.id ?? 'issued'}.pdf`).catch(() => toast.error('Could not download certificate'))}>
+                          Download
+                        </button>
+                      ) : null}
+                    </div>
                   </article>
                 ))}
               </div>
@@ -545,47 +622,6 @@ export function StudentDashboardPage() {
         ) : null}
       </div>
 
-      <section className="content-section homework-list-section">
-        <div className="section-heading-row">
-          <div>
-            <h2>Tasks</h2>
-            <span>{openTasks.length} open task{openTasks.length === 1 ? '' : 's'} need attention</span>
-          </div>
-        </div>
-        {!tasks.length ? <EmptyState title="No tasks right now" /> : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Course</th>
-                  <th>Due</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task, index) => (
-                  <tr key={task.id ?? index}>
-                    <td>
-                      <strong>{task.title ?? readable(task.type)}</strong>
-                      <small>{readable(task.type)}</small>
-                    </td>
-                    <td>{readable(task.courseTitle)}</td>
-                    <td>{formatDate(task.dueAt)}</td>
-                    <td>
-                      <div className="student-task-action">
-                        <span className={`status-badge ${statusClass(task.status)}`}>{readable(task.status)}</span>
-                        <button type="button" className="secondary-button" onClick={() => selectTask(task)}>Open</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
       {selectedTask ? (
         <FormModal
           labelledBy="student-submit-title"
@@ -593,30 +629,35 @@ export function StudentDashboardPage() {
           onClose={() => setSelectedTask(null)}
           onSubmit={submitSelectedTask}
         >
-            <div>
-              <span className={`status-badge ${statusClass(selectedTask.status)}`}>{readable(selectedTask.status)}</span>
+            <div className="modal-header-block">
+              <span>{readable(selectedTask.status)}</span>
               <h2 id="student-submit-title">{selectedTask.title ?? 'Submit task'}</h2>
-              <p>{readable(selectedTask.courseTitle)}</p>
+              <p>{readable(taskContext(selectedTask))} · {dueLabel(taskDueDate(selectedTask))}</p>
             </div>
             {selectedTask.description ? <p className="panel-note">{selectedTask.description}</p> : null}
             {isActivityTask(selectedTask) && selectedTask.taskType === 'quiz' ? (
-              <div className="stack-list">
-                {selectedTask.questions?.map((question) => (
-                  <fieldset className="quiz-question" key={question.id}>
-                    <legend>{question.prompt}</legend>
-                    {question.options.map((option) => (
-                      <label className="checkbox-row" key={option.id}>
-                        <input
-                          type={question.questionMode === 'multiple_choice' ? 'checkbox' : 'radio'}
-                          checked={(quizAnswers[question.id] ?? []).includes(option.id)}
-                          onChange={() => toggleQuizOption(question.id, option.id, question.questionMode)}
-                        />
-                        {option.text}
-                      </label>
-                    ))}
-                  </fieldset>
-                ))}
-              </div>
+              <>
+                <p className={`panel-note ${canSubmitSelectedTask ? 'success' : ''}`}>
+                  {selectedQuizTotal ? `${selectedQuizAnswered} of ${selectedQuizTotal} question${selectedQuizTotal === 1 ? '' : 's'} answered` : 'No quiz questions are available yet.'}
+                </p>
+                <div className="stack-list">
+                  {selectedTask.questions?.map((question) => (
+                    <fieldset className="quiz-question" key={question.id}>
+                      <legend>{question.prompt}</legend>
+                      {question.options.map((option) => (
+                        <label className="checkbox-row" key={option.id}>
+                          <input
+                            type={question.questionMode === 'multiple_choice' ? 'checkbox' : 'radio'}
+                            checked={(quizAnswers[question.id] ?? []).includes(option.id)}
+                            onChange={() => toggleQuizOption(question.id, option.id, question.questionMode)}
+                          />
+                          <span><strong>{option.text}</strong></span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  ))}
+                </div>
+              </>
             ) : (
               <>
                 <label>
@@ -624,7 +665,7 @@ export function StudentDashboardPage() {
                   <textarea value={submitForm.answerText} onChange={(event) => setSubmitForm((current) => ({ ...current, answerText: event.target.value }))} />
                 </label>
                 <label>
-                  Attachment link or uploaded key
+                  Attachment link
                   <input value={submitForm.attachmentUrl} onChange={(event) => setSubmitForm((current) => ({ ...current, attachmentUrl: event.target.value }))} />
                 </label>
                 <label className="file-button">
@@ -636,7 +677,7 @@ export function StudentDashboardPage() {
             {selectedTask.mySubmission?.reviewComment ? <p className="panel-note">Review: {selectedTask.mySubmission.reviewComment}</p> : null}
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setSelectedTask(null)} disabled={submitting}>Cancel</button>
-              <button type="submit" disabled={submitting}>{submitting ? 'Submitting...' : 'Submit'}</button>
+              <button type="submit" disabled={submitting || !canSubmitSelectedTask}>{submitting ? 'Submitting...' : 'Submit'}</button>
             </div>
         </FormModal>
       ) : null}

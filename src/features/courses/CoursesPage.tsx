@@ -11,13 +11,10 @@ import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, S
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { getEffectiveTenantRole } from '../tenant/tenantRoles';
-import { formatDate } from '../../lib/format';
+import { formatDate, readable } from '../../lib/format';
+import { courseWorkflowBlocker, formatCourseType, isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 
 type TenantCourseType = 'offline' | 'online_live' | 'video';
-
-function isCourseOperational(course: Course | undefined | null) {
-  return Boolean(course && course.status === 'approved' && course.isPublished === true);
-}
 
 export function CoursesPage() {
   const { activeTenant } = useTenant();
@@ -53,8 +50,8 @@ export function CoursesPage() {
   });
 
   const activeRole = getEffectiveTenantRole(user, activeTenant);
-  const canCreateCourse = ['owner', 'company_admin', 'admin', 'instructor'].includes(activeRole);
-  const canApproveTenantCourses = ['owner', 'company_admin', 'admin'].includes(activeRole);
+  const canCreateCourse = ['owner', 'company_admin', 'instructor'].includes(activeRole);
+  const canApproveTenantCourses = ['owner', 'company_admin'].includes(activeRole);
   const canAssignInstructor = canApproveTenantCourses;
   const featureEnabled = (key: string) => activeTenant?.featureFlags?.[key] !== false;
   const attendanceEnabled = featureEnabled('attendance.enabled');
@@ -98,17 +95,31 @@ export function CoursesPage() {
     ));
   }, [courses, query]);
 
+  useEffect(() => {
+    if (!query.trim()) return;
+    if (!filteredCourses.length) return;
+    if (selectedCourseId && filteredCourses.some((course) => course.id === selectedCourseId)) return;
+    setSelectedCourseId(filteredCourses[0].id);
+  }, [filteredCourses, query, selectedCourseId]);
+
   const selectedCourse = useMemo(
     () => courses.find((course) => course.id === selectedCourseId),
     [courses, selectedCourseId],
   );
   const canEditCourse = Boolean(selectedCourse && (canApproveTenantCourses || (activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id)));
-  const selectedCourseOperational = isCourseOperational(selectedCourse);
+  const selectedCourseOperational = isCourseWorkflowReady(selectedCourse, false);
+  const selectedCourseDeliveryReady = isCourseWorkflowReady(selectedCourse);
+  const courseBlockerMessage = courseWorkflowBlocker(selectedCourse, false);
+  const courseDeliveryBlockerMessage = courseWorkflowBlocker(selectedCourse);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId),
     [groups, selectedGroupId],
   );
+  const selectedScope = {
+    courseId: selectedCourse?.id,
+    groupId: selectedGroup?.id,
+  };
 
   const searchParamsString = searchParams.toString();
 
@@ -191,9 +202,7 @@ export function CoursesPage() {
   }, [groups, requestedGroupId]);
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParamsString);
-    if (selectedCourseId) next.set('courseId', String(selectedCourseId)); else next.delete('courseId');
-    if (selectedGroupId) next.set('groupId', String(selectedGroupId)); else next.delete('groupId');
+    const next = nextWorkflowSearchParams(searchParamsString, { courseId: selectedCourseId, groupId: selectedGroupId });
     if (next.toString() !== searchParamsString) {
       setSearchParams(next, { replace: true });
     }
@@ -415,7 +424,7 @@ export function CoursesPage() {
       {!courses.length ? (
         <EmptyState
           title="No tenant courses yet"
-          detail={canCreateCourse ? 'Create a private offline or live course for this tenant, or ask the platform team to assign existing courses.' : 'Assigned tenant courses will appear here when they are ready for delivery.'}
+          detail={canCreateCourse ? 'Create a private offline or live course for this tenant.' : 'Assigned tenant courses will appear here when they are ready for delivery.'}
           action={canCreateCourse ? (
             <button type="button" className="secondary-button" onClick={openCreateModal} disabled={!courseTypeOptions.length}>Create course</button>
           ) : <Link className="secondary-link-button" to="/settings">Review tenant settings</Link>}
@@ -423,6 +432,31 @@ export function CoursesPage() {
       ) : (
         <>
           <StatGrid items={stats} />
+          {selectedCourse ? (
+            <section className="course-context-strip workflow-context-panel" aria-label="Selected course summary">
+              <div>
+                <span className="ui-kicker">Selected course</span>
+                <h2>{selectedCourse.title}</h2>
+                <p>
+                  {selectedCourseOperational
+                    ? 'Approved and published for homework, certificates, and delivery tools.'
+                    : courseBlockerMessage}
+                </p>
+                <div className="course-context-metrics">
+                  <span><strong>{groups.length}</strong> groups</span>
+                  <span><strong>{selectedCourse.enrolledStudents ?? 0}</strong> enrolled</span>
+                  <span><strong>{homework.length}</strong> homework</span>
+                </div>
+              </div>
+              <div className="course-context-badges">
+                <span className="status-badge">{formatCourseType(selectedCourse.courseType)}</span>
+                <span className={`status-badge ${selectedCourse.status || 'draft'}`}>{readable(selectedCourse.status || 'draft')}</span>
+                <span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>
+                  {selectedCourse.isPublished ? 'Published' : 'Draft'}
+                </span>
+              </div>
+            </section>
+          ) : null}
           <div className="workspace-grid">
             <section className="content-section">
               <h2>Tenant catalog</h2>
@@ -439,29 +473,23 @@ export function CoursesPage() {
                   </thead>
                   <tbody>
                     {filteredCourses.map((course) => (
-                      <tr
-                        key={course.id}
-                        className={`interactive-row ${course.id === selectedCourseId ? 'selected-row' : ''}`}
-                        role="button"
-                        tabIndex={0}
-                        aria-pressed={course.id === selectedCourseId}
-                        onClick={() => setSelectedCourseId(course.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            setSelectedCourseId(course.id);
-                          }
-                        }}
-                      >
-                    <td>
-                      <strong>{course.title}</strong>
-                      {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
-                    </td>
-                    <td><span className="status-badge">{(course.courseType || 'video').replace('_', ' ')}</span></td>
-                    <td><span className={`status-badge ${course.status || 'draft'}`}>{course.status || 'draft'}</span></td>
-                    <td><span className={`status-badge ${course.isPublished ? 'published' : 'draft'}`}>{course.isPublished ? 'Published' : 'Draft'}</span></td>
-                    <td>{course.enrolledStudents ?? 0}</td>
-                  </tr>
+                      <tr key={course.id} className={course.id === selectedCourseId ? 'selected-row' : ''}>
+                        <td>
+                          <button
+                            type="button"
+                            className="table-row-button"
+                            aria-pressed={course.id === selectedCourseId}
+                            onClick={() => setSelectedCourseId(course.id)}
+                          >
+                            <strong>{course.title}</strong>
+                            {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
+                          </button>
+                        </td>
+                        <td><span className="status-badge">{formatCourseType(course.courseType)}</span></td>
+                        <td><span className={`status-badge ${course.status || 'draft'}`}>{readable(course.status || 'draft')}</span></td>
+                        <td><span className={`status-badge ${course.isPublished ? 'published' : 'draft'}`}>{course.isPublished ? 'Published' : 'Draft'}</span></td>
+                        <td>{course.enrolledStudents ?? 0}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -475,7 +503,7 @@ export function CoursesPage() {
               ) : null}
             </section>
 
-            <aside className="settings-panel">
+            <aside className="settings-panel workflow-context-panel">
               <div className="section-heading-row compact">
                 <div>
                   <h2>Course operations</h2>
@@ -487,115 +515,133 @@ export function CoursesPage() {
               ) : detailLoading ? (
                 <LoadingState label="Loading course detail" />
               ) : (
-                <>
-                  <div className="course-action-grid">
-                    {selectedCourseOperational ? (
-                      <Link className="course-action-card" to={`/groups?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
-                        <FiUsers />
-                        <span>Groups</span>
-                      </Link>
-                    ) : (
-                      <span className="course-action-card disabled"><FiUsers /><span>Groups</span></span>
-                    )}
-                    {selectedCourseOperational ? (
-                      <Link className="course-action-card" to={`/sessions?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
-                        <FiCalendar />
-                        <span>Sessions</span>
-                      </Link>
-                    ) : (
-                      <span className="course-action-card disabled"><FiCalendar /><span>Sessions</span></span>
-                    )}
-                    {attendanceEnabled ? (
-                      selectedCourseOperational ? (
-                        <Link className="course-action-card" to={`/attendance?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
-                          <FiCheckSquare />
-                          <span>Attendance</span>
+                <div className="course-operations-stack">
+                  <section className="course-panel-block">
+                    <h3>Next actions</h3>
+                    <div className="course-action-grid">
+                      {selectedCourseDeliveryReady ? (
+                        <Link className="course-action-card" to={workflowPath('/groups', selectedScope)}>
+                          <FiUsers />
+                          <span>Groups</span>
                         </Link>
                       ) : (
-                        <span className="course-action-card disabled"><FiCheckSquare /><span>Attendance</span></span>
-                      )
-                    ) : null}
-                    {homeworkEnabled ? (
-                      selectedCourseOperational ? (
-                        <Link className="course-action-card" to={`/homework?courseId=${selectedCourse.id}${selectedGroup ? `&groupId=${selectedGroup.id}` : ''}`}>
-                          <FiFileText />
-                          <span>Homework</span>
+                        <span className="course-action-card disabled"><FiUsers /><span>Groups</span></span>
+                      )}
+                      {selectedCourseDeliveryReady ? (
+                        <Link className="course-action-card" to={workflowPath('/sessions', selectedScope)}>
+                          <FiCalendar />
+                          <span>Sessions</span>
                         </Link>
                       ) : (
-                        <span className="course-action-card disabled"><FiFileText /><span>Homework</span></span>
-                      )
+                        <span className="course-action-card disabled"><FiCalendar /><span>Sessions</span></span>
+                      )}
+                      {attendanceEnabled ? (
+                        selectedCourseDeliveryReady ? (
+                          <Link className="course-action-card" to={workflowPath('/attendance', selectedScope)}>
+                            <FiCheckSquare />
+                            <span>Attendance</span>
+                          </Link>
+                        ) : (
+                          <span className="course-action-card disabled"><FiCheckSquare /><span>Attendance</span></span>
+                        )
+                      ) : null}
+                      {homeworkEnabled ? (
+                        selectedCourseOperational ? (
+                          <Link className="course-action-card" to={workflowPath('/homework', selectedScope)}>
+                            <FiFileText />
+                            <span>Homework</span>
+                          </Link>
+                        ) : (
+                          <span className="course-action-card disabled"><FiFileText /><span>Homework</span></span>
+                        )
+                      ) : null}
+                      {certificatesEnabled ? (
+                        selectedCourseOperational ? (
+                          <Link className="course-action-card" to={workflowPath('/certificates', { courseId: selectedCourse.id, tab: 'rules' })}>
+                            <FiBookOpen />
+                            <span>Certificates</span>
+                          </Link>
+                        ) : (
+                          <span className="course-action-card disabled"><FiBookOpen /><span>Certificates</span></span>
+                        )
+                      ) : null}
+                    </div>
+                    {!selectedCourseOperational ? (
+                      <p className="panel-note">
+                        {courseBlockerMessage}
+                      </p>
+                    ) : !selectedCourseDeliveryReady ? (
+                      <p className="panel-note">
+                        {courseDeliveryBlockerMessage}
+                      </p>
                     ) : null}
-                    {certificatesEnabled ? (
-                      selectedCourseOperational ? (
-                        <Link className="course-action-card" to={`/certificates?courseId=${selectedCourse.id}&tab=rules`}>
-                          <FiBookOpen />
-                          <span>Certificates</span>
-                        </Link>
-                      ) : (
-                        <span className="course-action-card disabled"><FiBookOpen /><span>Certificates</span></span>
-                      )
-                    ) : null}
-                  </div>
-                  <div className="definition-grid">
-                    <span>Course</span><strong>{selectedCourse.title}</strong>
-                    <span>Type</span><strong>{(selectedCourse.courseType || 'video').replace('_', ' ')}</strong>
-                    <span>Status</span><strong><span className={`status-badge ${selectedCourse.status || 'draft'}`}>{selectedCourse.status || 'draft'}</span></strong>
-                    <span>Published</span><strong><span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>{selectedCourse.isPublished ? 'Published' : 'Draft'}</span></strong>
-                  </div>
-                  <div className="modal-actions">
-                    {canEditCourse ? (
-                      <button type="button" className="secondary-button" onClick={openEditModal}>
-                        <FiEdit2 />
-                        Edit course
-                      </button>
-                    ) : null}
-                    {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
-                      <button
-                        type="button"
-                        className="primary-button"
-                        disabled={statusUpdating}
-                        onClick={() => changeCourseStatus(selectedCourse.id, 'approved')}
-                      >
-                        Approve
-                      </button>
-                    ) : null}
-                    {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={statusUpdating}
-                        onClick={() => changeCourseStatus(selectedCourse.id, 'rejected')}
-                      >
-                        Reject
-                      </button>
-                    ) : null}
-                    {['draft', 'rejected'].includes(selectedCourse.status || 'draft') && (
-                      canApproveTenantCourses || (activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id)
-                    ) ? (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={statusUpdating}
-                        onClick={() => changeCourseStatus(selectedCourse.id, 'pending')}
-                      >
-                        Submit for approval
-                      </button>
-                    ) : null}
-                  </div>
+                  </section>
 
-                  <label>
-                    Group
-                    <select value={selectedGroupId ?? ''} onChange={(event) => setSelectedGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
-                      <option value="">Select group</option>
-                      {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                    </select>
-                  </label>
+                  <section className="course-panel-block">
+                    <h3>Course state</h3>
+                    <div className="definition-grid">
+                      <span>Course</span><strong>{selectedCourse.title}</strong>
+                      <span>Type</span><strong>{formatCourseType(selectedCourse.courseType)}</strong>
+                      <span>Status</span><strong><span className={`status-badge ${selectedCourse.status || 'draft'}`}>{readable(selectedCourse.status || 'draft')}</span></strong>
+                      <span>Published</span><strong><span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>{selectedCourse.isPublished ? 'Published' : 'Draft'}</span></strong>
+                    </div>
+                    <div className="modal-actions">
+                      {canEditCourse ? (
+                        <button type="button" className="secondary-button" onClick={openEditModal}>
+                          <FiEdit2 />
+                          Edit course
+                        </button>
+                      ) : null}
+                      {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={statusUpdating}
+                          onClick={() => changeCourseStatus(selectedCourse.id, 'approved')}
+                        >
+                          Approve
+                        </button>
+                      ) : null}
+                      {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={statusUpdating}
+                          onClick={() => changeCourseStatus(selectedCourse.id, 'rejected')}
+                        >
+                          Reject
+                        </button>
+                      ) : null}
+                      {['draft', 'rejected'].includes(selectedCourse.status || 'draft') && (
+                        canApproveTenantCourses || (activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id)
+                      ) ? (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={statusUpdating}
+                          onClick={() => changeCourseStatus(selectedCourse.id, 'pending')}
+                        >
+                          Submit for approval
+                        </button>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className="course-panel-block">
+                    <h3>Selected group</h3>
+                    <label>
+                      Group
+                      <select value={selectedGroupId ?? ''} onChange={(event) => setSelectedGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
+                        <option value="">Select group</option>
+                        {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                      </select>
+                    </label>
 
                   {selectedGroup ? (
-                    <div className="course-group-summary">
+                    <div className="course-group-summary workflow-context-panel compact">
                       <div className="definition-grid">
                         <span>Code</span><strong>{selectedGroup.code ?? '-'}</strong>
-                        <span>Group status</span><strong><span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{selectedGroup.status ?? 'planned'}</span></strong>
+                        <span>Group status</span><strong><span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{readable(selectedGroup.status ?? 'planned')}</span></strong>
                         <span>Dates</span><strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : '-'}</strong>
                       </div>
                       <div className="course-group-metrics">
@@ -609,20 +655,24 @@ export function CoursesPage() {
                       </div>
                     </div>
                   ) : null}
+                  </section>
 
-                  <div className="stack-list">
-                    {sessions.slice(0, 5).map((session) => (
-                      <article className="stack-list-item" key={session.id}>
-                        <div>
-                          <strong>{session.title}</strong>
-                          <span>{formatDate(session.startsAt)}</span>
-                        </div>
-                        <strong><span className={`status-badge ${session.status || 'scheduled'}`}>{session.status || 'scheduled'}</span></strong>
-                      </article>
-                    ))}
-                    {!sessions.length ? <span className="muted-text">No sessions for the selected group.</span> : null}
-                  </div>
-                </>
+                  <section className="course-panel-block">
+                    <h3>Recent sessions</h3>
+                    <div className="stack-list">
+                      {sessions.slice(0, 5).map((session) => (
+                        <article className="stack-list-item" key={session.id}>
+                          <div>
+                            <strong>{session.title}</strong>
+                            <span>{formatDate(session.startsAt)}</span>
+                          </div>
+                          <strong><span className={`status-badge ${session.status || 'scheduled'}`}>{readable(session.status || 'scheduled')}</span></strong>
+                        </article>
+                      ))}
+                      {!sessions.length ? <span className="muted-text">No sessions for the selected group.</span> : null}
+                    </div>
+                  </section>
+                </div>
               )}
             </aside>
           </div>
@@ -634,6 +684,7 @@ export function CoursesPage() {
                   <h2>Group roster</h2>
                   <span>{selectedGroup.name}</span>
                 </div>
+                <strong className="muted-count">{students.length} shown</strong>
               </div>
               <div className="filters-row three roster-filters">
                 <input
@@ -655,7 +706,20 @@ export function CoursesPage() {
                 </button>
               </div>
               {!students.length ? (
-                <EmptyState title="No students found" />
+                <EmptyState
+                  title={studentQuery.trim() || progressFilter !== 'all' ? 'No matching students' : 'No students in this group'}
+                  detail={studentQuery.trim() || progressFilter !== 'all'
+                    ? 'Clear the roster filters or choose another progress state.'
+                    : 'Learners will appear here after they are enrolled in this group.'}
+                  action={studentQuery.trim() || progressFilter !== 'all' ? (
+                    <button type="button" className="secondary-button" onClick={() => {
+                      setStudentQuery('');
+                      setProgressFilter('all');
+                    }}>
+                      Clear filters
+                    </button>
+                  ) : null}
+                />
               ) : (
                 <div className="table-wrap">
                   <table>

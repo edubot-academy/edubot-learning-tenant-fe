@@ -17,6 +17,23 @@ const focusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
+function isFocusableElementVisible(element: HTMLElement) {
+  if (element.closest('[hidden], [aria-hidden="true"], [inert]')) return false;
+  let current: HTMLElement | null = element;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    current = current.parentElement;
+  }
+  return true;
+}
+
+function getFocusableElements(container: HTMLElement) {
+  const elements = Array.from(container.querySelectorAll<HTMLElement>(focusableSelector));
+  const visibleElements = elements.filter(isFocusableElementVisible);
+  return visibleElements.length ? visibleElements : elements;
+}
+
 function useModalLifecycle<T extends HTMLElement>(onClose: () => void) {
   const modalRef = useRef<T | null>(null);
   const onCloseRef = useRef(onClose);
@@ -42,9 +59,7 @@ function useModalLifecycle<T extends HTMLElement>(onClose: () => void) {
       const modal = modalRef.current;
       if (!modal) return;
 
-      const focusableElements = Array.from(
-        modal.querySelectorAll<HTMLElement>(focusableSelector),
-      ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+      const focusableElements = getFocusableElements(modal);
 
       if (!focusableElements.length) {
         event.preventDefault();
@@ -67,7 +82,7 @@ function useModalLifecycle<T extends HTMLElement>(onClose: () => void) {
     window.addEventListener('keydown', onKeyDown);
     window.setTimeout(() => {
       const preferredFocusable = modalRef.current?.querySelector<HTMLElement>('[autofocus], [data-autofocus="true"]');
-      const firstFocusable = modalRef.current?.querySelector<HTMLElement>(focusableSelector);
+      const firstFocusable = modalRef.current ? getFocusableElements(modalRef.current)[0] : undefined;
       (preferredFocusable ?? firstFocusable ?? modalRef.current)?.focus();
     }, 0);
 
@@ -85,7 +100,7 @@ function ModalShell({ labelledBy, children, className = 'decision-modal', onClos
   const modalRef = useModalLifecycle<HTMLElement>(onClose);
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
         ref={modalRef}
         className={className}
@@ -93,7 +108,7 @@ function ModalShell({ labelledBy, children, className = 'decision-modal', onClos
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         <button type="button" className="modal-close-button" aria-label="Close modal" onClick={onClose}>
           <FiX />
@@ -118,7 +133,7 @@ export function FormModal({
   const modalRef = useModalLifecycle<HTMLFormElement>(onClose);
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <form
         ref={modalRef}
         className={className}
@@ -126,7 +141,7 @@ export function FormModal({
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         onSubmit={onSubmit}
       >
         <button type="button" className="modal-close-button" aria-label="Close modal" onClick={onClose}>

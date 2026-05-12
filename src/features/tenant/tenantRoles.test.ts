@@ -27,11 +27,16 @@ describe('tenant role access', () => {
     expect(canManageTenantMembers(user('superadmin'), tenant('student'))).toBe(false);
   });
 
-  it('keeps admin scoped to tenant access instead of platform access', () => {
+  it('keeps admin out of tenant workspace access without tenant membership', () => {
     expect(isPlatformAdmin(user('admin'))).toBe(false);
+    expect(getEffectiveTenantRole(user('admin'), tenant(null))).toBe('');
+    expect(getTenantAccessLevel(user('admin'), tenant(null))).toBe('none');
+    expect(canManageTenantMembers(user('admin'), tenant(null))).toBe(false);
+  });
+
+  it('uses tenant membership role instead of platform role', () => {
     expect(getEffectiveTenantRole(user('admin'), tenant('student'))).toBe('student');
     expect(getTenantAccessLevel(user('admin'), tenant('student'))).toBe('student');
-    expect(canManageTenantMembers(user('admin'), tenant('student'))).toBe(false);
   });
 
   it('allows tenant admin and teaching roles to operate learning workflows', () => {

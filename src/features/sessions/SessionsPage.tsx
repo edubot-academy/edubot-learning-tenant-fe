@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
-import { FormModal } from '../../components/Modal';
+import { FormModal, Modal } from '../../components/Modal';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import {
   createSessionActivity,
@@ -36,19 +36,11 @@ import {
   uploadSessionMaterial,
 } from '../../services/api';
 import type { AttendanceRecord, CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
-import { formatDate } from '../../lib/format';
+import { formatDate, readable } from '../../lib/format';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { isTenantAdmin } from '../tenant/tenantRoles';
-
-function isCourseSessionReady(course: Course | undefined | null) {
-  return Boolean(
-    course
-    && ['offline', 'online_live'].includes(String(course.courseType ?? ''))
-    && course.status === 'approved'
-    && course.isPublished === true,
-  );
-}
+import { courseWorkflowBlocker, isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
 type ScheduleDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
@@ -163,6 +155,10 @@ const emptyActivityForm = {
 };
 
 type SessionOperationTab = 'overview' | 'activities' | 'meeting' | 'materials' | 'insights';
+type PendingRemoval =
+  | { type: 'student'; student: GroupStudent }
+  | { type: 'activity'; activityId: number }
+  | { type: 'material'; materialIndex: number };
 
 const sessionOperationTabs: Array<{ key: SessionOperationTab; label: string }> = [
   { key: 'overview', label: 'Overview' },
@@ -223,6 +219,10 @@ export function SessionsPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<number | undefined>();
   const [studentInviteForm, setStudentInviteForm] = useState(emptyStudentInviteForm);
   const [createModal, setCreateModal] = useState<'group' | 'session' | 'enrollment' | 'activity' | null>(null);
+  const [editGroupOpen, setEditGroupOpen] = useState(false);
+  const [editSessionOpen, setEditSessionOpen] = useState(false);
+  const [enrollmentMode, setEnrollmentMode] = useState<'existing' | 'new'>('existing');
+  const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [sessionEditErrors, setSessionEditErrors] = useState<Record<string, string>>({});
   const [meetingErrors, setMeetingErrors] = useState<Record<string, string>>({});
@@ -230,7 +230,8 @@ export function SessionsPage() {
   const [sessionOperationTab, setSessionOperationTab] = useState<SessionOperationTab>('overview');
 
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
-  const selectedCourseReady = isCourseSessionReady(selectedCourse);
+  const selectedCourseReady = isCourseWorkflowReady(selectedCourse);
+  const selectedCourseBlocker = courseWorkflowBlocker(selectedCourse);
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
   const canAssignInstructor = isTenantAdmin(user, activeTenant);
@@ -243,6 +244,23 @@ export function SessionsPage() {
     [sessions],
   );
   const sessionActivities = selectedSession?.activities ?? [];
+  const savedScheduleReady = Boolean(selectedGroup?.scheduleBlocks?.some((block) => block.day && block.startTime && block.endTime));
+  const generationDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
+  const generationReady = savedScheduleReady && generationDatesReady;
+  const pendingRemovalTitle = pendingRemoval?.type === 'student'
+    ? (pendingRemoval.student.fullName || pendingRemoval.student.email || `Student #${pendingRemoval.student.userId}`)
+    : pendingRemoval?.type === 'activity'
+      ? (sessionActivities.find((activity) => activity.id === pendingRemoval.activityId)?.title ?? 'this activity')
+      : pendingRemoval?.type === 'material'
+        ? ((selectedSession?.materials ?? [])[pendingRemoval.materialIndex]?.title ?? `Material ${pendingRemoval.materialIndex + 1}`)
+        : '';
+  const pendingRemovalBusy = pendingRemoval?.type === 'student'
+    ? removingStudentId === pendingRemoval.student.userId
+    : pendingRemoval?.type === 'activity'
+      ? savingActivity
+      : pendingRemoval?.type === 'material'
+        ? updatingSession
+        : false;
   const workflowSteps = useMemo(() => [
     {
       label: 'Course',
@@ -285,12 +303,7 @@ export function SessionsPage() {
     listTenantCourses(activeTenantId)
       .then((nextCourses) => {
         if (cancelled) return;
-        const readyCourses = nextCourses.filter(isCourseSessionReady);
-        setCourses(readyCourses);
-        setCourseId((current) => {
-          if (requestedCourseId && readyCourses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
-          return current && readyCourses.some((course) => course.id === current) ? current : readyCourses[0]?.id;
-        });
+        setCourses(nextCourses);
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load courses');
@@ -301,7 +314,15 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, requestedCourseId]);
+  }, [activeTenantId]);
+
+  useEffect(() => {
+    setCourseId((current) => {
+      if (!courses.length) return undefined;
+      if (requestedCourseId && courses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
+      return current && courses.some((course) => course.id === current) ? current : courses[0]?.id;
+    });
+  }, [courses, requestedCourseId]);
 
   useEffect(() => {
     setTenantMembers([]);
@@ -334,10 +355,6 @@ export function SessionsPage() {
       .then((nextGroups) => {
         if (cancelled) return;
         setGroups(nextGroups);
-        setGroupId((current) => {
-          if (requestedGroupId && nextGroups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
-          return current && nextGroups.some((group) => group.id === current) ? current : nextGroups[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load groups');
@@ -348,7 +365,15 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId, requestedGroupId]);
+  }, [courseId]);
+
+  useEffect(() => {
+    setGroupId((current) => {
+      if (!groups.length) return undefined;
+      if (requestedGroupId && groups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
+      return current && groups.some((group) => group.id === current) ? current : groups[0]?.id;
+    });
+  }, [groups, requestedGroupId]);
 
   useEffect(() => {
     setSessions([]);
@@ -364,10 +389,6 @@ export function SessionsPage() {
         if (cancelled) return;
         setSessions(nextSessions);
         setStudents(nextStudents);
-        setSessionId((current) => {
-          if (requestedSessionId && nextSessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
-          return current && nextSessions.some((session) => session.id === current) ? current : nextSessions[0]?.id;
-        });
       })
       .catch(() => {
         if (!cancelled) toast.error('Could not load group sessions');
@@ -378,13 +399,18 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId, requestedSessionId]);
+  }, [groupId]);
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParamsString);
-    if (courseId) next.set('courseId', String(courseId)); else next.delete('courseId');
-    if (groupId) next.set('groupId', String(groupId)); else next.delete('groupId');
-    if (sessionId) next.set('sessionId', String(sessionId)); else next.delete('sessionId');
+    setSessionId((current) => {
+      if (!sessions.length) return undefined;
+      if (requestedSessionId && sessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
+      return current && sessions.some((session) => session.id === current) ? current : sessions[0]?.id;
+    });
+  }, [sessions, requestedSessionId]);
+
+  useEffect(() => {
+    const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId, sessionId });
     if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
   }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
 
@@ -579,6 +605,7 @@ export function SessionsPage() {
         instructorId: canAssignInstructor ? optionalPositiveNumber(editGroupForm.instructorId) : undefined,
       });
       await reloadGroups(courseId);
+      setEditGroupOpen(false);
       toast.success('Group updated');
     } catch {
       toast.error('Could not update group');
@@ -633,8 +660,8 @@ export function SessionsPage() {
 
   const previewSessionGeneration = async () => {
     if (!groupId) return;
-    if (!generationRange.fromDate || !generationRange.toDate) {
-      toast.error('Select generation dates');
+    if (!generationReady) {
+      toast.error('Complete saved schedule and generation dates first');
       return;
     }
 
@@ -747,9 +774,6 @@ export function SessionsPage() {
 
   const removeStudentFromGroup = async (student: GroupStudent) => {
     if (!courseId || !groupId) return;
-    const studentName = student.fullName || student.email || `student #${student.userId}`;
-    if (!window.confirm(`Remove ${studentName} from this group?`)) return;
-
     setRemovingStudentId(student.userId);
     try {
       await unenrollUser(courseId, student.userId);
@@ -759,6 +783,7 @@ export function SessionsPage() {
       toast.error('Could not remove student');
     } finally {
       setRemovingStudentId(undefined);
+      setPendingRemoval(null);
     }
   };
 
@@ -793,6 +818,7 @@ export function SessionsPage() {
         recordingUrl: editSessionForm.recordingUrl.trim() || undefined,
       });
       await reloadSessions(groupId);
+      setEditSessionOpen(false);
       toast.success('Session updated');
     } catch {
       toast.error('Could not update session');
@@ -901,6 +927,7 @@ export function SessionsPage() {
       toast.error('Could not remove material');
     } finally {
       setUpdatingSession(false);
+      setPendingRemoval(null);
     }
   };
 
@@ -1000,6 +1027,7 @@ export function SessionsPage() {
       toast.error('Could not remove activity');
     } finally {
       setSavingActivity(false);
+      setPendingRemoval(null);
     }
   };
 
@@ -1066,7 +1094,11 @@ export function SessionsPage() {
       <div className="filters-row three">
         <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
           <option value="">Select course</option>
-          {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+          {courses.map((course) => (
+            <option key={course.id} value={course.id}>
+              {course.title}{isCourseWorkflowReady(course) ? '' : ' - locked'}
+            </option>
+          ))}
         </select>
         <select value={groupId ?? ''} onChange={(event) => setGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
           <option value="">Select group</option>
@@ -1093,14 +1125,14 @@ export function SessionsPage() {
         ))}
       </section>
       {loading ? <LoadingState label="Loading sessions" /> : null}
-      <section className="workflow-section">
+      <section className="workflow-section workflow-context-panel">
         <div className="section-heading-row">
           <div>
             <h2>Set up learning operations</h2>
             <span>Create the container first, then schedule sessions and enroll learners.</span>
           </div>
           <div className="page-actions">
-            <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup}>
+            <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>
               Create group
             </button>
             <button type="button" className="secondary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>
@@ -1113,8 +1145,8 @@ export function SessionsPage() {
         </div>
         <div className="create-action-grid">
           <article>
-            <strong>{selectedCourse ? 'Group ready to create' : 'Choose a course first'}</strong>
-            <span>Groups organize learners and unlock scheduling.</span>
+            <strong>{selectedCourseReady ? 'Group ready to create' : selectedCourse ? 'Course locked for groups' : 'Choose a course first'}</strong>
+            <span>{selectedCourseReady ? 'Groups organize learners and unlock scheduling.' : selectedCourseBlocker}</span>
           </article>
           <article>
             <strong>{selectedGroup ? 'Schedule the next class' : 'Choose or create a group'}</strong>
@@ -1128,132 +1160,22 @@ export function SessionsPage() {
       </section>
 
       {selectedGroup ? (
-        <form className="settings-panel group-edit-panel workflow-section" onSubmit={submitGroupUpdate}>
+        <section className="settings-panel group-edit-panel workflow-section workflow-context-panel">
           <div className="section-heading-row">
             <div>
               <h2>Group schedule and defaults</h2>
               <span>{selectedCourse?.title ?? 'Selected course'}</span>
             </div>
-            <button type="submit" disabled={updatingGroup}>{updatingGroup ? 'Saving...' : 'Save group'}</button>
+            <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(true)}>Edit group</button>
           </div>
-          <div className="two-col">
-            <label>
-              Name
-              <input value={editGroupForm.name} onChange={(event) => setEditGroupForm((current) => ({ ...current, name: event.target.value }))} />
-            </label>
-            <label>
-              Code
-              <input value={editGroupForm.code} onChange={(event) => setEditGroupForm((current) => ({ ...current, code: event.target.value }))} />
-            </label>
+          <div className="group-summary-grid">
+            <section><span>Status</span><strong>{readable(selectedGroup.status ?? 'planned')}</strong></section>
+            <section><span>Dates</span><strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : 'Not scheduled'}</strong></section>
+            <section><span>Schedule</span><strong>{savedScheduleReady ? `${selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0} block${(selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0) === 1 ? '' : 's'}` : 'Needs setup'}</strong></section>
+            <section><span>Students</span><strong>{students.length}</strong></section>
+            <section><span>Capacity</span><strong>{selectedGroup.seatLimit ?? 'Open'}</strong></section>
+            <section><span>Location</span><strong>{selectedGroup.location || selectedGroup.meetingProvider || 'Not set'}</strong></section>
           </div>
-          <div className="two-col">
-            <label>
-              Status
-              <select value={editGroupForm.status} onChange={(event) => setEditGroupForm((current) => ({ ...current, status: event.target.value as 'planned' | 'open' | 'active' | 'completed' | 'cancelled' }))}>
-                <option value="planned">Planned</option>
-                <option value="open">Open</option>
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </label>
-            <label>
-              Location
-              <input value={editGroupForm.location} onChange={(event) => setEditGroupForm((current) => ({ ...current, location: event.target.value }))} />
-            </label>
-          </div>
-          <div className="two-col">
-            <label>
-              Start date
-              <input type="date" value={editGroupForm.startDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, startDate: event.target.value }))} />
-            </label>
-            <label>
-              End date
-              <input type="date" value={editGroupForm.endDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, endDate: event.target.value }))} />
-            </label>
-          </div>
-          <div className="two-col">
-            <label>
-              Seat limit
-              <input type="number" min="1" value={editGroupForm.seatLimit} onChange={(event) => setEditGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder="No limit" />
-            </label>
-            <label>
-              Timezone
-              <input value={editGroupForm.timezone} onChange={(event) => setEditGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
-            </label>
-          </div>
-          {canAssignInstructor ? (
-            <label>
-              Group instructor
-              <select value={editGroupForm.instructorId} onChange={(event) => setEditGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
-                <option value="">Use course instructor</option>
-                {instructorOptions.map((member) => (
-                  <option key={member.userId} value={member.userId}>
-                    {member.fullName || member.user?.fullName || member.email || member.user?.email || `Instructor #${member.userId}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <div className="two-col">
-            <label>
-              Meeting provider
-              <input value={editGroupForm.meetingProvider} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} />
-            </label>
-            <label>
-              Meeting URL
-              <input value={editGroupForm.meetingUrl} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} />
-            </label>
-          </div>
-          <div className="schedule-block-list">
-            {editGroupForm.scheduleBlocks.map((block, index) => (
-              <div className="three-col" key={`${index}-${block.day}`}>
-                <label>
-                  Schedule day
-                  <select value={block.day} onChange={(event) => setEditGroupForm((current) => ({
-                    ...current,
-                    scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
-                  }))}>
-                    <option value="mon">Monday</option>
-                    <option value="tue">Tuesday</option>
-                    <option value="wed">Wednesday</option>
-                    <option value="thu">Thursday</option>
-                    <option value="fri">Friday</option>
-                    <option value="sat">Saturday</option>
-                    <option value="sun">Sunday</option>
-                  </select>
-                </label>
-                <label>
-                  Starts
-                  <input type="time" value={block.startTime} onChange={(event) => setEditGroupForm((current) => ({
-                    ...current,
-                    scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
-                  }))} />
-                </label>
-                <label>
-                  Ends
-                  <input type="time" value={block.endTime} onChange={(event) => setEditGroupForm((current) => ({
-                    ...current,
-                    scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
-                  }))} />
-                </label>
-                {editGroupForm.scheduleBlocks.length > 1 ? (
-                  <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
-                    ...current,
-                    scheduleBlocks: current.scheduleBlocks.filter((_, itemIndex) => itemIndex !== index),
-                  }))}>Remove block</button>
-                ) : null}
-              </div>
-            ))}
-            <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
-              ...current,
-              scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
-            }))}>Add schedule block</button>
-          </div>
-          <label>
-            Schedule note
-            <textarea value={editGroupForm.scheduleNote} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} />
-          </label>
           <div className="session-generation-panel">
             <div className="section-heading-row compact">
               <div>
@@ -1261,6 +1183,9 @@ export function SessionsPage() {
                 <span>Uses the saved group schedule above</span>
               </div>
             </div>
+            <p className={`panel-note ${generationReady ? 'success' : ''}`}>
+              {generationReady ? 'Schedule and dates are ready for preview.' : 'Add at least one complete saved schedule block and choose generation dates before previewing sessions.'}
+            </p>
             <div className="three-col">
               <label>
                 From
@@ -1271,7 +1196,7 @@ export function SessionsPage() {
                 <input type="date" value={generationRange.toDate} onChange={(event) => setGenerationRange((current) => ({ ...current, toDate: event.target.value }))} />
               </label>
               <div className="generation-actions">
-                <button type="button" className="secondary-button" onClick={() => void previewSessionGeneration()} disabled={generationLoading || updatingGroup}>
+                <button type="button" className="secondary-button" onClick={() => void previewSessionGeneration()} disabled={generationLoading || !generationReady}>
                   Preview
                 </button>
                 <button type="button" onClick={() => void generateSessions()} disabled={generationLoading || !generationPreview?.newCount}>
@@ -1291,7 +1216,7 @@ export function SessionsPage() {
                         <strong>{item.title}</strong>
                         <span>{item.day} · {formatDate(item.startsAt)} - {formatDate(item.endsAt)}</span>
                       </div>
-                      <strong>{item.kind}</strong>
+                      <span className={`status-badge ${item.kind === 'new' ? 'pending' : 'scheduled'}`}>{readable(item.kind)}</span>
                     </article>
                   ))}
                 </div>
@@ -1321,27 +1246,32 @@ export function SessionsPage() {
                   <button
                     type="button"
                     className="link-button danger"
-                    onClick={() => void removeStudentFromGroup(student)}
+                    onClick={() => setPendingRemoval({ type: 'student', student })}
                     disabled={removingStudentId === student.userId}
                   >
                     {removingStudentId === student.userId ? 'Removing...' : 'Remove'}
                   </button>
                 </article>
               ))}
-              {!students.length ? <span className="muted-text">No students enrolled in this group yet.</span> : null}
+              {!students.length ? (
+                <EmptyState
+                  title="No students enrolled in this group"
+                  detail="Enroll students before running attendance, homework, and activity reviews for this group."
+                />
+              ) : null}
             </div>
           </div>
-        </form>
+        </section>
       ) : null}
 
       {!loading && !sessions.length ? (
         <EmptyState
-          title="No sessions selected"
-          detail="Choose or create a course group, then schedule sessions for learners."
+          title={selectedGroup ? 'No sessions scheduled' : 'No sessions selected'}
+          detail={selectedGroup ? 'Schedule a session manually or generate sessions from the saved group schedule.' : 'Choose or create a course group, then schedule sessions for learners.'}
           action={(
             <>
-              <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup}>Create group</button>
-              <button type="button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>Schedule session</button>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>Create group</button>
+              <button type="button" className="primary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>Schedule session</button>
             </>
           )}
         />
@@ -1368,115 +1298,28 @@ export function SessionsPage() {
                   {sessions.map((session) => (
                     <tr
                       key={session.id}
-                      className={`interactive-row ${session.id === sessionId ? 'selected-row' : ''}`}
-                      role="button"
-                      tabIndex={0}
-                      aria-pressed={session.id === sessionId}
-                      onClick={() => setSessionId(session.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setSessionId(session.id);
-                        }
-                      }}
+                      className={session.id === sessionId ? 'selected-row' : ''}
                     >
-                      <td>{session.title}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="table-row-button"
+                          aria-pressed={session.id === sessionId}
+                          onClick={() => setSessionId(session.id)}
+                        >
+                          <strong>{session.title}</strong>
+                        </button>
+                      </td>
                       <td>{formatDate(session.startsAt)}</td>
-                      <td>{session.status || 'scheduled'}</td>
+                      <td><span className={`status-badge ${session.status || 'scheduled'}`}>{readable(session.status || 'scheduled')}</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {selectedSession && sessionOperationTab === 'activities' ? (
-              <div className="session-activities-panel">
-                <div className="section-heading-row">
-                  <div>
-                    <h2>Activities</h2>
-                    <span>{selectedSession.title}</span>
-                  </div>
-                  <button type="button" className="secondary-button" onClick={() => setCreateModal('activity')} disabled={savingActivity}>
-                    Add activity
-                  </button>
-                </div>
-                <div className="stack-list activity-list">
-                  {sessionActivities.map((activity) => (
-                    <article key={activity.id} className="stack-list-item activity-list-item">
-                      <div>
-                        <strong>{activity.title}</strong>
-                        <span>{activity.type.replace('_', ' ')} · {activity.status}</span>
-                      </div>
-                      <div className="activity-actions">
-                        {activity.status !== 'active' ? (
-                          <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'active')} disabled={savingActivity}>Start</button>
-                        ) : null}
-                        {activity.status !== 'done' ? (
-                          <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'done')} disabled={savingActivity}>Done</button>
-                        ) : null}
-                        <button type="button" className="secondary-button" onClick={() => void loadActivityResponses(activity.id)} disabled={loadingResponses && selectedActivityId === activity.id}>Responses</button>
-                        <button type="button" className="link-button danger" onClick={() => void removeActivity(activity.id)} disabled={savingActivity}>Remove</button>
-                      </div>
-                    </article>
-                  ))}
-                  {!sessionActivities.length ? <span className="muted-text">No activities planned yet.</span> : null}
-                </div>
-                {activityResponses ? (
-                  <div className="activity-responses-panel">
-                    <div className="section-heading-row compact">
-                      <div>
-                        <h3>Responses</h3>
-                        <span>{activityResponses.activity.title} · {activityResponses.mode}</span>
-                      </div>
-                    </div>
-                    {loadingResponses ? <LoadingState label="Loading responses" /> : null}
-                    <div className="stack-list">
-                      {activityResponses.items.map((item) => (
-                        <article key={`${item.id ?? item.latestAttemptId ?? item.studentId}`} className="stack-list-item activity-response-item">
-                          <div>
-                            <strong>{item.studentName || `Student #${item.studentId}`}</strong>
-                            {activityResponses.mode === 'quiz' ? (
-                              <span>
-                                {item.passed ? 'Passed' : 'Not passed'} · score {item.score ?? 0} · attempts {item.attemptsCount ?? 0}
-                              </span>
-                            ) : (
-                              <>
-                                <span>{item.status ?? 'submitted'}{item.updatedAt ? ` · ${formatDate(item.updatedAt)}` : ''}</span>
-                                {item.answerText ? <p>{item.answerText}</p> : null}
-                                {item.attachmentUrl ? <a href={item.attachmentUrl} target="_blank" rel="noreferrer">Open attachment</a> : null}
-                              </>
-                            )}
-                          </div>
-                          {activityResponses.mode === 'submission' && item.id ? (
-                            <div className="review-controls">
-                              <input
-                                value={reviewDrafts[item.id]?.score ?? ''}
-                                onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: event.target.value, reviewComment: current[item.id!]?.reviewComment ?? '' } }))}
-                                placeholder="Score"
-                                inputMode="numeric"
-                              />
-                              <input
-                                value={reviewDrafts[item.id]?.reviewComment ?? ''}
-                                onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: current[item.id!]?.score ?? '', reviewComment: event.target.value } }))}
-                                placeholder="Review comment"
-                              />
-                              <div className="activity-actions">
-                                <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'approved')} disabled={reviewingSubmission === item.id}>Approve</button>
-                                <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'needs_revision')} disabled={reviewingSubmission === item.id}>Revise</button>
-                                <button type="button" className="link-button danger" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'rejected')} disabled={reviewingSubmission === item.id}>Reject</button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </article>
-                      ))}
-                      {!activityResponses.items.length ? <span className="muted-text">No responses yet.</span> : null}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </section>
 
-          <aside className="settings-panel">
+          <aside className="settings-panel workflow-context-panel">
             <div className="section-heading-row compact">
               <div>
                 <h2>Session workspace</h2>
@@ -1495,9 +1338,99 @@ export function SessionsPage() {
                   className="session-operation-tabs"
                 />
                 {sessionOperationTab === 'activities' ? (
-                  <div className="session-tab-empty">
-                    <strong>Activities open beside the schedule</strong>
-                    <span>Use the left panel to add activities and review responses for this session.</span>
+                  <div className="session-activities-panel">
+                    <div className="section-heading-row compact">
+                      <div>
+                        <h3>Activities</h3>
+                        <span>{selectedSession.title}</span>
+                      </div>
+                      <button type="button" className="secondary-button" onClick={() => setCreateModal('activity')} disabled={savingActivity}>
+                        Add activity
+                      </button>
+                    </div>
+                    <div className="stack-list activity-list">
+                      {sessionActivities.map((activity) => (
+                        <article key={activity.id} className="stack-list-item activity-list-item">
+                          <div>
+                            <strong>{activity.title}</strong>
+                            <span>{readable(activity.type)} · <span className={`status-badge ${activity.status}`}>{readable(activity.status)}</span></span>
+                          </div>
+                          <div className="activity-actions">
+                            {activity.status !== 'active' ? (
+                              <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'active')} disabled={savingActivity}>Start</button>
+                            ) : null}
+                            {activity.status !== 'done' ? (
+                              <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'done')} disabled={savingActivity}>Done</button>
+                            ) : null}
+                            <button type="button" className="secondary-button" onClick={() => void loadActivityResponses(activity.id)} disabled={loadingResponses && selectedActivityId === activity.id}>Responses</button>
+                            <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'activity', activityId: activity.id })} disabled={savingActivity}>Remove</button>
+                          </div>
+                        </article>
+                      ))}
+                      {!sessionActivities.length ? (
+                        <EmptyState
+                          title="No activities planned yet"
+                          detail="Add an activity when this session needs discussion, exercise, quiz, or group work tracking."
+                        />
+                      ) : null}
+                    </div>
+                    {activityResponses ? (
+                      <div className="activity-responses-panel">
+                        <div className="section-heading-row compact">
+                          <div>
+                            <h3>Responses</h3>
+                            <span>{activityResponses.activity.title} · {readable(activityResponses.mode)}</span>
+                          </div>
+                        </div>
+                        {loadingResponses ? <LoadingState label="Loading responses" /> : null}
+                        <div className="stack-list">
+                          {activityResponses.items.map((item) => (
+                            <article key={`${item.id ?? item.latestAttemptId ?? item.studentId}`} className="stack-list-item activity-response-item">
+                              <div>
+                                <strong>{item.studentName || `Student #${item.studentId}`}</strong>
+                                {activityResponses.mode === 'quiz' ? (
+                                  <span>
+                                    {item.passed ? 'Passed' : 'Not passed'} · score {item.score ?? 0} · attempts {item.attemptsCount ?? 0}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span>{readable(item.status ?? 'submitted')}{item.updatedAt ? ` · ${formatDate(item.updatedAt)}` : ''}</span>
+                                    {item.answerText ? <p>{item.answerText}</p> : null}
+                                    {item.attachmentUrl ? <a href={item.attachmentUrl} target="_blank" rel="noreferrer">Open attachment</a> : null}
+                                  </>
+                                )}
+                              </div>
+                              {activityResponses.mode === 'submission' && item.id ? (
+                                <div className="review-controls">
+                                  <input
+                                    value={reviewDrafts[item.id]?.score ?? ''}
+                                    onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: event.target.value, reviewComment: current[item.id!]?.reviewComment ?? '' } }))}
+                                    placeholder="Score"
+                                    inputMode="numeric"
+                                  />
+                                  <input
+                                    value={reviewDrafts[item.id]?.reviewComment ?? ''}
+                                    onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: current[item.id!]?.score ?? '', reviewComment: event.target.value } }))}
+                                    placeholder="Review comment"
+                                  />
+                                  <div className="activity-actions">
+                                    <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'approved')} disabled={reviewingSubmission === item.id}>Approve</button>
+                                    <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'needs_revision')} disabled={reviewingSubmission === item.id}>Revise</button>
+                                    <button type="button" className="link-button danger" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'rejected')} disabled={reviewingSubmission === item.id}>Reject</button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </article>
+                          ))}
+                          {!activityResponses.items.length ? (
+                            <EmptyState
+                              title="No responses yet"
+                              detail="Learner responses will appear here after the activity has submissions or quiz attempts."
+                            />
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 {sessionOperationTab === 'overview' ? (
@@ -1507,79 +1440,14 @@ export function SessionsPage() {
                   <span>Group</span><strong>{selectedGroup?.name ?? '-'}</strong>
                   <span>Starts</span><strong>{formatDate(selectedSession.startsAt)}</strong>
                   <span>Ends</span><strong>{formatDate(selectedSession.endsAt)}</strong>
-                  <span>Status</span><strong>{selectedSession.status || 'scheduled'}</strong>
+                  <span>Status</span><strong><span className={`status-badge ${selectedSession.status || 'scheduled'}`}>{readable(selectedSession.status || 'scheduled')}</span></strong>
+                  <span>Recording</span><strong>{selectedSession.recordingUrl ? 'Attached' : 'Not attached'}</strong>
                 </div>
-                <form className="session-edit-form" onSubmit={submitSessionUpdate}>
-                  <label>
-                    Title
-                    <input
-                      value={editSessionForm.title}
-                      onChange={(event) => {
-                        setEditSessionForm((current) => ({ ...current, title: event.target.value }));
-                        setSessionEditErrors((current) => ({ ...current, title: '' }));
-                      }}
-                      className={sessionEditErrors.title ? 'input-error' : ''}
-                      aria-invalid={!!sessionEditErrors.title}
-                    />
-                    {sessionEditErrors.title ? <span className="field-error">{sessionEditErrors.title}</span> : null}
-                  </label>
-                  <div className="two-col">
-                    <label>
-                      Starts
-                      <input
-                        type="datetime-local"
-                        value={editSessionForm.startsAt}
-                        onChange={(event) => {
-                          setEditSessionForm((current) => ({ ...current, startsAt: event.target.value }));
-                          setSessionEditErrors((current) => ({ ...current, startsAt: '', endsAt: '' }));
-                        }}
-                        className={sessionEditErrors.startsAt ? 'input-error' : ''}
-                        aria-invalid={!!sessionEditErrors.startsAt}
-                      />
-                      {sessionEditErrors.startsAt ? <span className="field-error">{sessionEditErrors.startsAt}</span> : null}
-                    </label>
-                    <label>
-                      Ends
-                      <input
-                        type="datetime-local"
-                        value={editSessionForm.endsAt}
-                        onChange={(event) => {
-                          setEditSessionForm((current) => ({ ...current, endsAt: event.target.value }));
-                          setSessionEditErrors((current) => ({ ...current, endsAt: '' }));
-                        }}
-                        className={sessionEditErrors.endsAt ? 'input-error' : ''}
-                        aria-invalid={!!sessionEditErrors.endsAt}
-                      />
-                      {sessionEditErrors.endsAt ? <span className="field-error">{sessionEditErrors.endsAt}</span> : null}
-                    </label>
-                  </div>
-                  <label>
-                    Status
-                    <select value={editSessionForm.status} onChange={(event) => setEditSessionForm((current) => ({ ...current, status: event.target.value as 'scheduled' | 'completed' | 'cancelled' }))}>
-                      <option value="scheduled">Scheduled</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </label>
-                  <label>
-                    Recording URL
-                    <input
-                      value={editSessionForm.recordingUrl}
-                      onChange={(event) => {
-                        setEditSessionForm((current) => ({ ...current, recordingUrl: event.target.value }));
-                        setSessionEditErrors((current) => ({ ...current, recordingUrl: '' }));
-                      }}
-                      className={sessionEditErrors.recordingUrl ? 'input-error' : ''}
-                      aria-invalid={!!sessionEditErrors.recordingUrl}
-                    />
-                    {sessionEditErrors.recordingUrl ? <span className="field-error">{sessionEditErrors.recordingUrl}</span> : null}
-                  </label>
-                  <label>
-                    Notes
-                    <textarea value={editSessionForm.notes} onChange={(event) => setEditSessionForm((current) => ({ ...current, notes: event.target.value }))} />
-                  </label>
-                  <button type="submit" disabled={updatingSession}>{updatingSession ? 'Updating...' : 'Update session'}</button>
-                </form>
+                <div className="session-summary-actions">
+                  <button type="button" className="secondary-button" onClick={() => setEditSessionOpen(true)}>
+                    Edit session
+                  </button>
+                </div>
                   </>
                 ) : null}
                 {sessionOperationTab === 'meeting' ? (
@@ -1687,12 +1555,17 @@ export function SessionsPage() {
                           <strong>{material.title || `Material ${index + 1}`}</strong>
                           <a href={material.url} target="_blank" rel="noreferrer">Open file</a>
                         </div>
-                        <button type="button" className="link-button danger" onClick={() => void removeMaterial(index)} disabled={updatingSession}>
+                        <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'material', materialIndex: index })} disabled={updatingSession}>
                           Remove
                         </button>
                       </article>
                     ))}
-                    {!selectedSession.materials?.length ? <span className="muted-text">No materials uploaded yet.</span> : null}
+                    {!selectedSession.materials?.length ? (
+                      <EmptyState
+                        title="No materials uploaded yet"
+                        detail="Upload files when learners need session-specific material."
+                      />
+                    ) : null}
                   </div>
                 </div>
                 ) : null}
@@ -1769,7 +1642,12 @@ export function SessionsPage() {
                           <strong>{item.queue?.needsReview ?? 0}</strong>
                         </article>
                       ))}
-                      {!homework.length ? <span className="muted-text">No homework for this session yet.</span> : null}
+                      {!homework.length ? (
+                        <EmptyState
+                          title="No homework for this session"
+                          detail="Session homework appears here after it is created for this class."
+                        />
+                      ) : null}
                     </div>
                     ) : null}
                   </>
@@ -1779,10 +1657,260 @@ export function SessionsPage() {
           </aside>
         </div>
       )}
+      {editGroupOpen && selectedGroup ? (
+        <FormModal labelledBy="edit-group-title" onClose={() => setEditGroupOpen(false)} onSubmit={submitGroupUpdate}>
+          <div className="modal-header-block">
+            <span>{selectedCourse?.title ?? 'Selected course'}</span>
+            <h2 id="edit-group-title">Edit group</h2>
+            <p>Update the saved group defaults used for scheduling and generation.</p>
+          </div>
+          <section className="form-section">
+            <h3>Group details</h3>
+            <div className="two-col">
+              <label>
+                Name
+                <input value={editGroupForm.name} onChange={(event) => setEditGroupForm((current) => ({ ...current, name: event.target.value }))} autoFocus />
+              </label>
+              <label>
+                Code
+                <input value={editGroupForm.code} onChange={(event) => setEditGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder="Auto if empty" />
+              </label>
+            </div>
+            <div className="two-col">
+              <label>
+                Status
+                <select value={editGroupForm.status} onChange={(event) => setEditGroupForm((current) => ({ ...current, status: event.target.value as GroupStatus }))}>
+                  <option value="planned">Planned</option>
+                  <option value="open">Open</option>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+              <label>
+                Seat limit
+                <input type="number" min="1" value={editGroupForm.seatLimit} onChange={(event) => setEditGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder="No limit" />
+              </label>
+            </div>
+            <div className="two-col">
+              <label>
+                Start date
+                <input type="date" value={editGroupForm.startDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, startDate: event.target.value }))} />
+              </label>
+              <label>
+                End date
+                <input type="date" value={editGroupForm.endDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, endDate: event.target.value }))} />
+              </label>
+            </div>
+            <div className="two-col">
+              <label>
+                Timezone
+                <input value={editGroupForm.timezone} onChange={(event) => setEditGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
+              </label>
+              {canAssignInstructor ? (
+                <label>
+                  Group instructor
+                  <select value={editGroupForm.instructorId} onChange={(event) => setEditGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
+                    <option value="">Use course instructor</option>
+                    {instructorOptions.map((member) => (
+                      <option key={member.userId} value={member.userId}>
+                        {member.fullName || member.user?.fullName || member.email || member.user?.email || `Instructor #${member.userId}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+            <label>
+              Location
+              <input value={editGroupForm.location} onChange={(event) => setEditGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder="Room, branch, or city" />
+            </label>
+            <div className="two-col">
+              <label>
+                Meeting provider
+                <input value={editGroupForm.meetingProvider} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder="Zoom, Google Meet, branch room" />
+              </label>
+              <label>
+                Meeting URL
+                <input value={editGroupForm.meetingUrl} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} placeholder="https://..." />
+              </label>
+            </div>
+          </section>
+          <section className="form-section">
+            <h3>Recurring schedule</h3>
+            <div className="schedule-block-list">
+              {editGroupForm.scheduleBlocks.map((block, index) => (
+                <div className="three-col" key={`${index}-${block.day}`}>
+                  <label>
+                    Schedule day
+                    <select value={block.day} onChange={(event) => setEditGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
+                    }))}>
+                      <option value="mon">Monday</option>
+                      <option value="tue">Tuesday</option>
+                      <option value="wed">Wednesday</option>
+                      <option value="thu">Thursday</option>
+                      <option value="fri">Friday</option>
+                      <option value="sat">Saturday</option>
+                      <option value="sun">Sunday</option>
+                    </select>
+                  </label>
+                  <label>
+                    Starts
+                    <input type="time" value={block.startTime} onChange={(event) => setEditGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
+                    }))} />
+                  </label>
+                  <label>
+                    Ends
+                    <input type="time" value={block.endTime} onChange={(event) => setEditGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
+                    }))} />
+                  </label>
+                  {editGroupForm.scheduleBlocks.length > 1 ? (
+                    <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
+                      ...current,
+                      scheduleBlocks: current.scheduleBlocks.filter((_, itemIndex) => itemIndex !== index),
+                    }))}>Remove block</button>
+                  ) : null}
+                </div>
+              ))}
+              <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
+                ...current,
+                scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
+              }))}>Add schedule block</button>
+            </div>
+            <label>
+              Schedule note
+              <input value={editGroupForm.scheduleNote} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder="Optional recurring schedule note" />
+            </label>
+          </section>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(false)} disabled={updatingGroup}>Cancel</button>
+            <button type="submit" disabled={updatingGroup}>{updatingGroup ? 'Saving...' : 'Save group'}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      {editSessionOpen && selectedSession ? (
+        <FormModal labelledBy="edit-session-title" onClose={() => setEditSessionOpen(false)} onSubmit={submitSessionUpdate}>
+          <div className="modal-header-block">
+            <span>{selectedGroup?.name ?? 'Selected group'}</span>
+            <h2 id="edit-session-title">Edit session</h2>
+            <p>Update schedule, status, notes, and recording details for this session.</p>
+          </div>
+          <label>
+            Title
+            <input
+              value={editSessionForm.title}
+              onChange={(event) => {
+                setEditSessionForm((current) => ({ ...current, title: event.target.value }));
+                setSessionEditErrors((current) => ({ ...current, title: '' }));
+              }}
+              className={sessionEditErrors.title ? 'input-error' : ''}
+              aria-invalid={!!sessionEditErrors.title}
+              autoFocus
+            />
+            {sessionEditErrors.title ? <span className="field-error">{sessionEditErrors.title}</span> : null}
+          </label>
+          <div className="two-col">
+            <label>
+              Starts
+              <input
+                type="datetime-local"
+                value={editSessionForm.startsAt}
+                onChange={(event) => {
+                  setEditSessionForm((current) => ({ ...current, startsAt: event.target.value }));
+                  setSessionEditErrors((current) => ({ ...current, startsAt: '', endsAt: '' }));
+                }}
+                className={sessionEditErrors.startsAt ? 'input-error' : ''}
+                aria-invalid={!!sessionEditErrors.startsAt}
+              />
+              {sessionEditErrors.startsAt ? <span className="field-error">{sessionEditErrors.startsAt}</span> : null}
+            </label>
+            <label>
+              Ends
+              <input
+                type="datetime-local"
+                value={editSessionForm.endsAt}
+                onChange={(event) => {
+                  setEditSessionForm((current) => ({ ...current, endsAt: event.target.value }));
+                  setSessionEditErrors((current) => ({ ...current, endsAt: '' }));
+                }}
+                className={sessionEditErrors.endsAt ? 'input-error' : ''}
+                aria-invalid={!!sessionEditErrors.endsAt}
+              />
+              {sessionEditErrors.endsAt ? <span className="field-error">{sessionEditErrors.endsAt}</span> : null}
+            </label>
+          </div>
+          <label>
+            Status
+            <select value={editSessionForm.status} onChange={(event) => setEditSessionForm((current) => ({ ...current, status: event.target.value as 'scheduled' | 'completed' | 'cancelled' }))}>
+              <option value="scheduled">Scheduled</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+          <label>
+            Recording URL
+            <input
+              value={editSessionForm.recordingUrl}
+              onChange={(event) => {
+                setEditSessionForm((current) => ({ ...current, recordingUrl: event.target.value }));
+                setSessionEditErrors((current) => ({ ...current, recordingUrl: '' }));
+              }}
+              className={sessionEditErrors.recordingUrl ? 'input-error' : ''}
+              aria-invalid={!!sessionEditErrors.recordingUrl}
+            />
+            {sessionEditErrors.recordingUrl ? <span className="field-error">{sessionEditErrors.recordingUrl}</span> : null}
+          </label>
+          <label>
+            Notes
+            <textarea value={editSessionForm.notes} onChange={(event) => setEditSessionForm((current) => ({ ...current, notes: event.target.value }))} />
+          </label>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setEditSessionOpen(false)} disabled={updatingSession}>Cancel</button>
+            <button type="submit" disabled={updatingSession}>{updatingSession ? 'Saving...' : 'Save session'}</button>
+          </div>
+        </FormModal>
+      ) : null}
+      {pendingRemoval ? (
+        <Modal labelledBy="confirm-removal-title" onClose={() => setPendingRemoval(null)}>
+          <div className="modal-header-block">
+            <span>Confirm removal</span>
+            <h2 id="confirm-removal-title">Remove {pendingRemoval.type}</h2>
+            <p>This changes the selected group or session immediately.</p>
+          </div>
+          <p className="muted-text">Remove <strong>{pendingRemovalTitle}</strong>?</p>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setPendingRemoval(null)} disabled={pendingRemovalBusy}>Cancel</button>
+            <button
+              type="button"
+              className="danger-button"
+              disabled={pendingRemovalBusy}
+              onClick={() => {
+                if (pendingRemoval.type === 'student') {
+                  void removeStudentFromGroup(pendingRemoval.student);
+                  return;
+                }
+                if (pendingRemoval.type === 'activity') {
+                  void removeActivity(pendingRemoval.activityId);
+                  return;
+                }
+                void removeMaterial(pendingRemoval.materialIndex);
+              }}
+            >
+              {pendingRemovalBusy ? 'Removing...' : 'Remove'}
+            </button>
+          </div>
+        </Modal>
+      ) : null}
       {createModal === 'group' ? (
         <FormModal labelledBy="create-group-title" onClose={() => setCreateModal(null)} onSubmit={submitGroup}>
-            <div>
-              <span className="status-badge published">{selectedCourse?.title ?? 'Course required'}</span>
+            <div className="modal-header-block">
+              <span>{selectedCourse?.title ?? 'Course required'}</span>
               <h2 id="create-group-title">Create group</h2>
               <p>Groups organize learners inside the selected tenant course.</p>
             </div>
@@ -1921,8 +2049,8 @@ export function SessionsPage() {
       ) : null}
       {createModal === 'session' ? (
         <FormModal labelledBy="schedule-session-title" onClose={() => setCreateModal(null)} onSubmit={submitSession}>
-            <div>
-              <span className="status-badge published">{selectedGroup?.name ?? 'Group required'}</span>
+            <div className="modal-header-block">
+              <span>{selectedGroup?.name ?? 'Group required'}</span>
               <h2 id="schedule-session-title">Schedule session</h2>
               <p>Sessions hold live meeting links, materials, attendance, activities, and homework.</p>
             </div>
@@ -1982,86 +2110,104 @@ export function SessionsPage() {
         </FormModal>
       ) : null}
       {createModal === 'enrollment' ? (
-        <FormModal labelledBy="enroll-student-title" onClose={() => setCreateModal(null)} onSubmit={submitEnrollment}>
-            <div>
-              <span className="status-badge published">{selectedGroup?.name ?? 'Group required'}</span>
+        <FormModal
+          labelledBy="enroll-student-title"
+          onClose={() => setCreateModal(null)}
+          onSubmit={enrollmentMode === 'existing' ? submitEnrollment : (event) => {
+            event.preventDefault();
+            void submitInviteAndEnroll();
+          }}
+        >
+            <div className="modal-header-block">
+              <span>{selectedGroup?.name ?? 'Group required'}</span>
               <h2 id="enroll-student-title">Enroll student</h2>
               <p>Add an existing learner account or create a tenant student and enroll them.</p>
             </div>
-            <div className="student-search-row">
-              <label>
-                Search student
-                <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Name or email" autoFocus />
-              </label>
-              <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>
-                Search
+            <div className="enrollment-tabs" role="tablist" aria-label="Enrollment mode">
+              <button type="button" className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => setEnrollmentMode('existing')}>
+                Existing student
               </button>
-            </div>
-            <label>
-              Student
-              <select
-                value={selectedStudentId ?? ''}
-                onChange={(event) => {
-                  setSelectedStudentId(Number(event.target.value) || undefined);
-                  setCreateErrors((current) => ({ ...current, student: '' }));
-                }}
-                disabled={!studentResults.length}
-                className={createErrors.student ? 'input-error' : ''}
-                aria-invalid={!!createErrors.student}
-              >
-                <option value="">Select student</option>
-                {studentResults.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.fullName || student.email} ({student.email})
-                  </option>
-                ))}
-              </select>
-              {createErrors.student ? <span className="field-error">{createErrors.student}</span> : null}
-            </label>
-            <div className="two-col">
-              <label>
+              <button type="button" className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => setEnrollmentMode('new')}>
                 New student
-                <input
-                  value={studentInviteForm.fullName}
-                  onChange={(event) => setStudentInviteForm((current) => ({ ...current, fullName: event.target.value }))}
-                  placeholder="Full name"
-                />
-              </label>
-              <label>
-                Email
-                <input
-                  type="email"
-                  value={studentInviteForm.email}
-                  onChange={(event) => setStudentInviteForm((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="student@example.com"
-                />
-              </label>
-            </div>
-            <div className="student-search-row">
-              <label className="inline-check">
-                <input
-                  type="checkbox"
-                  checked={studentInviteForm.sendEmail}
-                  onChange={(event) => setStudentInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))}
-                />
-                Send setup email
-              </label>
-              <button type="button" className="secondary-button" onClick={() => void submitInviteAndEnroll()} disabled={!courseId || !groupId || enrolling}>
-                {enrolling ? 'Working...' : 'Create and enroll'}
               </button>
             </div>
+            {enrollmentMode === 'existing' ? (
+              <>
+                <div className="student-search-row">
+                  <label>
+                    Search student
+                    <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Name or email" autoFocus />
+                  </label>
+                  <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>
+                    Search
+                  </button>
+                </div>
+                <label>
+                  Student
+                  <select
+                    value={selectedStudentId ?? ''}
+                    onChange={(event) => {
+                      setSelectedStudentId(Number(event.target.value) || undefined);
+                      setCreateErrors((current) => ({ ...current, student: '' }));
+                    }}
+                    disabled={!studentResults.length}
+                    className={createErrors.student ? 'input-error' : ''}
+                    aria-invalid={!!createErrors.student}
+                  >
+                    <option value="">Select student</option>
+                    {studentResults.map((student) => (
+                      <option key={student.id} value={student.id}>
+                        {student.fullName || student.email} ({student.email})
+                      </option>
+                    ))}
+                  </select>
+                  {createErrors.student ? <span className="field-error">{createErrors.student}</span> : null}
+                </label>
+              </>
+            ) : (
+              <>
+                <div className="two-col">
+                  <label>
+                    Full name
+                    <input
+                      value={studentInviteForm.fullName}
+                      onChange={(event) => setStudentInviteForm((current) => ({ ...current, fullName: event.target.value }))}
+                      placeholder="Full name"
+                      autoFocus
+                    />
+                  </label>
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={studentInviteForm.email}
+                      onChange={(event) => setStudentInviteForm((current) => ({ ...current, email: event.target.value }))}
+                      placeholder="student@example.com"
+                    />
+                  </label>
+                </div>
+                <label className="inline-check">
+                  <input
+                    type="checkbox"
+                    checked={studentInviteForm.sendEmail}
+                    onChange={(event) => setStudentInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))}
+                  />
+                  Send setup email
+                </label>
+              </>
+            )}
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={enrolling}>Cancel</button>
-              <button type="submit" disabled={!courseId || !groupId || !selectedStudentId || enrolling}>
-                {enrolling ? 'Working...' : 'Enroll student'}
+              <button type="submit" disabled={!courseId || !groupId || (enrollmentMode === 'existing' && !selectedStudentId) || enrolling}>
+                {enrolling ? 'Working...' : enrollmentMode === 'existing' ? 'Enroll student' : 'Create and enroll'}
               </button>
             </div>
         </FormModal>
       ) : null}
       {createModal === 'activity' ? (
         <FormModal labelledBy="add-activity-title" onClose={() => setCreateModal(null)} onSubmit={submitActivity}>
-            <div>
-              <span className="status-badge published">{selectedSession?.title ?? 'Session required'}</span>
+            <div className="modal-header-block">
+              <span>{selectedSession?.title ?? 'Session required'}</span>
               <h2 id="add-activity-title">Add activity</h2>
               <p>Create a discussion, exercise, group work item, or quiz for the selected session.</p>
             </div>

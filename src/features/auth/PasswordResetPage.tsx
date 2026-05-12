@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { FiCheckCircle, FiMail } from 'react-icons/fi';
 import { requestPasswordReset, resetPassword } from '../../services/api';
 import { useTenant } from '../tenant/TenantProvider';
+import { getPasswordSetupError } from './authPassword';
 
 type ResetStep = 'request' | 'reset';
 
@@ -70,12 +71,9 @@ export function PasswordResetPage() {
       setError('Enter the reset code.');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+    const passwordError = getPasswordSetupError(password, confirmPassword);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -114,7 +112,7 @@ export function PasswordResetPage() {
           </span>
           <h1>Reset your password</h1>
           <p>Request a reset code for your organization account, then choose a new password.</p>
-          {resolutionError ? <p className="field-error">{resolutionError}</p> : null}
+          {resolutionError ? <p className="field-error auth-error-banner">{resolutionError}</p> : null}
         </div>
         <div className="landing-proof-grid">
           <article>
@@ -144,6 +142,7 @@ export function PasswordResetPage() {
             type="email"
             autoComplete="email"
             disabled={submitting || step === 'reset'}
+            aria-invalid={Boolean(error && step === 'request')}
             required
           />
         </label>
@@ -151,15 +150,39 @@ export function PasswordResetPage() {
           <>
             <label>
               Reset code
-              <input value={otp} onChange={(event) => setOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" required />
+              <input
+                value={otp}
+                onChange={(event) => setOtp(event.target.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                aria-invalid={Boolean(error && !otp.trim())}
+                required
+              />
             </label>
             <label>
               New password
-              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} required />
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                aria-invalid={Boolean(error && password.length < 8)}
+                required
+              />
+              <span className="field-help">Use at least 8 characters.</span>
             </label>
             <label>
               Confirm password
-              <input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} required />
+              <input
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                aria-invalid={Boolean(error && password !== confirmPassword)}
+                required
+              />
             </label>
           </>
         ) : null}

@@ -19,13 +19,19 @@ import { useTenant } from '../tenant/TenantProvider';
 import { formatDate, readable } from '../../lib/format';
 import { useAuth } from '../auth/AuthProvider';
 import { canManageTenantMembers } from '../tenant/tenantRoles';
+import {
+  canChangeMemberRole,
+  getRolesByUser,
+  hasDuplicateTenantRole,
+  manageableTenantRoles,
+  memberEmail,
+  memberName,
+} from './memberAccess';
 
-const tenantRoles = ['all', 'owner', 'company_admin', 'admin', 'instructor', 'assistant', 'student'];
-const manageableRoles = ['company_admin', 'admin', 'instructor', 'assistant', 'student'];
+const tenantRoles = ['all', 'owner', 'company_admin', 'instructor', 'assistant', 'student'];
 const roleDescriptions: Record<string, string> = {
   owner: 'Platform-managed tenant owner with highest access.',
   company_admin: 'Can manage tenant operations, members, and settings.',
-  admin: 'Can manage learning operations and tenant workflows.',
   instructor: 'Can run sessions, attendance, homework, and certificates.',
   assistant: 'Can support daily operations and learner administration.',
   student: 'Learner access to courses, sessions, homework, and certificates.',
@@ -46,12 +52,8 @@ type InviteResult = {
   } | null;
 } | null;
 
-function memberName(member: CompanyMember) {
-  return member.user?.fullName || member.fullName || `User ${member.userId}`;
-}
-
-function memberEmail(member: CompanyMember) {
-  return member.user?.email || member.email || 'Not set';
+function isOwnerRole(member: CompanyMember) {
+  return member.role === 'owner';
 }
 
 export function MembersPage() {
@@ -66,6 +68,7 @@ export function MembersPage() {
   const [working, setWorking] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [userResults, setUserResults] = useState<UserSummary[]>([]);
+  const [userSearchRan, setUserSearchRan] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>();
   const [addRole, setAddRole] = useState('student');
   const [inviteForm, setInviteForm] = useState(emptyInviteForm);
@@ -109,26 +112,29 @@ export function MembersPage() {
     }, {})
   ), [members]);
 
-  const rolesByUser = useMemo(() => (
-    members.reduce<Record<number, string[]>>((acc, member) => {
-      acc[member.userId] = [...(acc[member.userId] ?? []), member.role];
-      return acc;
-    }, {})
-  ), [members]);
+  const rolesByUser = useMemo(() => getRolesByUser(members), [members]);
 
   const stats = useMemo(() => {
     const countRole = (targetRole: string) => members.filter((member) => member.role === targetRole).length;
     return [
       { label: 'Members', value: members.length, hint: 'All tenant assignments' },
-      { label: 'Admins', value: countRole('owner') + countRole('company_admin') + countRole('admin'), hint: 'Owner and admin roles' },
+      { label: 'Admins', value: countRole('owner') + countRole('company_admin'), hint: 'Owner and tenant admin roles' },
       { label: 'Instructors', value: countRole('instructor'), hint: 'Teaching users' },
       { label: 'Students', value: countRole('student'), hint: 'Learner users' },
     ];
   }, [members]);
 
+  const selectedUserExistingRoles = selectedUserId ? rolesByUser[selectedUserId] ?? [] : [];
+  const selectedUserHasRole = hasDuplicateTenantRole(rolesByUser, selectedUserId, addRole);
+  const inviteExistingMember = members.find((member) => (
+    memberEmail(member).toLowerCase() === inviteForm.email.trim().toLowerCase()
+    && member.role === inviteForm.role
+  ));
+
   const runUserSearch = async () => {
     if (!canManageMembers) return;
     setWorking(true);
+    setUserSearchRan(true);
     try {
       const results = await searchUsers({ search: userSearch, limit: 12 });
       setUserResults(results);
@@ -147,6 +153,10 @@ export function MembersPage() {
       toast.error('Select a user first');
       return;
     }
+    if (selectedUserHasRole) {
+      toast.error('This user already has that tenant role');
+      return;
+    }
     setWorking(true);
     try {
       await addTenantMember(activeTenantId, { userId: selectedUserId, role: addRole });
@@ -154,6 +164,7 @@ export function MembersPage() {
       setMemberModal(null);
       setUserSearch('');
       setUserResults([]);
+      setUserSearchRan(false);
       setSelectedUserId(undefined);
       toast.success('Member added');
     } catch {
@@ -169,6 +180,10 @@ export function MembersPage() {
     if (!activeTenantId) return;
     if (!inviteForm.email.trim() || !inviteForm.fullName.trim()) {
       toast.error('Email and full name are required');
+      return;
+    }
+    if (inviteExistingMember) {
+      toast.error('This email already has that tenant role');
       return;
     }
     setWorking(true);
@@ -222,6 +237,10 @@ export function MembersPage() {
   const changeMemberRole = async (member: CompanyMember, nextRole: string) => {
     if (!canManageMembers) return;
     if (!activeTenantId || nextRole === member.role) return;
+    if (!canChangeMemberRole(rolesByUser, member, nextRole)) {
+      toast.error('This user already has that tenant role');
+      return;
+    }
     setWorking(true);
     try {
       await setTenantMemberRole(activeTenantId, member.userId, {
@@ -288,7 +307,7 @@ export function MembersPage() {
           <FiUsers />
           <div>
             <strong>Operational roles</strong>
-            <span>Admins, instructors, assistants, and students can be managed here.</span>
+            <span>Tenant admins, instructors, assistants, and students can be managed here.</span>
           </div>
         </article>
       </section>
@@ -318,7 +337,12 @@ export function MembersPage() {
         </select>
       </div>
       {!members.length ? (
-        <EmptyState title="No members" />
+        <EmptyState
+          title="No members"
+          detail={canManageMembers
+            ? 'Invite a user or add an existing platform user to grant tenant access.'
+            : 'No tenant access assignments are available for this workspace.'}
+        />
       ) : !filteredMembers.length ? (
         <EmptyState title="No matching members" detail="Adjust the search or role filter." />
       ) : (
@@ -339,7 +363,7 @@ export function MembersPage() {
                 <tbody>
                   {filteredMembers.map((member) => (
                     <tr key={`${member.userId}-${member.role}`}>
-                      <td>
+                      <td data-label="Name">
                         <strong>{memberName(member)}</strong>
                         <small>User {member.userId}</small>
                         <div className="member-role-stack">
@@ -348,9 +372,9 @@ export function MembersPage() {
                           ))}
                         </div>
                       </td>
-                      <td>{memberEmail(member)}</td>
-                      <td>
-                        {member.role === 'owner' || !canManageMembers ? (
+                      <td data-label="Email">{memberEmail(member)}</td>
+                      <td data-label="Role">
+                        {isOwnerRole(member) || !canManageMembers ? (
                           <span className={`status-badge role-${member.role}`}>{readable(member.role)}</span>
                         ) : (
                           <label className="member-role-select-label">
@@ -360,15 +384,19 @@ export function MembersPage() {
                               onChange={(event) => void changeMemberRole(member, event.target.value)}
                               disabled={working}
                             >
-                              {manageableRoles.map((option) => <option key={option} value={option}>{readable(option)}</option>)}
+                              {manageableTenantRoles.map((option) => (
+                                <option key={option} value={option} disabled={option !== member.role && hasDuplicateTenantRole(rolesByUser, member.userId, option)}>
+                                  {readable(option)}
+                                </option>
+                              ))}
                             </select>
                           </label>
                         )}
                       </td>
-                      <td>{formatDate(member.createdAt)}</td>
-                      <td>
-                        {member.role === 'owner' || !canManageMembers ? (
-                          <span className="muted-text">{member.role === 'owner' ? 'Platform managed' : 'Read only'}</span>
+                      <td data-label="Added">{formatDate(member.createdAt)}</td>
+                      <td data-label="Actions">
+                        {isOwnerRole(member) || !canManageMembers ? (
+                          <span className="muted-text">{isOwnerRole(member) ? 'Platform managed' : 'Read only'}</span>
                         ) : (
                           <div className="member-row-actions">
                             <button type="button" className="secondary-button" disabled={working} onClick={() => void resendInvite(member)}>
@@ -384,6 +412,64 @@ export function MembersPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="member-card-list" aria-label="Tenant roster cards">
+              {filteredMembers.map((member) => (
+                <article className="member-card" key={`card-${member.userId}-${member.role}`}>
+                  <div className="member-card-header">
+                    <div>
+                      <strong>{memberName(member)}</strong>
+                      <span>{memberEmail(member)}</span>
+                    </div>
+                    <span className={`status-badge role-${member.role}`}>{readable(member.role)}</span>
+                  </div>
+                  <dl className="member-card-meta">
+                    <div>
+                      <dt>User</dt>
+                      <dd>{member.userId}</dd>
+                    </div>
+                    <div>
+                      <dt>Added</dt>
+                      <dd>{formatDate(member.createdAt)}</dd>
+                    </div>
+                  </dl>
+                  {(rolesByUser[member.userId] ?? []).length > 1 ? (
+                    <div className="member-role-stack">
+                      {(rolesByUser[member.userId] ?? []).map((item) => (
+                        <span key={item}>{readable(item)}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {isOwnerRole(member) || !canManageMembers ? (
+                    <span className="muted-text">{isOwnerRole(member) ? 'Platform managed' : 'Read only'}</span>
+                  ) : (
+                    <div className="member-card-actions">
+                      <label>
+                        Role
+                        <select
+                          value={member.role}
+                          onChange={(event) => void changeMemberRole(member, event.target.value)}
+                          disabled={working}
+                        >
+                          {manageableTenantRoles.map((option) => (
+                            <option key={option} value={option} disabled={option !== member.role && hasDuplicateTenantRole(rolesByUser, member.userId, option)}>
+                              {readable(option)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="member-row-actions">
+                        <button type="button" className="secondary-button" disabled={working} onClick={() => void resendInvite(member)}>
+                          Resend invite
+                        </button>
+                        <button type="button" className="secondary-button" disabled={working} onClick={() => setMemberPendingRemoval(member)}>
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              ))}
             </div>
           </section>
 
@@ -412,9 +498,16 @@ export function MembersPage() {
         </div>
       )}
       {canManageMembers && memberModal === 'existing' ? (
-        <FormModal labelledBy="add-existing-member-title" onClose={() => setMemberModal(null)} onSubmit={submitAddExisting}>
-            <div>
-              <span className="status-badge published">Existing user</span>
+        <FormModal
+          labelledBy="add-existing-member-title"
+          onClose={() => {
+            setMemberModal(null);
+            setUserSearchRan(false);
+          }}
+          onSubmit={submitAddExisting}
+        >
+            <div className="modal-header-block">
+              <span>Existing user</span>
               <h2 id="add-existing-member-title">Add existing user</h2>
               <p>Search platform users and assign a tenant role.</p>
             </div>
@@ -440,39 +533,71 @@ export function MembersPage() {
               <label>
                 Role
                 <select value={addRole} onChange={(event) => setAddRole(event.target.value)}>
-                  {manageableRoles.map((option) => <option key={option} value={option}>{readable(option)}</option>)}
+                  {manageableTenantRoles.map((option) => <option key={option} value={option}>{readable(option)}</option>)}
                 </select>
                 <span className="field-help">{roleDescriptions[addRole]}</span>
               </label>
             </div>
+            {userSearchRan && userSearch.trim() && !working && !userResults.length ? (
+              <p className="panel-note">No platform users matched this search.</p>
+            ) : null}
+            {selectedUserExistingRoles.length ? (
+              <p className="panel-note">
+                Existing tenant roles for this user: {selectedUserExistingRoles.map(readable).join(', ')}.
+              </p>
+            ) : null}
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setMemberModal(null)} disabled={working}>Cancel</button>
-              <button type="submit" disabled={!selectedUserId || working}>{working ? 'Adding...' : 'Add member'}</button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setMemberModal(null);
+                  setUserSearchRan(false);
+                }}
+                disabled={working}
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={!selectedUserId || selectedUserHasRole || working}>
+                {working ? 'Adding...' : selectedUserHasRole ? 'Role already assigned' : 'Add member'}
+              </button>
             </div>
         </FormModal>
       ) : null}
       {canManageMembers && memberModal === 'invite' ? (
         <FormModal labelledBy="invite-member-title" onClose={() => { setMemberModal(null); setInviteResult(null); }} onSubmit={submitInvite}>
-            <div>
-              <span className="status-badge published">Invite</span>
+            <div className="modal-header-block">
+              <span>Invite</span>
               <h2 id="invite-member-title">Invite or create user</h2>
               <p>Create tenant access for a new user profile.</p>
             </div>
             <div className="two-col">
               <label>
                 Full name
-                <input value={inviteForm.fullName} onChange={(event) => setInviteForm((current) => ({ ...current, fullName: event.target.value }))} autoFocus />
+                <input
+                  value={inviteForm.fullName}
+                  onChange={(event) => setInviteForm((current) => ({ ...current, fullName: event.target.value }))}
+                  autoComplete="name"
+                  autoFocus
+                  required
+                />
               </label>
               <label>
                 Email
-                <input type="email" value={inviteForm.email} onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))} />
+                <input
+                  type="email"
+                  value={inviteForm.email}
+                  onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                  autoComplete="email"
+                  required
+                />
               </label>
             </div>
             <div className="two-col">
               <label>
                 Role
                 <select value={inviteForm.role} onChange={(event) => setInviteForm((current) => ({ ...current, role: event.target.value }))}>
-                  {manageableRoles.map((option) => <option key={option} value={option}>{readable(option)}</option>)}
+                  {manageableTenantRoles.map((option) => <option key={option} value={option}>{readable(option)}</option>)}
                 </select>
                 <span className="field-help">{roleDescriptions[inviteForm.role]}</span>
               </label>
@@ -494,16 +619,19 @@ export function MembersPage() {
                 </small>
               </div>
             ) : null}
+            {inviteExistingMember ? (
+              <p className="panel-note">This email already has the {readable(inviteForm.role)} role in this tenant.</p>
+            ) : null}
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => { setMemberModal(null); setInviteResult(null); }} disabled={working}>Cancel</button>
-              <button type="submit" disabled={working}>{working ? 'Inviting...' : 'Invite member'}</button>
+              <button type="submit" disabled={working || Boolean(inviteExistingMember)}>{working ? 'Inviting...' : inviteExistingMember ? 'Role already assigned' : 'Invite member'}</button>
             </div>
         </FormModal>
       ) : null}
       {canManageMembers && inviteLinkModalOpen ? (
         <Modal labelledBy="invite-link-title" onClose={() => setInviteLinkModalOpen(false)}>
-            <div>
-              <span className="status-badge published">Invite link</span>
+            <div className="modal-header-block">
+              <span>Invite link</span>
               <h2 id="invite-link-title">Setup link regenerated</h2>
               <p>Copy and share this link if the user did not receive the setup email.</p>
             </div>
@@ -529,8 +657,8 @@ export function MembersPage() {
       ) : null}
       {canManageMembers && memberPendingRemoval ? (
         <Modal labelledBy="remove-member-title" onClose={() => setMemberPendingRemoval(null)}>
-            <div>
-              <span className="status-badge destructive">Remove role</span>
+            <div className="modal-header-block">
+              <span>Remove role</span>
               <h2 id="remove-member-title">Remove tenant access</h2>
               <p>{memberName(memberPendingRemoval)} · {readable(memberPendingRemoval.role)}</p>
             </div>

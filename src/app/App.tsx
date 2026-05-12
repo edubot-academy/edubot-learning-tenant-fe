@@ -1,24 +1,32 @@
-import { useEffect, useMemo } from 'react';
+import { Component, lazy, Suspense, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
 import { useAuth } from '../features/auth/AuthProvider';
 import { useTenant } from '../features/tenant/TenantProvider';
-import { LoginPage } from '../features/auth/LoginPage';
-import { PasswordResetPage } from '../features/auth/PasswordResetPage';
-import { SetupAccountPage } from '../features/auth/SetupAccountPage';
-import { OverviewPage } from '../features/dashboard/OverviewPage';
-import { CoursesPage } from '../features/courses/CoursesPage';
-import { GroupsPage } from '../features/groups/GroupsPage';
-import { SessionsPage } from '../features/sessions/SessionsPage';
-import { AttendancePage } from '../features/attendance/AttendancePage';
-import { HomeworkPage } from '../features/homework/HomeworkPage';
-import { CertificatesPage } from '../features/certificates/CertificatesPage';
-import { MembersPage } from '../features/members/MembersPage';
-import { SettingsPage } from '../features/settings/SettingsPage';
-import { StudentDashboardPage } from '../features/student/StudentDashboardPage';
 import { EmptyState, LoadingState } from '../components/DataState';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
-import { canManageTenantCertificates, canManageTenantMembers, canOperateTenantLearning, isPlatformAdmin, isTenantStudent } from '../features/tenant/tenantRoles';
+import { canManageTenantCertificates, canManageTenantMembers, canOperateTenantLearning, getTenantAccessLevel, isPlatformAdmin, isTenantStudent } from '../features/tenant/tenantRoles';
+
+function lazyNamed<T extends ComponentType<object>>(loader: () => Promise<Record<string, T>>, exportName: string) {
+  return lazy(async () => {
+    const module = await loader();
+    return { default: module[exportName] };
+  });
+}
+
+const LoginPage = lazyNamed(() => import('../features/auth/LoginPage'), 'LoginPage');
+const PasswordResetPage = lazyNamed(() => import('../features/auth/PasswordResetPage'), 'PasswordResetPage');
+const SetupAccountPage = lazyNamed(() => import('../features/auth/SetupAccountPage'), 'SetupAccountPage');
+const OverviewPage = lazyNamed(() => import('../features/dashboard/OverviewPage'), 'OverviewPage');
+const CoursesPage = lazyNamed(() => import('../features/courses/CoursesPage'), 'CoursesPage');
+const GroupsPage = lazyNamed(() => import('../features/groups/GroupsPage'), 'GroupsPage');
+const SessionsPage = lazyNamed(() => import('../features/sessions/SessionsPage'), 'SessionsPage');
+const AttendancePage = lazyNamed(() => import('../features/attendance/AttendancePage'), 'AttendancePage');
+const HomeworkPage = lazyNamed(() => import('../features/homework/HomeworkPage'), 'HomeworkPage');
+const CertificatesPage = lazyNamed(() => import('../features/certificates/CertificatesPage'), 'CertificatesPage');
+const MembersPage = lazyNamed(() => import('../features/members/MembersPage'), 'MembersPage');
+const SettingsPage = lazyNamed(() => import('../features/settings/SettingsPage'), 'SettingsPage');
+const StudentDashboardPage = lazyNamed(() => import('../features/student/StudentDashboardPage'), 'StudentDashboardPage');
 
 const routeTitles: Record<string, string> = {
   '/': 'Overview',
@@ -36,6 +44,37 @@ const routeTitles: Record<string, string> = {
 };
 
 const defaultFaviconHref = '/edubot-icon.svg';
+
+type RouteErrorBoundaryState = {
+  hasError: boolean;
+};
+
+class RouteErrorBoundary extends Component<{ children: ReactNode }, RouteErrorBoundaryState> {
+  state: RouteErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <main className="login-page">
+          <section className="login-panel state-panel" role="alert">
+            <strong>Workspace view failed</strong>
+            <span>Refresh this view or return to another workspace section.</span>
+            <div className="page-actions">
+              <button type="button" onClick={() => this.setState({ hasError: false })}>Try again</button>
+              <button type="button" className="secondary-button" onClick={() => window.location.assign('/')}>Go to overview</button>
+            </div>
+          </section>
+        </main>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function getManagedFaviconLink() {
   const existingManaged = document.querySelector<HTMLLinkElement>('link[data-managed-favicon="true"]');
@@ -199,15 +238,31 @@ function ProtectedRoutes() {
       </main>
     );
   }
+  if (getTenantAccessLevel(user, activeTenant) === 'none') {
+    return (
+      <main className="login-page">
+        <section className="login-panel state-panel">
+          <strong>No workspace role</strong>
+          <span>Your account is assigned to this tenant, but it does not have a tenant workspace role yet.</span>
+          <div className="page-actions">
+            <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>Refresh</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return <AppLayout />;
 }
 
-export function App() {
+function AppRoutes() {
+  const location = useLocation();
+
   return (
-    <>
-      <DocumentMetadata />
-      <Routes>
+    <RouteErrorBoundary key={location.pathname}>
+      <Suspense fallback={<LoadingState label="Loading workspace view" />}>
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<PasswordResetPage />} />
         <Route path="/setup-account" element={<SetupAccountPage />} />
@@ -224,7 +279,17 @@ export function App() {
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </Suspense>
+    </RouteErrorBoundary>
+  );
+}
+
+export function App() {
+  return (
+    <>
+      <DocumentMetadata />
+      <AppRoutes />
     </>
   );
 }

@@ -27,41 +27,29 @@ import {
 } from '../../services/api';
 import type { CertificateBranding, Course, CourseCertificate, CourseCertificateSettings, GroupStudent } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
-import { formatDate } from '../../lib/format';
+import { formatDate, readable } from '../../lib/format';
 import { useAuth } from '../auth/AuthProvider';
 import { isTenantAdmin } from '../tenant/tenantRoles';
+import {
+  certificateTabs,
+  describeEligibility,
+  filterCertificates,
+  filterIssueStudents,
+  formatApprovalMode,
+  getCertificateCounts,
+  getCertificateDecisionBlocker,
+  isStudentEligibleForCertificate,
+  validateCourseCertificateSettings,
+  validateHexColors,
+  type CertificateLanguageValue,
+  type CertificateOrientationValue,
+  type CertificateTab,
+} from './certificateWorkflow';
 
 type CertificateDecision = {
   certificate: CourseCertificate;
   action: 'approve' | 'reject' | 'revoke';
 };
-
-type CertificateTab = 'branding' | 'rules' | 'registry';
-type CertificateLanguageValue = 'en' | 'ru' | 'ky';
-type CertificateOrientationValue = 'landscape' | 'portrait';
-
-const certificateTabs: Array<{ key: CertificateTab; label: string; description: string }> = [
-  { key: 'branding', label: 'Branding', description: 'Certificate template, logo, colors, and preview.' },
-  { key: 'rules', label: 'Course rules', description: 'Eligibility, issue mode, approval, and signatures.' },
-  { key: 'registry', label: 'Registry', description: 'Issue, approve, regenerate, and search certificates.' },
-];
-
-const eligibilityReasonLabels: Record<string, string> = {
-  sessions_missing: 'No delivery sessions exist yet',
-  sessions_incomplete: 'Sessions are not completed',
-  attendance_below_threshold: 'Attendance is below requirement',
-  homework_below_threshold: 'Homework is below requirement',
-  activities_below_threshold: 'Activities are below requirement',
-  lesson_progress_incomplete: 'Lesson progress is incomplete',
-};
-
-function describeEligibility(student?: GroupStudent | null) {
-  const eligibility = student?.certificateEligibility;
-  if (!eligibility) return student?.certificateEligible ? 'Eligible' : 'Eligibility unavailable';
-  if (eligibility.eligible) return 'Eligible';
-  const reasons = eligibility.reasons ?? [];
-  return reasons.map((reason) => eligibilityReasonLabels[reason] ?? reason.replaceAll('_', ' ')).join(', ') || 'Requirements not met';
-}
 
 function getPreviewRootNode(doc?: Document | null) {
   if (!doc?.body) return null;
@@ -181,6 +169,9 @@ export function CertificatesPage() {
   const [certificateNote, setCertificateNote] = useState('');
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [issueErrors, setIssueErrors] = useState<Record<string, string>>({});
+  const [issueStudentQuery, setIssueStudentQuery] = useState('');
+  const [issueStudentFilter, setIssueStudentFilter] = useState<'all' | 'eligible' | 'blocked'>('eligible');
+  const [pendingIssueOverride, setPendingIssueOverride] = useState<GroupStudent | null>(null);
   const [brandingErrors, setBrandingErrors] = useState<Record<string, string>>({});
   const [courseSettingsErrors, setCourseSettingsErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -193,6 +184,11 @@ export function CertificatesPage() {
   const [exactPreviewError, setExactPreviewError] = useState('');
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [pendingRegenerate, setPendingRegenerate] = useState<{ certificateId?: number; count: number } | null>(null);
+  const [registryPreviewOpen, setRegistryPreviewOpen] = useState(false);
+  const [expandedCertificateId, setExpandedCertificateId] = useState<number | undefined>();
+  const [visibleStudentLimit, setVisibleStudentLimit] = useState(12);
+  const [visibleCertificateLimit, setVisibleCertificateLimit] = useState(12);
   const [pendingDecision, setPendingDecision] = useState<CertificateDecision | null>(null);
   const [decisionReason, setDecisionReason] = useState('');
   const previewFrameCleanupRef = useRef<Record<string, (() => void) | undefined>>({});
@@ -332,16 +328,19 @@ export function CertificatesPage() {
   }, [certificates]);
 
   const certificateCounts = useMemo(() => (
-    certificates.reduce<Record<string, number>>((acc, certificate) => {
-      acc.total = (acc.total ?? 0) + 1;
-      acc[certificate.status] = (acc[certificate.status] ?? 0) + 1;
-      return acc;
-    }, { total: 0 })
+    getCertificateCounts(certificates)
   ), [certificates]);
 
   const selectedStudent = useMemo(
     () => courseStudents.find((student) => student.id === selectedStudentId || student.userId === selectedStudentId),
     [courseStudents, selectedStudentId],
+  );
+  const issueStudentOptions = useMemo(() => {
+    return filterIssueStudents(courseStudents, issueStudentQuery, issueStudentFilter);
+  }, [courseStudents, issueStudentFilter, issueStudentQuery]);
+  const visibleCourseStudents = useMemo(
+    () => courseStudents.slice(0, visibleStudentLimit),
+    [courseStudents, visibleStudentLimit],
   );
   const selectedCertificateCourse = useMemo(
     () => courses.find((course) => course.id === courseId),
@@ -353,7 +352,7 @@ export function CertificatesPage() {
   const canRegenerateCertificates = canManageCertificateAdmin;
   const canApproveCertificates = canManageCertificateAdmin || courseSettings?.approvalMode === 'instructor';
   const rosterCounts = useMemo(() => {
-    const eligible = courseStudents.filter((student) => student.certificateEligibility?.eligible || student.certificateEligible).length;
+    const eligible = courseStudents.filter((student) => isStudentEligibleForCertificate(student)).length;
     return {
       total: courseStudents.length,
       eligible,
@@ -362,11 +361,12 @@ export function CertificatesPage() {
       pending: courseStudents.filter((student) => student.certificateStatus === 'pending_approval').length,
     };
   }, [courseStudents]);
+  const issuedCertificateCount = certificates.filter((certificate) => certificate.status === 'issued').length;
 
   useEffect(() => {
     if (!branding && !activeTenant) return;
     setPreviewIssuerName(user?.fullName || branding?.issuerDisplayName || activeTenant?.name || '');
-    setPreviewIssuerTitle(branding?.issuerTitle || (canManageCertificateAdmin ? 'Admin' : 'Instructor'));
+    setPreviewIssuerTitle(branding?.issuerTitle || (canManageCertificateAdmin ? 'Tenant admin' : 'Instructor'));
     setPreviewLanguage(
       branding?.certificateLanguage === 'ru' || branding?.certificateLanguage === 'ky' ? branding.certificateLanguage : 'en',
     );
@@ -378,30 +378,26 @@ export function CertificatesPage() {
     setPreviewStudentName(nextStudentName);
   }, [courseId, courseStudents, selectedStudent]);
 
+  useEffect(() => {
+    setVisibleStudentLimit(12);
+  }, [courseId, studentProgressFilter, studentSearch]);
+
+  useEffect(() => {
+    setVisibleCertificateLimit(12);
+    setExpandedCertificateId(undefined);
+  }, [certificateQuery, certificateStatus, courseId]);
+
   const filteredCertificates = useMemo(() => {
-    const normalizedQuery = certificateQuery.trim().toLowerCase();
-    return certificates.filter((certificate) => {
-      const matchesStatus = certificateStatus === 'all' || certificate.status === certificateStatus;
-      const matchesQuery = !normalizedQuery
-        || String(certificate.studentName ?? '').toLowerCase().includes(normalizedQuery)
-        || String(certificate.studentId).includes(normalizedQuery)
-        || String(certificate.publicId ?? '').toLowerCase().includes(normalizedQuery)
-        || String(certificate.status ?? '').toLowerCase().includes(normalizedQuery);
-      return matchesStatus && matchesQuery;
-    });
+    return filterCertificates(certificates, certificateQuery, certificateStatus);
   }, [certificateQuery, certificateStatus, certificates]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activeTenant || !branding) return;
-    const hexColorPattern = /^#?[0-9a-fA-F]{6}$/;
-    const nextErrors: Record<string, string> = {};
-    if (branding.primaryColor && !hexColorPattern.test(branding.primaryColor)) {
-      nextErrors.primaryColor = 'Use a 6-digit hex color, for example #122144.';
-    }
-    if (branding.accentColor && !hexColorPattern.test(branding.accentColor)) {
-      nextErrors.accentColor = 'Use a 6-digit hex color, for example #f17e22.';
-    }
+    const nextErrors = validateHexColors({
+      primaryColor: branding.primaryColor,
+      accentColor: branding.accentColor,
+    });
     if (Object.keys(nextErrors).length) {
       setBrandingErrors(nextErrors);
       toast.error(nextErrors.primaryColor ?? nextErrors.accentColor);
@@ -438,26 +434,7 @@ export function CertificatesPage() {
   const saveCourseSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!courseId || !courseSettings) return;
-    const nextErrors: Record<string, string> = {};
-    const hexColorPattern = /^#?[0-9a-fA-F]{6}$/;
-    const attendancePercent = courseSettings.eligibilityAttendancePercent ?? 80;
-    const homeworkPercent = courseSettings.eligibilityHomeworkPercent ?? 100;
-    const activitiesPercent = courseSettings.eligibilityActivitiesPercent ?? 100;
-    if (courseSettings.primaryColor && !hexColorPattern.test(courseSettings.primaryColor)) {
-      nextErrors.primaryColor = 'Use a 6-digit hex color, for example #122144.';
-    }
-    if (courseSettings.accentColor && !hexColorPattern.test(courseSettings.accentColor)) {
-      nextErrors.accentColor = 'Use a 6-digit hex color, for example #f17e22.';
-    }
-    if (attendancePercent < 0 || attendancePercent > 100) {
-      nextErrors.attendance = 'Attendance must be between 0 and 100.';
-    }
-    if (homeworkPercent < 0 || homeworkPercent > 100) {
-      nextErrors.homework = 'Homework must be between 0 and 100.';
-    }
-    if (activitiesPercent < 0 || activitiesPercent > 100) {
-      nextErrors.activities = 'Activities must be between 0 and 100.';
-    }
+    const nextErrors = validateCourseCertificateSettings(courseSettings);
     if (Object.keys(nextErrors).length) {
       setCourseSettingsErrors(nextErrors);
       toast.error(nextErrors.primaryColor ?? nextErrors.accentColor ?? nextErrors.attendance ?? nextErrors.homework ?? nextErrors.activities);
@@ -591,37 +568,42 @@ export function CertificatesPage() {
     }
   };
 
-  const openIssueForStudent = (student: GroupStudent) => {
-    setIssueErrors({});
-    setSelectedStudentId(student.id);
-    setPreviewStudentName(student.fullName || student.email || '');
+  const resetIssueModalState = () => {
+    setSelectedStudentId(undefined);
+    setPreviewStudentName('');
     setCertificateNote('');
+    setIssueStudentQuery('');
+    setIssueStudentFilter('eligible');
+    setPendingIssueOverride(null);
+    setIssueErrors({});
+  };
+
+  const openIssueModal = () => {
+    resetIssueModalState();
     setIsIssueModalOpen(true);
   };
 
-  const issueCertificate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const nextErrors: Record<string, string> = {};
+  const closeIssueModal = () => {
+    setIsIssueModalOpen(false);
+    resetIssueModalState();
+  };
+
+  const openIssueForStudent = (student: GroupStudent) => {
+    resetIssueModalState();
+    setSelectedStudentId(student.id);
+    setPreviewStudentName(student.fullName || student.email || '');
+    setIssueStudentFilter(isStudentEligibleForCertificate(student) ? 'eligible' : 'blocked');
+    setIsIssueModalOpen(true);
+  };
+
+  const submitIssueCertificate = async (allowEligibilityOverride = false) => {
     if (!courseId || !selectedStudentId || !branding) {
-      nextErrors.student = 'Select a student before issuing a certificate.';
-    }
-    if (Object.keys(nextErrors).length) {
-      setIssueErrors(nextErrors);
-      toast.error(nextErrors.student);
       return;
     }
 
-    setIssueErrors({});
     const activeCourseId = courseId!;
     const selectedStudent = selectedStudentId!;
     const student = courseStudents.find((item) => item.id === selectedStudent || item.userId === selectedStudent);
-    const allowEligibilityOverride = student?.certificateEligibility && !student.certificateEligibility.eligible
-      ? window.confirm(`This student is not eligible yet: ${describeEligibility(student)}. Issue anyway?`)
-      : false;
-    if (student?.certificateEligibility && !student.certificateEligibility.eligible && !allowEligibilityOverride) {
-      setIssuing(false);
-      return;
-    }
     setIssuing(true);
     try {
       await issueCourseCertificate(activeCourseId, {
@@ -641,6 +623,7 @@ export function CertificatesPage() {
       setSelectedStudentId(undefined);
       setPreviewStudentName('');
       setIsIssueModalOpen(false);
+      setPendingIssueOverride(null);
       setIssueErrors({});
       toast.success('Certificate issued');
     } catch {
@@ -648,6 +631,27 @@ export function CertificatesPage() {
     } finally {
       setIssuing(false);
     }
+  };
+
+  const issueCertificate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextErrors: Record<string, string> = {};
+    if (!courseId || !selectedStudentId || !branding) {
+      nextErrors.student = 'Select a student before issuing a certificate.';
+    }
+    if (Object.keys(nextErrors).length) {
+      setIssueErrors(nextErrors);
+      toast.error(nextErrors.student);
+      return;
+    }
+
+    setIssueErrors({});
+    const student = courseStudents.find((item) => item.id === selectedStudentId || item.userId === selectedStudentId);
+    if (!isStudentEligibleForCertificate(student)) {
+      setPendingIssueOverride(student ?? null);
+      return;
+    }
+    await submitIssueCertificate(false);
   };
 
   const certificateDecisionPayload = (): {
@@ -679,8 +683,9 @@ export function CertificatesPage() {
     const { certificate, action } = pendingDecision;
     const reason = decisionReason.trim() || undefined;
 
-    if ((action === 'reject' || action === 'revoke') && !reason) {
-      toast.error('Reason is required');
+    const blocker = getCertificateDecisionBlocker(action, decisionReason);
+    if (blocker) {
+      toast.error(blocker);
       return;
     }
 
@@ -705,6 +710,13 @@ export function CertificatesPage() {
     }
   };
 
+  const requestRegenerateIssuedCertificates = (certificateId?: number) => {
+    setPendingRegenerate({
+      certificateId,
+      count: certificateId ? 1 : issuedCertificateCount,
+    });
+  };
+
   const regenerateIssuedCertificates = async (certificateId?: number) => {
     if (!courseId) return;
     setRegenerating(true);
@@ -713,6 +725,7 @@ export function CertificatesPage() {
       await reloadCourseCertificates(courseId);
       await reloadCertificateRoster(courseId);
       toast.success(`Regenerated ${result.regeneratedCount} certificate${result.regeneratedCount === 1 ? '' : 's'}`);
+      setPendingRegenerate(null);
     } catch {
       toast.error('Could not regenerate certificates');
     } finally {
@@ -883,12 +896,23 @@ export function CertificatesPage() {
           </section>
         </form>
 
-        <aside className="settings-panel certificate-preview-panel">
+        <aside className="settings-panel certificate-preview-panel workflow-context-panel">
           <div className="section-heading-row compact">
             <div>
               <h2>Preview</h2>
               <span>Generated certificate output for the selected course.</span>
             </div>
+          </div>
+          <div className="certificate-course-context">
+            <label>
+              Preview course
+              <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>{course.title}</option>
+                ))}
+              </select>
+            </label>
+            <p className="panel-note">The preview uses this course title and the selected course certificate settings.</p>
           </div>
           <div className="certificate-preview-actions">
             <button type="button" className="secondary-button" disabled={!courseId || !courseSettings || previewing} onClick={() => void loadExactPreview()}>
@@ -938,7 +962,7 @@ export function CertificatesPage() {
       ) : null}
 
       {certificateTab !== 'branding' ? (
-      <section className="settings-panel full certificate-course-panel">
+      <section className="settings-panel full certificate-course-panel workflow-context-panel">
         <div className="section-heading-row">
           <div>
             <h2>{certificateTab === 'rules' ? 'Course certificate rules' : 'Certificate registry'}</h2>
@@ -998,7 +1022,7 @@ export function CertificatesPage() {
                   <select disabled={!canManageCourseRules} value={courseSettings.approvalMode ?? 'none'} onChange={(event) => setCourseSettings({ ...courseSettings, approvalMode: event.target.value as 'none' | 'instructor' | 'admin' })}>
                     <option value="none">None</option>
                     <option value="instructor">Instructor</option>
-                    <option value="admin">Admin</option>
+                    <option value="admin">Owner / company admin</option>
                   </select>
                 </label>
               </div>
@@ -1166,7 +1190,7 @@ export function CertificatesPage() {
             ) : null}
 
             {certificateTab === 'registry' ? (
-            <div className="settings-panel embedded-panel">
+            <div className="settings-panel embedded-panel workflow-context-panel compact">
               <div className="section-heading-row compact">
                 <div>
                   <h2>Course certificate workspace</h2>
@@ -1174,9 +1198,9 @@ export function CertificatesPage() {
                 </div>
               </div>
               <div className="definition-grid">
-                <span>Course type</span><strong>{(selectedCertificateCourse?.courseType ?? 'course').replace('_', ' ')}</strong>
-                <span>Issue mode</span><strong>{selectedCourseIsDelivery ? 'Manual' : (courseSettings.issueMode ?? 'auto')}</strong>
-                <span>Approval</span><strong>{courseSettings.approvalMode ?? 'none'}</strong>
+                <span>Course type</span><strong>{readable(selectedCertificateCourse?.courseType ?? 'course')}</strong>
+                <span>Issue mode</span><strong>{selectedCourseIsDelivery ? 'Manual' : readable(courseSettings.issueMode ?? 'auto')}</strong>
+                <span>Approval</span><strong>{formatApprovalMode(courseSettings.approvalMode)}</strong>
                 <span>Reissue</span><strong>{courseSettings.allowReissue ? 'Allowed' : 'Locked'}</strong>
               </div>
               <CountFilterRow
@@ -1209,6 +1233,13 @@ export function CertificatesPage() {
                   <strong>{courseSettings.eligibilityActivitiesRequired ? `${courseSettings.eligibilityActivitiesPercent ?? 100}%` : 'Optional'}</strong>
                 </div>
               </div>
+              <div className="certificate-registry-tools">
+                <button type="button" className="secondary-button" onClick={() => setRegistryPreviewOpen((current) => !current)}>
+                  {registryPreviewOpen ? 'Hide preview' : 'Preview certificate'}
+                </button>
+                <span>Preview is secondary to issuing and registry review.</span>
+              </div>
+              {registryPreviewOpen ? (
               <aside className="certificate-preview-panel embedded-panel">
                 <div className="section-heading-row compact">
                   <div>
@@ -1257,6 +1288,9 @@ export function CertificatesPage() {
                 )}
                 {exactPreviewError ? <span className="field-error">{exactPreviewError}</span> : null}
               </aside>
+              ) : null}
+              <div className="certificate-registry-grid">
+              <section className="certificate-registry-section">
               <div className="section-heading-row compact">
                 <div>
                   <h2>Student eligibility</h2>
@@ -1278,18 +1312,18 @@ export function CertificatesPage() {
               {studentLoading ? <LoadingState label="Loading certificate roster" /> : null}
               {!studentLoading ? (
                 <div className="stack-list">
-                  {courseStudents.slice(0, 12).map((student) => (
+                  {visibleCourseStudents.map((student) => (
                     <article key={student.id} className="stack-list-item">
                       <div>
                         <strong>{student.fullName || student.email || `Student ${student.id}`}</strong>
                         <span>
-                          <span className={`status-badge ${student.certificateEligibility?.eligible || student.certificateEligible ? 'published' : 'draft'}`}>
-                            {student.certificateEligibility?.eligible || student.certificateEligible ? 'Eligible' : 'Not eligible'}
+                          <span className={`status-badge ${isStudentEligibleForCertificate(student) ? 'published' : 'draft'}`}>
+                            {isStudentEligibleForCertificate(student) ? 'Eligible' : 'Not eligible'}
                           </span>
                           {' '}· {student.progressPercent ?? 0}% · {describeEligibility(student)}
                         </span>
                         {student.certificateStatus ? (
-                          <span className={`status-badge ${student.certificateStatus}`}>{student.certificateStatus.replace('_', ' ')}</span>
+                          <span className={`status-badge ${student.certificateStatus}`}>{readable(student.certificateStatus)}</span>
                         ) : null}
                       </div>
                       <div className="certificate-actions">
@@ -1309,21 +1343,33 @@ export function CertificatesPage() {
                       </div>
                     </article>
                   ))}
-                  {!courseStudents.length ? <span className="muted-text">No enrolled students match the current filters.</span> : null}
+                  {!courseStudents.length ? (
+                    <EmptyState
+                      title="No enrolled students match this scope"
+                      detail="Eligible learners will appear after enrollment and certificate rules are available for the selected course."
+                    />
+                  ) : null}
+                  {courseStudents.length > visibleStudentLimit ? (
+                    <button type="button" className="secondary-button" onClick={() => setVisibleStudentLimit((current) => current + 12)}>
+                      Show more students
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
+              </section>
 
+              <section className="certificate-registry-section">
               <h2>Certificates</h2>
               <div className="page-actions">
                 {canIssueCertificates || canRegenerateCertificates ? (
                   <>
                     {canIssueCertificates ? (
-                      <button type="button" disabled={!courseId || issuing} onClick={() => setIsIssueModalOpen(true)}>
-                        Issue certificate
-                      </button>
+                          <button type="button" className="primary-button" disabled={!courseId || issuing} onClick={openIssueModal}>
+                            Issue certificate
+                          </button>
                     ) : null}
                     {canRegenerateCertificates ? (
-                      <button type="button" className="secondary-button" disabled={regenerating || !certificates.some((certificate) => certificate.status === 'issued')} onClick={() => void regenerateIssuedCertificates()}>
+                      <button type="button" className="secondary-button" disabled={regenerating || !issuedCertificateCount} onClick={() => requestRegenerateIssuedCertificates()}>
                         {regenerating ? 'Regenerating...' : 'Regenerate issued PDFs'}
                       </button>
                     ) : null}
@@ -1335,7 +1381,7 @@ export function CertificatesPage() {
                 ariaLabel="Certificate status filters"
                 items={(['total', 'issued', 'pending_approval', 'rejected', 'revoked'] as const).map((key) => ({
                   key,
-                  label: key.replace('_', ' '),
+                  label: readable(key),
                   count: certificateCounts[key] ?? 0,
                   active: certificateStatus === key || (key === 'total' && certificateStatus === 'all'),
                 }))}
@@ -1349,46 +1395,71 @@ export function CertificatesPage() {
                 />
                 <select value={certificateStatus} onChange={(event) => setCertificateStatus(event.target.value)}>
                   {certificateStatuses.map((status) => (
-                    <option key={status} value={status}>{status === 'all' ? 'All statuses' : status.replace('_', ' ')}</option>
+                    <option key={status} value={status}>{status === 'all' ? 'All statuses' : readable(status)}</option>
                   ))}
                 </select>
               </div>
               <div className="stack-list">
-                {filteredCertificates.slice(0, 12).map((certificate) => (
-                  <article key={certificate.id} className="stack-list-item">
+                {filteredCertificates.slice(0, visibleCertificateLimit).map((certificate) => (
+                  <article key={certificate.id} className="stack-list-item certificate-registry-item">
                     <div>
                       <strong>{certificate.studentName || `Student ${certificate.studentId}`}</strong>
-                      <span><span className={`status-badge ${certificate.status}`}>{certificate.status.replace('_', ' ')}</span> · {formatDate(certificate.issuedAt ?? certificate.requestedAt)}</span>
+                      <span><span className={`status-badge ${certificate.status}`}>{readable(certificate.status)}</span> · {formatDate(certificate.issuedAt ?? certificate.requestedAt)}</span>
                     </div>
                     <div className="certificate-actions">
-                      {canApproveCertificates && certificate.status === 'pending_approval' ? (
-                        <>
-                          <button type="button" disabled={decisionId === certificate.id} onClick={() => openCertificateDecision(certificate, 'approve')}>Approve</button>
-                          <button type="button" className="secondary-button" disabled={decisionId === certificate.id} onClick={() => openCertificateDecision(certificate, 'reject')}>Reject</button>
-                        </>
-                      ) : null}
-                      {certificate.status === 'issued' ? (
-                        <>
-                          {certificate.downloadUrl ? (
-                            <button type="button" className="secondary-button" onClick={() => void downloadIssuedCertificate(certificate.downloadUrl, certificate.publicId)}>
-                              Download
-                            </button>
-                          ) : null}
-                          {certificate.verificationUrl ? <a href={certificate.verificationUrl} target="_blank" rel="noreferrer">Verify</a> : null}
-                          {canRegenerateCertificates || canRevokeCertificates ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setExpandedCertificateId((current) => current === certificate.id ? undefined : certificate.id)}
+                      >
+                        {expandedCertificateId === certificate.id ? 'Hide actions' : 'Actions'}
+                      </button>
+                      {expandedCertificateId === certificate.id ? (
+                        <div className="certificate-action-group">
+                          {canApproveCertificates && certificate.status === 'pending_approval' ? (
                             <>
-                              {canRegenerateCertificates ? <button type="button" className="secondary-button" disabled={regenerating} onClick={() => void regenerateIssuedCertificates(certificate.id)}>Regenerate</button> : null}
+                              <button type="button" disabled={decisionId === certificate.id} onClick={() => openCertificateDecision(certificate, 'approve')}>Approve</button>
+                              <button type="button" className="secondary-button" disabled={decisionId === certificate.id} onClick={() => openCertificateDecision(certificate, 'reject')}>Reject</button>
+                            </>
+                          ) : null}
+                          {certificate.status === 'issued' ? (
+                            <>
+                              {certificate.downloadUrl ? (
+                                <button type="button" className="secondary-button" onClick={() => void downloadIssuedCertificate(certificate.downloadUrl, certificate.publicId)}>
+                                  Download
+                                </button>
+                              ) : null}
+                              {certificate.verificationUrl ? <a href={certificate.verificationUrl} target="_blank" rel="noreferrer">Verify</a> : null}
+                              {canRegenerateCertificates ? <button type="button" className="secondary-button" disabled={regenerating} onClick={() => requestRegenerateIssuedCertificates(certificate.id)}>Regenerate</button> : null}
                               {canRevokeCertificates ? <button type="button" className="secondary-button" disabled={decisionId === certificate.id} onClick={() => openCertificateDecision(certificate, 'revoke')}>Revoke</button> : null}
                             </>
                           ) : null}
-                        </>
+                          {certificate.status !== 'pending_approval' && certificate.status !== 'issued' ? <strong>{certificate.source ?? '-'}</strong> : null}
+                        </div>
                       ) : null}
-                      {certificate.status !== 'pending_approval' && certificate.status !== 'issued' ? <strong>{certificate.source ?? '-'}</strong> : null}
                     </div>
                   </article>
                 ))}
-                {!certificates.length ? <span className="muted-text">No certificates for this course yet.</span> : null}
-                {certificates.length > 0 && !filteredCertificates.length ? <span className="muted-text">No certificates match the current filters.</span> : null}
+                {!certificates.length ? (
+                  <EmptyState
+                    title="No certificates for this course yet"
+                    detail="Issued, pending, rejected, and revoked certificates will appear here."
+                  />
+                ) : null}
+                {certificates.length > 0 && !filteredCertificates.length ? (
+                  <EmptyState
+                    title="No certificates match the current filters"
+                    detail="Clear the search or choose another certificate status."
+                    action={<button type="button" className="secondary-button" onClick={() => { setCertificateQuery(''); setCertificateStatus('all'); }}>Clear filters</button>}
+                  />
+                ) : null}
+                {filteredCertificates.length > visibleCertificateLimit ? (
+                  <button type="button" className="secondary-button" onClick={() => setVisibleCertificateLimit((current) => current + 12)}>
+                    Show more certificates
+                  </button>
+                ) : null}
+              </div>
+              </section>
               </div>
             </div>
             ) : null}
@@ -1399,9 +1470,10 @@ export function CertificatesPage() {
       {isPreviewModalOpen ? (
         <Modal labelledBy="certificate-preview-modal-title" className="decision-modal certificate-preview-modal" onClose={() => setIsPreviewModalOpen(false)}>
           <div className="section-heading-row compact">
-            <div>
-              <span className="status-badge published">{selectedCertificateCourse?.title ?? 'Certificate'}</span>
+            <div className="modal-header-block">
+              <span>{selectedCertificateCourse?.title ?? 'Certificate'}</span>
               <h2 id="certificate-preview-modal-title">Certificate preview</h2>
+              <p>Generated certificate output for the selected course.</p>
             </div>
             <button type="button" className="secondary-button" disabled={!courseId || !courseSettings || previewing} onClick={() => void loadExactPreview()}>
               {previewing ? 'Refreshing...' : 'Refresh'}
@@ -1417,40 +1489,67 @@ export function CertificatesPage() {
         </Modal>
       ) : null}
       {isIssueModalOpen && canIssueCertificates ? (
-        <FormModal labelledBy="issue-certificate-title" onClose={() => { setIsIssueModalOpen(false); setIssueErrors({}); }} onSubmit={issueCertificate}>
-            <div>
-              <span className="status-badge published">{courses.find((course) => course.id === courseId)?.title ?? 'Course required'}</span>
+        <FormModal labelledBy="issue-certificate-title" onClose={closeIssueModal} onSubmit={issueCertificate}>
+            <div className="modal-header-block">
+              <span>{courses.find((course) => course.id === courseId)?.title ?? 'Course required'}</span>
               <h2 id="issue-certificate-title">Issue certificate</h2>
               <p>Manually issue a certificate for an eligible learner in this course.</p>
             </div>
+            <div className="enrollment-tabs certificate-student-tabs" role="tablist" aria-label="Certificate student filters">
+              {(['eligible', 'blocked', 'all'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  className={issueStudentFilter === filter ? 'active' : undefined}
+                  onClick={() => setIssueStudentFilter(filter)}
+                >
+                  {filter === 'blocked' ? 'Not eligible' : readable(filter)}
+                </button>
+              ))}
+            </div>
             <label>
-              Student
-              <select
-                value={selectedStudentId ?? ''}
-                onChange={(event) => {
-                  const nextStudentId = Number(event.target.value) || undefined;
-                  const nextStudent = courseStudents.find((student) => student.id === nextStudentId || student.userId === nextStudentId);
-                  setSelectedStudentId(nextStudentId);
-                  setPreviewStudentName(nextStudent?.fullName || nextStudent?.email || '');
-                  setIssueErrors((current) => ({ ...current, student: '' }));
-                }}
-                disabled={!courseStudents.length}
+              Find student
+              <input
+                value={issueStudentQuery}
+                onChange={(event) => setIssueStudentQuery(event.target.value)}
+                placeholder="Search by name, email, or ID"
                 className={issueErrors.student ? 'input-error' : ''}
                 aria-invalid={!!issueErrors.student}
                 autoFocus
-              >
-                <option value="">Select student</option>
-                {courseStudents.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.fullName || student.email || `Student ${student.id}`} - {student.certificateEligibility?.eligible || student.certificateEligible ? 'eligible' : 'not eligible'}
-                  </option>
-                ))}
-              </select>
+              />
               {issueErrors.student ? <span className="field-error">{issueErrors.student}</span> : null}
             </label>
+            <div className="stack-list compact certificate-student-picker" role="listbox" aria-label="Students available for certificate issue">
+              {issueStudentOptions.map((student) => (
+                <button
+                  key={student.id}
+                  type="button"
+                  className={`certificate-student-option ${selectedStudentId === student.id || selectedStudentId === student.userId ? 'active' : ''}`}
+                  onClick={() => {
+                    setSelectedStudentId(student.id);
+                    setPreviewStudentName(student.fullName || student.email || '');
+                    setIssueErrors((current) => ({ ...current, student: '' }));
+                  }}
+                >
+                  <span>
+                    <strong>{student.fullName || student.email || `Student ${student.id}`}</strong>
+                    <small>{student.email || `Student ID ${student.id}`}</small>
+                  </span>
+                  <span className="certificate-student-status">
+                    <span className={`status-badge ${isStudentEligibleForCertificate(student) ? 'published' : 'draft'}`}>
+                      {isStudentEligibleForCertificate(student) ? 'Eligible' : 'Not eligible'}
+                    </span>
+                    {student.certificateStatus ? <span className={`status-badge ${student.certificateStatus}`}>{readable(student.certificateStatus)}</span> : null}
+                  </span>
+                </button>
+              ))}
+              {!issueStudentOptions.length ? (
+                <EmptyState title="No students match this filter" detail="Change the search or eligibility filter." />
+              ) : null}
+            </div>
             {selectedStudent ? (
               <p className="panel-note">
-                {selectedStudent.certificateEligibility?.eligible || selectedStudent.certificateEligible
+                {isStudentEligibleForCertificate(selectedStudent)
                   ? 'This student currently meets the certificate requirements.'
                   : `Warning: ${describeEligibility(selectedStudent)}. You can still issue after confirming the override.`}
               </p>
@@ -1461,7 +1560,7 @@ export function CertificatesPage() {
               <input value={certificateNote} onChange={(event) => setCertificateNote(event.target.value)} placeholder="Optional internal note" />
             </label>
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setIsIssueModalOpen(false)} disabled={issuing}>Cancel</button>
+              <button type="button" className="secondary-button" onClick={closeIssueModal} disabled={issuing}>Cancel</button>
               <button type="submit" disabled={!courseId || !selectedStudentId || issuing}>{issuing ? 'Issuing...' : 'Issue certificate'}</button>
             </div>
         </FormModal>
@@ -1474,9 +1573,9 @@ export function CertificatesPage() {
             setDecisionReason('');
           }}
         >
-            <div>
-              <span className={`status-badge ${pendingDecision.action}`}>{pendingDecision.action}</span>
-              <h2 id="certificate-decision-title">{pendingDecision.action === 'approve' ? 'Approve certificate' : `${pendingDecision.action[0].toUpperCase()}${pendingDecision.action.slice(1)} certificate`}</h2>
+            <div className="modal-header-block">
+              <span>{readable(pendingDecision.action)}</span>
+              <h2 id="certificate-decision-title">{pendingDecision.action === 'approve' ? 'Approve certificate' : `${readable(pendingDecision.action)} certificate`}</h2>
               <p>
                 {pendingDecision.certificate.studentName || `Student ${pendingDecision.certificate.studentId}`} · {pendingDecision.certificate.publicId}
               </p>
@@ -1515,9 +1614,46 @@ export function CertificatesPage() {
                 onClick={() => void handleCertificateDecision()}
                 disabled={decisionId === pendingDecision.certificate.id}
               >
-                {decisionId === pendingDecision.certificate.id ? 'Working...' : pendingDecision.action === 'approve' ? 'Approve' : `${pendingDecision.action[0].toUpperCase()}${pendingDecision.action.slice(1)}`}
+                {decisionId === pendingDecision.certificate.id ? 'Working...' : pendingDecision.action === 'approve' ? 'Approve' : readable(pendingDecision.action)}
               </button>
             </div>
+        </Modal>
+      ) : null}
+      {pendingIssueOverride ? (
+        <Modal
+          labelledBy="certificate-override-title"
+          onClose={() => setPendingIssueOverride(null)}
+        >
+          <div className="modal-header-block">
+            <span>Eligibility override</span>
+            <h2 id="certificate-override-title">Issue certificate anyway?</h2>
+            <p>{pendingIssueOverride.fullName || pendingIssueOverride.email || `Student ${pendingIssueOverride.id}`} does not currently meet all certificate requirements.</p>
+          </div>
+          <p className="panel-note">{describeEligibility(pendingIssueOverride)}</p>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setPendingIssueOverride(null)} disabled={issuing}>Cancel</button>
+            <button type="button" onClick={() => void submitIssueCertificate(true)} disabled={issuing}>
+              {issuing ? 'Issuing...' : 'Issue anyway'}
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+      {pendingRegenerate ? (
+        <Modal
+          labelledBy="certificate-regenerate-title"
+          onClose={() => setPendingRegenerate(null)}
+        >
+          <div className="modal-header-block">
+            <span>PDF regeneration</span>
+            <h2 id="certificate-regenerate-title">Regenerate issued PDFs?</h2>
+            <p>This will rebuild {pendingRegenerate.count || 0} issued certificate PDF{pendingRegenerate.count === 1 ? '' : 's'} using the current certificate settings.</p>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setPendingRegenerate(null)} disabled={regenerating}>Cancel</button>
+            <button type="button" onClick={() => void regenerateIssuedCertificates(pendingRegenerate.certificateId)} disabled={regenerating || !pendingRegenerate.count}>
+              {regenerating ? 'Regenerating...' : 'Regenerate PDFs'}
+            </button>
+          </div>
         </Modal>
       ) : null}
     </>

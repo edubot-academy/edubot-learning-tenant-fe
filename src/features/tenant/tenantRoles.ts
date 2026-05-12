@@ -3,7 +3,7 @@ import type { AuthUser, Tenant } from '../../types/domain';
 export type TenantAccessLevel = 'platform' | 'tenant_admin' | 'instructor' | 'assistant' | 'student' | 'none';
 
 const platformAdminRoles = new Set(['superadmin']);
-const tenantAdminRoles = new Set(['owner', 'company_admin', 'admin']);
+const tenantAdminRoles = new Set(['owner', 'company_admin']);
 const teachingRoles = new Set(['instructor', 'assistant']);
 
 function normalizeRole(role?: string | null) {
@@ -11,7 +11,10 @@ function normalizeRole(role?: string | null) {
 }
 
 export function getEffectiveTenantRole(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
-  return normalizeRole(tenant?.role || user?.role);
+  const tenantRole = normalizeRole(tenant?.role);
+  if (tenantRole) return tenantRole;
+  const userRole = normalizeRole(user?.role);
+  return userRole === 'admin' || userRole === 'superadmin' ? '' : userRole;
 }
 
 export function isPlatformAdmin(user: AuthUser | null | undefined) {

@@ -19,7 +19,21 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
-- No unreleased changes yet.
+## 1.4.1 - 2026-05-13
+
+### Changed
+
+- Refined student dashboard visual hierarchy so the primary learner action is more dominant and secondary cards/stats are quieter.
+- Tightened tablet/small-laptop layout density and moved secondary workflow controls toward neutral active/hover states.
+- Package version updated to `1.4.1`.
+
+### Tests
+
+- Added course roster filter helper coverage for reset-to-full-roster behavior.
+- Added student dashboard helper and component coverage for deterministic task priority, partial endpoint fallback behavior, and stale tenant-switch load guards.
+- `npm run lint` passes.
+- `npm test` passes with 18 test files and 61 tests.
+- `npm run build` passes.
 
 ## 1.4.0 - 2026-05-13
 

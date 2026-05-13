@@ -16,6 +16,7 @@ import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
+import { courseRosterFilterParams, isDefaultCourseRosterFilter, type CourseProgressFilter } from './courseRosterFilters';
 
 type TenantCourseType = 'offline' | 'online_live' | 'video';
 
@@ -38,7 +39,7 @@ export function CoursesPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
   const [query, setQuery] = useState('');
   const [studentQuery, setStudentQuery] = useState('');
-  const [progressFilter, setProgressFilter] = useState<'all' | 'not_started' | 'in_progress' | 'completed'>('all');
+  const [progressFilter, setProgressFilter] = useState<CourseProgressFilter>('all');
   const courseLoad = useAsyncLoadState(false);
   const courseDetailLoad = useAsyncLoadState(false);
   const groupDetailLoad = useAsyncLoadState(false);
@@ -327,18 +328,13 @@ export function CoursesPage() {
 
   useEffect(() => {
     if (!selectedGroupId) return;
-    if (!studentQuery.trim() && progressFilter === 'all') {
+    if (isDefaultCourseRosterFilter(studentQuery, progressFilter)) {
       setStudents(unfilteredStudents);
       return;
     }
     let cancelled = false;
     const timeout = window.setTimeout(() => {
-      const params = {
-        q: studentQuery.trim() || undefined,
-        progressGte: progressFilter === 'completed' ? 100 : progressFilter === 'in_progress' ? 1 : undefined,
-        progressLte: progressFilter === 'not_started' ? 0 : progressFilter === 'in_progress' ? 99 : undefined,
-        limit: 200,
-      };
+      const params = courseRosterFilterParams(studentQuery, progressFilter);
       listGroupStudents(selectedGroupId, params)
         .then((nextStudents) => {
           if (!cancelled) setStudents(nextStudents);
@@ -820,7 +816,7 @@ export function CoursesPage() {
                   onChange={(event) => setStudentQuery(event.target.value)}
                   placeholder={t('courses.searchStudent')}
                 />
-                <select value={progressFilter} onChange={(event) => setProgressFilter(event.target.value as 'all' | 'not_started' | 'in_progress' | 'completed')}>
+                <select value={progressFilter} onChange={(event) => setProgressFilter(event.target.value as CourseProgressFilter)}>
                   <option value="all">{t('courses.allProgress')}</option>
                   <option value="not_started">{t('courses.progressNotStarted')}</option>
                   <option value="in_progress">{t('courses.progressInProgress')}</option>

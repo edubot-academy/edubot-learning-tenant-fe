@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiAward, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiFileText, FiPlayCircle } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,7 @@ import { useAsyncLoadState } from '../../lib/asyncState';
 import { useTenant } from '../tenant/TenantProvider';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
 import type { AttendanceRecord } from '../../types/domain';
+import { isCurrentStudentLoad, nextStudentLoadId, prioritizeStudentTasks, settledStudentValue, sortOpenStudentTasks, studentTaskDueDate } from './studentDashboardData';
 
 type StudentCourse = {
   id?: number;
@@ -138,23 +139,6 @@ function taskContext(task?: StudentTask | StudentHomework | null) {
   return task.courseTitle ?? (!isActivityTask(task) ? task.sessionTitle : undefined) ?? '';
 }
 
-function taskDueDate(task?: StudentTask | StudentHomework | null) {
-  if (!task) return undefined;
-  return isActivityTask(task) ? task.dueAt : task.deadline ?? task.dueAt;
-}
-
-function taskDueTime(task?: StudentTask | StudentHomework | null) {
-  const value = taskDueDate(task);
-  if (!value) return Number.POSITIVE_INFINITY;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
-}
-
-function isOpenTask(task: StudentTask) {
-  const status = String(task.status ?? '').toLowerCase();
-  return !['approved', 'completed', 'submitted', 'passed'].includes(status);
-}
-
 function progressLabel(value: number, labels: { completed: string; notStarted: string; inProgress: string }) {
   if (value >= 100) return labels.completed;
   if (value <= 0) return labels.notStarted;
@@ -162,7 +146,7 @@ function progressLabel(value: number, labels: { completed: string; notStarted: s
 }
 
 function settledValue<T>(result: PromiseSettledResult<T>, fallback: T) {
-  return result.status === 'fulfilled' ? result.value : fallback;
+  return settledStudentValue(result, fallback);
 }
 
 export function StudentDashboardPage() {
@@ -180,6 +164,7 @@ export function StudentDashboardPage() {
   const [submitForm, setSubmitForm] = useState(emptySubmitForm);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number[]>>({});
   const [submitting, setSubmitting] = useState(false);
+  const studentLoadIdRef = useRef(0);
   const studentLoad = useAsyncLoadState(true);
   const {
     start: startStudentLoad,
@@ -193,6 +178,8 @@ export function StudentDashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const loadId = nextStudentLoadId(studentLoadIdRef.current);
+    studentLoadIdRef.current = loadId;
     startStudentLoad();
     Promise.allSettled([
       listStudentCourses(),
@@ -205,7 +192,7 @@ export function StudentDashboardPage() {
       listStudentRecordings({ limit: 6 }),
     ])
       .then(([coursesResult, sessionsResult, homeworkResult, certificatesResult, attendanceResult, tasksResult, resourcesResult, recordingsResult]) => {
-        if (cancelled) return;
+        if (cancelled || !isCurrentStudentLoad(loadId, studentLoadIdRef.current)) return;
         const nextCourses = settledValue(coursesResult, []);
         const nextSessions = settledValue(sessionsResult, []);
         const nextHomework = settledValue(homeworkResult, []);
@@ -349,25 +336,12 @@ export function StudentDashboardPage() {
   const nextSession = useMemo(() => sessions[0] ?? null, [sessions]);
 
   const openTasks = useMemo(() => {
-    const now = Date.now();
-    return [...tasks]
-      .filter(isOpenTask)
-      .sort((first, second) => {
-        const firstTime = taskDueTime(first);
-        const secondTime = taskDueTime(second);
-        const firstOverdue = firstTime < now ? 0 : 1;
-        const secondOverdue = secondTime < now ? 0 : 1;
-        if (firstOverdue !== secondOverdue) return firstOverdue - secondOverdue;
-        if (firstTime !== secondTime) return firstTime - secondTime;
-        return String(first.title ?? first.id ?? '').localeCompare(String(second.title ?? second.id ?? ''));
-      });
+    return sortOpenStudentTasks(tasks);
   }, [tasks]);
 
   const prioritizedTasks = useMemo(() => {
-    const openTaskIds = new Set(openTasks.map((task) => task.id).filter((id): id is number => typeof id === 'number'));
-    const closedTasks = tasks.filter((task) => !isOpenTask(task) || (typeof task.id === 'number' && !openTaskIds.has(task.id)));
-    return [...openTasks, ...closedTasks];
-  }, [openTasks, tasks]);
+    return prioritizeStudentTasks(tasks);
+  }, [tasks]);
 
   const nextHomework = useMemo(() => {
     return homework.find((item) => {
@@ -414,7 +388,7 @@ export function StudentDashboardPage() {
         kind: 'task' as const,
         eyebrow: t('student.continueLearning'),
         title: primaryTask.title ?? t('student.openYourNextTask'),
-        detail: `${displayText(taskContext(primaryTask), t('student.courseNotSet'))} · ${dueText(taskDueDate(primaryTask))}`,
+        detail: `${displayText(taskContext(primaryTask), t('student.courseNotSet'))} · ${dueText(studentTaskDueDate(primaryTask))}`,
         action: <button type="button" onClick={() => selectTask(primaryTask)}>{t('student.openTask')}</button>,
         icon: FiCheckCircle,
       }
@@ -715,7 +689,7 @@ export function StudentDashboardPage() {
             <div className="modal-header-block">
               <span>{statusLabel(selectedTask.status, t('student.open'))}</span>
               <h2 id="student-submit-title">{selectedTask.title ?? t('student.submitTask')}</h2>
-              <p>{readable(taskContext(selectedTask))} · {dueText(taskDueDate(selectedTask))}</p>
+              <p>{readable(taskContext(selectedTask))} · {dueText(studentTaskDueDate(selectedTask))}</p>
             </div>
             {selectedTask.description ? <p className="panel-note">{selectedTask.description}</p> : null}
             {isActivityTask(selectedTask) && selectedTask.taskType === 'quiz' ? (

@@ -204,7 +204,7 @@ textarea:disabled {
 }
 
 .secondary-button:hover:not(:disabled) {
-  border-color: var(--brand-primary);
+  border-color: var(--line-strong);
   background: var(--surface-hover);
   color: var(--text);
   box-shadow: none;
@@ -233,7 +233,7 @@ textarea:disabled {
 }
 
 .secondary-link-button:hover {
-  border-color: var(--brand-primary);
+  border-color: var(--line-strong);
   background: var(--surface-hover);
 }
 
@@ -1468,16 +1468,17 @@ td small {
 }
 
 .student-stat-grid {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .student-stat-grid .stat-tile {
-  min-height: 92px;
+  min-height: 74px;
+  box-shadow: none;
 }
 
 .student-focus-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.8fr) repeat(2, minmax(0, 0.9fr));
   gap: 16px;
   margin-bottom: 16px;
 }
@@ -1498,15 +1499,17 @@ td small {
   grid-column: span 2;
   grid-template-columns: 52px minmax(0, 1fr) auto;
   align-items: center;
-  border-color: rgba(241, 126, 34, 0.24);
+  min-height: 164px;
+  border-color: color-mix(in srgb, var(--brand-primary) 24%, var(--line));
   background:
-    linear-gradient(135deg, rgba(241, 126, 34, 0.1), rgba(14, 167, 139, 0.08)),
+    linear-gradient(135deg, color-mix(in srgb, var(--brand-primary) 9%, transparent), color-mix(in srgb, var(--brand-teal) 7%, transparent)),
     var(--surface);
   padding: 22px;
 }
 
 .student-focus-card.primary h2 {
-  font-size: 28px;
+  font-size: 30px;
+  line-height: 1.12;
 }
 
 .student-focus-icon {
@@ -1517,6 +1520,17 @@ td small {
   border-radius: 8px;
   background: var(--brand-primary-soft);
   color: var(--brand-primary-dark);
+}
+
+.student-focus-card:not(.primary) {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  box-shadow: none;
+}
+
+.student-focus-card:not(.primary) .student-focus-icon {
+  background: var(--surface);
+  color: var(--text-muted);
 }
 
 .student-focus-icon svg {
@@ -4168,9 +4182,10 @@ button.stack-list-item.active {
 }
 
 .session-operation-tabs button.active {
-  background: var(--brand-primary);
-  color: #ffffff;
-  box-shadow: var(--shadow-primary-hover);
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-xs);
 }
 
 .session-tab-empty {
@@ -4613,7 +4628,7 @@ button.stack-list-item.active {
 
 .member-role-chips button:hover:not(:disabled),
 .member-role-chips button.active {
-  border-color: var(--brand-primary);
+  border-color: var(--line-strong);
   background: var(--surface-hover);
   color: var(--text);
   box-shadow: none;
@@ -4820,9 +4835,10 @@ button.stack-list-item.active {
 }
 
 .segmented-control button.active {
-  background: var(--brand-primary);
-  color: #ffffff;
-  box-shadow: var(--shadow-primary-hover);
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-xs);
 }
 
 html[data-theme='dark'] .sidebar {
@@ -4854,6 +4870,10 @@ html[data-theme='dark'] textarea {
 }
 
 @media (max-width: 1100px) {
+  .main-panel {
+    padding: 22px;
+  }
+
   .landing-page {
     grid-template-columns: 1fr;
   }
@@ -4881,6 +4901,16 @@ html[data-theme='dark'] textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .stat-tile,
+  .content-section,
+  .settings-panel {
+    padding: 16px;
+  }
+
+  .stat-tile {
+    min-height: 96px;
+  }
+
   .certificate-workspace-tabs {
     grid-template-columns: 1fr;
   }
@@ -4900,6 +4930,10 @@ html[data-theme='dark'] textarea {
 
   .student-focus-grid {
     grid-template-columns: 1fr;
+  }
+
+  .student-focus-card.primary {
+    grid-column: auto;
   }
 
   .member-access-summary {

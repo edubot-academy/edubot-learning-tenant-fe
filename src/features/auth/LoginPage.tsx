@@ -5,6 +5,23 @@ import { FiAward, FiBookOpen, FiCalendar, FiCheckCircle, FiUsers } from 'react-i
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
+import { LanguageMenu } from '../../components/LanguageMenu';
+
+const edubotLearningUrl = 'https://learning.edubot.it.com';
+const edubotLearningName = 'EduBot Learning';
+
+function renderPoweredBy(text: string) {
+  const [prefix, suffix] = text.split(edubotLearningName);
+  if (suffix === undefined) return text;
+
+  return (
+    <>
+      {prefix}
+      <a className="brand-text-link" href={edubotLearningUrl} target="_blank" rel="noopener noreferrer">{edubotLearningName}</a>
+      {suffix}
+    </>
+  );
+}
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -44,12 +61,17 @@ export function LoginPage() {
 
   return (
     <main className="login-page landing-page">
+      <div className="login-utility">
+        <LanguageMenu />
+      </div>
       <section className="landing-hero" aria-label={t('auth.signInToWorkspace')}>
         <div className="landing-brand-row">
-          <div className={`landing-logo-mark ${resolvedTenant?.logoUrl ? 'has-logo' : ''}`}>
-            {resolvedTenant?.logoUrl ? <img src={resolvedTenant.logoUrl} alt="" /> : 'L'}
+          <div className="landing-brand-main">
+            <div className={`landing-logo-mark ${resolvedTenant?.logoUrl ? 'has-logo' : ''}`}>
+              {resolvedTenant?.logoUrl ? <img src={resolvedTenant.logoUrl} alt="" /> : 'L'}
+            </div>
+            <span>{resolvedTenant?.name ?? t('app.defaultTenant')}</span>
           </div>
-          <span>{resolvedTenant?.name ?? t('app.defaultTenant')}</span>
         </div>
         <div className="landing-copy">
           <span className="eyebrow">
@@ -57,7 +79,7 @@ export function LoginPage() {
           </span>
           <h1>{resolvedTenant ? t('auth.welcomeTenant', { name: resolvedTenant.name }) : t('auth.signInToWorkspace')}</h1>
           <p>{t('auth.heroDescription')}</p>
-          <p className="login-support-note">{t('auth.poweredBy')}</p>
+          <p className="login-support-note">{renderPoweredBy(t('auth.poweredBy'))}</p>
           {resolutionError ? <p className="field-error auth-error-banner">{resolutionError}</p> : null}
         </div>
         <div className="landing-proof-grid">

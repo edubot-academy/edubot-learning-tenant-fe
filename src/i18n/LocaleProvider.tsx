@@ -13,13 +13,14 @@ type LocaleContextValue = {
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const { activeTenant } = useTenant();
-  const [locale, setLocaleState] = useState<SupportedLocale>(() => resolveLocale(activeTenant?.locale));
+  const { activeTenant, resolvedTenant } = useTenant();
+  const tenantLocale = activeTenant?.locale ?? resolvedTenant?.locale;
+  const [locale, setLocaleState] = useState<SupportedLocale>(() => resolveLocale(tenantLocale));
 
   useEffect(() => {
-    const nextLocale = resolveLocale(activeTenant?.locale);
+    const nextLocale = resolveLocale(tenantLocale);
     setLocaleState(nextLocale);
-  }, [activeTenant?.locale]);
+  }, [tenantLocale]);
 
   useEffect(() => {
     setCurrentLocale(locale);

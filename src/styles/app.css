@@ -672,8 +672,15 @@ a {
 
 .main-panel {
   min-width: 0;
+  min-height: 100vh;
   overflow-x: clip;
   padding: 28px;
+}
+
+.route-loading {
+  display: grid;
+  min-height: calc(100vh - 56px);
+  place-items: center;
 }
 
 .mobile-tabbar {
@@ -1140,9 +1147,11 @@ td small {
 }
 
 .landing-page {
+  position: relative;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
-  gap: 32px;
-  place-items: stretch;
+  gap: 40px;
+  align-items: center;
+  justify-items: stretch;
   overflow: hidden;
   background:
     radial-gradient(circle at 16% 18%, rgba(14, 167, 139, 0.18), transparent 28%),
@@ -1151,12 +1160,29 @@ td small {
     var(--app-bg);
 }
 
+.login-utility {
+  position: absolute;
+  top: 28px;
+  right: 28px;
+  z-index: 2;
+}
+
+.login-utility .language-compact > button {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--brand-dark);
+}
+
+.login-utility .language-compact > button svg {
+  color: var(--brand-dark);
+}
+
 .landing-hero {
   display: grid;
   align-content: center;
-  gap: 28px;
+  gap: 24px;
   min-height: calc(100vh - 48px);
-  padding: 32px 0 32px clamp(0px, 4vw, 54px);
+  padding: 28px 0 28px 54px;
 }
 
 .landing-brand-row {
@@ -1165,6 +1191,19 @@ td small {
   gap: 20px;
   color: var(--brand-dark);
   font-weight: 900;
+}
+
+.landing-brand-main {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.landing-brand-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .landing-logo-mark {
@@ -1219,8 +1258,8 @@ td small {
   max-width: 740px;
   margin: 0;
   color: var(--text);
-  font-size: 56px;
-  line-height: 1;
+  font-size: 52px;
+  line-height: 1.05;
 }
 
 .landing-copy p {
@@ -1241,7 +1280,7 @@ td small {
 .landing-proof-grid article {
   display: grid;
   gap: 8px;
-  min-height: 142px;
+  min-height: 128px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
@@ -1269,8 +1308,8 @@ td small {
 .product-preview {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
-  max-width: 780px;
-  min-height: 300px;
+  max-width: 760px;
+  min-height: 260px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1368,6 +1407,7 @@ td small {
   display: grid;
   gap: 16px;
   width: min(430px, 100%);
+  translate: 0 -20px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1392,6 +1432,18 @@ td small {
 .login-support-note {
   margin: 0;
   font-size: 12px;
+}
+
+.brand-text-link {
+  color: var(--brand-primary-strong);
+  font-weight: 850;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.brand-text-link:hover {
+  color: var(--brand-primary);
 }
 
 .auth-error-banner {
@@ -4606,9 +4658,14 @@ html[data-theme='dark'] textarea {
     grid-template-columns: 1fr;
   }
 
+  .login-utility {
+    top: 18px;
+    right: 18px;
+  }
+
   .landing-hero {
     min-height: auto;
-    padding: 18px 0 0;
+    padding: 56px 0 0;
   }
 
   .landing-copy h1 {
@@ -4617,6 +4674,7 @@ html[data-theme='dark'] textarea {
 
   .login-panel {
     justify-self: center;
+    translate: 0;
   }
 
   .stat-grid {
@@ -5115,6 +5173,11 @@ html[data-theme='dark'] textarea {
 @media (max-width: 560px) {
   .landing-page {
     padding: 16px;
+  }
+
+  .login-utility {
+    top: 16px;
+    right: 16px;
   }
 
   .landing-copy h1 {

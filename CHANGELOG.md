@@ -21,6 +21,33 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - No unreleased changes yet.
 
+## 1.2.0 - 2026-05-13
+
+### Added
+
+- Shared language menu component used by both authenticated app shell and unauthenticated login screens.
+- Login-page language switching before sign-in with compact `KG`, `RU`, and `US` options.
+
+### Changed
+
+- Reused the same icon-only language menu across the authenticated sidebar and login page.
+- Repositioned the login language menu as a top-right page utility and tightened the branded gateway layout.
+- Updated login workspace wording in English, Russian, and Kyrgyz to better match the tenant workspace experience.
+- Linked the login page EduBot Learning attribution to the public learning platform.
+- Updated locale resolution to use a resolved tenant domain locale before authentication when no user language override exists.
+- Updated unauthenticated document titles and favicon handling to use the resolved tenant domain when available.
+- Package version updated to `1.2.0`.
+
+### Fixed
+
+- Fixed tenant app layout shift during route/tab switches by keeping the app shell mounted, avoiding route-error-boundary remounts, and showing lazy-page loading inside the main content area.
+
+### Tests
+
+- `npm run lint` passes.
+- `npm test` passes with 14 test files and 49 tests.
+- `npm run build` passes with the existing Vite chunk-size warning.
+
 ## 1.1.0 - 2026-05-13
 
 ### Added

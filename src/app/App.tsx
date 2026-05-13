@@ -51,11 +51,17 @@ type RouteErrorBoundaryState = {
   hasError: boolean;
 };
 
-class RouteErrorBoundary extends Component<{ children: ReactNode }, RouteErrorBoundaryState> {
+class RouteErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, RouteErrorBoundaryState> {
   state: RouteErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError() {
     return { hasError: true };
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
   }
 
   render() {
@@ -94,22 +100,23 @@ function getManagedFaviconLink() {
 function DocumentMetadata() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const { activeTenant } = useTenant();
-  const faviconHref = activeTenant?.logoUrl || defaultFaviconHref;
+  const { activeTenant, resolvedTenant } = useTenant();
+  const tenant = activeTenant ?? resolvedTenant;
+  const faviconHref = tenant?.logoUrl || defaultFaviconHref;
 
   const title = useMemo(() => {
-    if (pathname === '/login') return activeTenant?.name ? `${t('titles.signIn')} | ${activeTenant.name}` : `${t('titles.signIn')} | ${t('app.defaultTenant')}`;
+    if (pathname === '/login') return tenant?.name ? `${t('titles.signIn')} | ${tenant.name}` : `${t('titles.signIn')} | ${t('app.defaultTenant')}`;
     if (pathname === '/forgot-password') {
-      return activeTenant?.name ? `${t('titles.passwordReset')} | ${activeTenant.name}` : `${t('titles.passwordReset')} | ${t('app.defaultTenant')}`;
+      return tenant?.name ? `${t('titles.passwordReset')} | ${tenant.name}` : `${t('titles.passwordReset')} | ${t('app.defaultTenant')}`;
     }
     if (pathname === '/setup-account') {
-      return activeTenant?.name ? `${t('titles.accountSetup')} | ${activeTenant.name}` : `${t('titles.accountSetup')} | ${t('app.defaultTenant')}`;
+      return tenant?.name ? `${t('titles.accountSetup')} | ${tenant.name}` : `${t('titles.accountSetup')} | ${t('app.defaultTenant')}`;
     }
 
     const sectionTitle = t(routeTitles[pathname] ?? 'app.tenantWorkspace');
-    const tenantName = activeTenant?.name ?? t('app.tenantWorkspace');
+    const tenantName = tenant?.name ?? t('app.tenantWorkspace');
     return `${sectionTitle} | ${tenantName}`;
-  }, [activeTenant?.name, pathname, t]);
+  }, [pathname, t, tenant?.name]);
 
   useEffect(() => {
     document.title = title;
@@ -267,7 +274,7 @@ function AppRoutes() {
   const location = useLocation();
 
   return (
-    <RouteErrorBoundary key={location.pathname}>
+    <RouteErrorBoundary resetKey={location.pathname}>
       <Suspense fallback={<LoadingState label={t('app.loadingView')} />}>
         <Routes>
         <Route path="/login" element={<LoginPage />} />

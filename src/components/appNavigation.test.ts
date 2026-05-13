@@ -43,9 +43,17 @@ describe('app navigation visibility', () => {
 
   it('splits mobile navigation into primary and more items for staff', () => {
     const visible = getVisibleNavItems(user('company_admin'), tenant('company_admin'));
-    const groups = getMobileNavGroups(visible, false);
+    const groups = getMobileNavGroups(visible, false, user('company_admin'), tenant('company_admin'));
 
-    expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/', '/courses', '/groups', '/sessions']);
+    expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/', '/courses', '/members', '/settings']);
+    expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/sessions');
+  });
+
+  it('prioritizes daily teaching work on instructor mobile navigation', () => {
+    const visible = getVisibleNavItems(user('instructor'), tenant('instructor'));
+    const groups = getMobileNavGroups(visible, false, user('instructor'), tenant('instructor'));
+
+    expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/sessions', '/attendance', '/homework', '/courses']);
     expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/settings');
   });
 

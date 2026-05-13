@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { FiAward, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiFileText, FiPlayCircle } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../../components/PageHeader';
-import { EmptyState, LoadingState } from '../../components/DataState';
+import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
 import { FormModal } from '../../components/Modal';
 import {
   downloadCertificatePdf,
@@ -22,6 +22,7 @@ import {
   uploadStudentHomeworkAttachment,
 } from '../../services/api';
 import { formatDate, readable } from '../../lib/format';
+import { useAsyncLoadState } from '../../lib/asyncState';
 import { useTenant } from '../tenant/TenantProvider';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
 import type { AttendanceRecord } from '../../types/domain';
@@ -147,6 +148,10 @@ function progressLabel(value: number, labels: { completed: string; notStarted: s
   return labels.inProgress;
 }
 
+function settledValue<T>(result: PromiseSettledResult<T>, fallback: T) {
+  return result.status === 'fulfilled' ? result.value : fallback;
+}
+
 export function StudentDashboardPage() {
   const { t } = useTranslation();
   const { activeTenant } = useTenant();
@@ -161,15 +166,22 @@ export function StudentDashboardPage() {
   const [selectedTask, setSelectedTask] = useState<StudentTask | StudentHomework | null>(null);
   const [submitForm, setSubmitForm] = useState(emptySubmitForm);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number[]>>({});
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const studentLoad = useAsyncLoadState(true);
+  const {
+    start: startStudentLoad,
+    succeed: succeedStudentLoad,
+    reloadToken: studentReloadToken,
+    retry: retryStudentLoad,
+  } = studentLoad;
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
   const certificatesEnabled = isTenantFeatureEnabled(activeTenant, 'certificates.enabled');
   const attendanceEnabled = isTenantFeatureEnabled(activeTenant, 'attendance.enabled');
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([
+    let cancelled = false;
+    startStudentLoad();
+    Promise.allSettled([
       listStudentCourses(),
       listStudentUpcomingSessions({ limit: 6 }),
       homeworkEnabled ? listStudentHomework({ limit: 8 }) : Promise.resolve([]),
@@ -179,7 +191,17 @@ export function StudentDashboardPage() {
       listStudentResources({ limit: 6 }),
       listStudentRecordings({ limit: 6 }),
     ])
-      .then(([nextCourses, nextSessions, nextHomework, nextCertificates, nextAttendance, nextTasks, nextResources, nextRecordings]) => {
+      .then(([coursesResult, sessionsResult, homeworkResult, certificatesResult, attendanceResult, tasksResult, resourcesResult, recordingsResult]) => {
+        if (cancelled) return;
+        const nextCourses = settledValue(coursesResult, []);
+        const nextSessions = settledValue(sessionsResult, []);
+        const nextHomework = settledValue(homeworkResult, []);
+        const nextCertificates = settledValue(certificatesResult, []);
+        const nextAttendance = settledValue(attendanceResult, []);
+        const nextTasks = settledValue(tasksResult, []);
+        const nextResources = settledValue(resourcesResult, []);
+        const nextRecordings = settledValue(recordingsResult, []);
+
         setCourses(nextCourses);
         setSessions(nextSessions);
         setHomework(nextHomework);
@@ -188,10 +210,19 @@ export function StudentDashboardPage() {
         setTasks(homeworkEnabled ? nextTasks : nextTasks.filter((task: StudentTask) => task.kind !== 'homework'));
         setResources(nextResources);
         setRecordings(nextRecordings);
-      })
-      .catch(() => toast.error(t('student.couldNotLoad')))
-      .finally(() => setLoading(false));
-  }, [activeTenant?.id, attendanceEnabled, certificatesEnabled, homeworkEnabled, t]);
+
+        const rejectedCount = [coursesResult, sessionsResult, homeworkResult, certificatesResult, attendanceResult, tasksResult, resourcesResult, recordingsResult]
+          .filter((result) => result.status === 'rejected')
+          .length;
+        succeedStudentLoad(rejectedCount);
+        if (rejectedCount > 0) {
+          toast.error(t('student.couldNotLoad'));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenant?.id, attendanceEnabled, certificatesEnabled, homeworkEnabled, startStudentLoad, studentReloadToken, succeedStudentLoad, t]);
 
   const reloadStudentData = async () => {
     const [nextHomework, nextTasks] = await Promise.all([
@@ -367,6 +398,7 @@ export function StudentDashboardPage() {
   });
   const primaryAction = nextSession?.liveJoinUrl
     ? {
+      kind: 'session' as const,
       eyebrow: t('student.continueLearning'),
       title: nextSession.title ?? nextSession.sessionTitle ?? t('student.joinSession'),
       detail: `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(nextSession.startsAt)}`,
@@ -375,6 +407,7 @@ export function StudentDashboardPage() {
     }
     : primaryTask
       ? {
+        kind: 'task' as const,
         eyebrow: t('student.continueLearning'),
         title: primaryTask.title ?? t('student.openYourNextTask'),
         detail: `${displayText(taskContext(primaryTask), t('student.courseNotSet'))} · ${dueText(taskDueDate(primaryTask))}`,
@@ -382,6 +415,7 @@ export function StudentDashboardPage() {
         icon: FiCheckCircle,
       }
       : {
+        kind: 'clear' as const,
         eyebrow: t('student.continueLearning'),
         title: t('student.nothingDueTitle'),
         detail: t('student.nothingDueDetail'),
@@ -407,11 +441,18 @@ export function StudentDashboardPage() {
   const canSubmitSelectedTask = !selectedQuizTotal || selectedQuizAnswered === selectedQuizTotal;
   const PrimaryActionIcon = primaryAction.icon;
 
-  if (loading) return <LoadingState label={t('student.loading')} />;
+  if (studentLoad.loading) return <LoadingState label={t('student.loading')} />;
 
   return (
     <>
       <PageHeader title={t('student.myLearning')} eyebrow={activeTenant?.name} />
+
+      {studentLoad.failed ? (
+        <ErrorState
+          message={t('student.couldNotLoad')}
+          action={<button type="button" className="secondary-button" onClick={retryStudentLoad}>{t('actions.retry')}</button>}
+        />
+      ) : null}
 
       <section className="student-focus-grid">
         <article className="student-focus-card primary">
@@ -424,6 +465,7 @@ export function StudentDashboardPage() {
           <div className="student-focus-actions">{primaryAction.action}</div>
         </article>
 
+        {primaryAction.kind !== 'session' ? (
         <article className="student-focus-card">
           <div className="student-focus-icon"><FiClock /></div>
           <div>
@@ -434,9 +476,10 @@ export function StudentDashboardPage() {
           {nextSession?.liveJoinUrl ? (
             <a className="secondary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.join')}</a>
           ) : (
-            <span className="status-badge draft">{nextSession ? readable(nextSession.groupName) : t('student.clear')}</span>
+            <span className="muted-text">{nextSession ? readable(nextSession.groupName) : t('student.clear')}</span>
           )}
         </article>
+        ) : null}
 
         <article className="student-focus-card">
           <div className="student-focus-icon"><FiPlayCircle /></div>
@@ -506,8 +549,7 @@ export function StudentDashboardPage() {
                     <div>
                       <strong>{course.title ?? course.courseTitle ?? t('student.courseFallback', { number: index + 1 })}</strong>
                       <span>{displayText(course.groupName, t('student.groupNotAssigned'))}</span>
-                      <span className={`status-badge ${statusClass(course.status)}`}>{statusLabel(course.status, t('student.activeStatus'))}</span>
-                      <span>{progressText(progress)}</span>
+                      <span>{statusLabel(course.status, t('student.activeStatus'))} · {progressText(progress)}</span>
                     </div>
                     <div className="progress-cell">
                       <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
@@ -532,7 +574,7 @@ export function StudentDashboardPage() {
                   <div>
                     <strong>{session.sessionTitle ?? session.title ?? (kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }))}</strong>
                     <span>{displayText(session.courseTitle, t('student.courseNotSet'))} · {dateText(session.startsAt)}</span>
-                    <span className="status-badge draft">{kind === 'recording' ? t('student.recording') : t('student.resource')}</span>
+                    <small>{kind === 'recording' ? t('student.recording') : t('student.resource')}</small>
                   </div>
                   <div className="student-material-actions">
                     {kind === 'resource' ? session.materials?.slice(0, 3).map((material, materialIndex) => (
@@ -562,7 +604,7 @@ export function StudentDashboardPage() {
                   <div>
                     <strong>{session.title ?? t('student.sessionFallback', { number: index + 1 })}</strong>
                     <span>{displayText(session.courseTitle, t('student.courseNotSet'))} · {dateText(session.startsAt)}</span>
-                    <span className="status-badge draft">{displayText(session.groupName, t('student.groupNotSet'))}</span>
+                    <small>{displayText(session.groupName, t('student.groupNotSet'))}</small>
                   </div>
                   {session.liveJoinUrl ? <a href={session.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.join')}</a> : null}
                 </article>

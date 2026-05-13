@@ -1495,14 +1495,18 @@ td small {
 }
 
 .student-focus-card.primary {
+  grid-column: span 2;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
   border-color: rgba(241, 126, 34, 0.24);
   background:
     linear-gradient(135deg, rgba(241, 126, 34, 0.1), rgba(14, 167, 139, 0.08)),
     var(--surface);
+  padding: 22px;
 }
 
 .student-focus-card.primary h2 {
-  font-size: 24px;
+  font-size: 28px;
 }
 
 .student-focus-icon {
@@ -1546,6 +1550,12 @@ td small {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.student-focus-card.primary .student-focus-actions {
+  grid-column: 3;
+  align-self: center;
+  justify-self: end;
 }
 
 .student-focus-progress {
@@ -3502,6 +3512,55 @@ button.stack-list-item.active {
   padding: 18px;
 }
 
+.overview-next-action {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--line));
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand-primary) 11%, transparent), color-mix(in srgb, var(--brand-teal) 7%, transparent)),
+    var(--surface);
+  color: inherit;
+  padding: 18px;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--transition-ui), border-color var(--transition-ui), box-shadow var(--transition-ui), transform var(--transition-ui);
+}
+
+.overview-next-action:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 58%, var(--line));
+  background: var(--surface-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.overview-next-action > span {
+  min-width: 0;
+}
+
+.overview-next-action strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.overview-next-action small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .overview-priority-strip.all-clear {
   border-color: var(--line);
   background: var(--surface);
@@ -4910,6 +4969,18 @@ html[data-theme='dark'] textarea {
     grid-template-columns: 1fr;
   }
 
+  .student-focus-card.primary,
+  .overview-next-action {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .student-focus-card.primary .student-focus-actions,
+  .overview-next-action .primary-link-button {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+
   .session-operation-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5205,6 +5276,14 @@ html[data-theme='dark'] textarea {
   .overview-action-card {
     grid-template-columns: 38px minmax(0, 1fr);
     min-height: 96px;
+  }
+
+  .overview-next-action {
+    padding: 14px;
+  }
+
+  .overview-next-action strong {
+    font-size: 19px;
   }
 
   .overview-action-card > small {

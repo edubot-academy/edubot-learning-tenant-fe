@@ -20,7 +20,7 @@ export function AppLayout() {
   const learnerView = isTenantStudent(user, activeTenant);
   const visibleNavItems = getVisibleNavItems(user, activeTenant);
   const enabledTools = countEnabledStaffTools(activeTenant);
-  const { primaryMobileNavItems, secondaryMobileNavItems } = getMobileNavGroups(visibleNavItems, learnerView);
+  const { primaryMobileNavItems, secondaryMobileNavItems } = getMobileNavGroups(visibleNavItems, learnerView, user, activeTenant);
   const hasMobileMoreMenu = secondaryMobileNavItems.length > 0 || Boolean(user);
   const moreActive = secondaryMobileNavItems.some((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
   const userLabel = user?.fullName || user?.email || t('app.signedInUser');
@@ -77,7 +77,13 @@ export function AppLayout() {
                 onChange={(event) => setActiveTenantId(Number(event.target.value))}
               >
                 {tenants.map((tenant) => (
-                  <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
+                  <option
+                    key={tenant.id}
+                    value={tenant.id}
+                    disabled={tenant.availability?.enabled === false || tenant.permissions?.canEnterWorkspace === false}
+                  >
+                    {tenant.name}{tenant.availability?.enabled === false ? ` (${tenant.availability.reason ?? tenant.status ?? 'Unavailable'})` : ''}
+                  </option>
                 ))}
               </select>
             </>

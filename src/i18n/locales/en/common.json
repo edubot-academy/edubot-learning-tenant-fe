@@ -1063,6 +1063,8 @@
     "zoomHostUserId": "Zoom host user ID"
   },
   "errors": {
+    "accessDeniedTitle": "You do not have access to this area",
+    "certificateManagerOnlyDetail": "Certificate tools are available to tenant admins and instructors with certificate access.",
     "featureDisabledDetail": "This tenant feature is currently disabled by the platform admin.",
     "featureDisabledTitle": "Feature disabled",
     "noTenantAccessDetail": "Your account is valid, but it is not assigned to a learning tenant yet.",
@@ -1073,6 +1075,9 @@
     "noWorkspaceRoleTitle": "No workspace role",
     "platformAdminDetail": "Super admin accounts cannot access tenant workspaces.",
     "platformAdminTitle": "Use platform admin",
+    "staffOnlyDetail": "This workspace area is for staff who manage courses, sessions, attendance, or homework.",
+    "studentOnlyDetail": "The learner dashboard is available only to student accounts in this tenant.",
+    "tenantAdminOnlyDetail": "Member management is available only to tenant owners and company admins.",
     "tenantAccessLoadDetail": "Could not load tenant access.",
     "tenantAccessLoadTitle": "Could not load tenant access",
     "tenantDomainDetail": "This tenant domain is not configured yet.",

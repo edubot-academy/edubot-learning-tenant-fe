@@ -1,7 +1,7 @@
 import { FiAward, FiBookOpen, FiCalendar, FiCheckSquare, FiClipboard, FiHome, FiSettings, FiUsers } from 'react-icons/fi';
 import type { AuthUser, Tenant } from '../types/domain';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
-import { canManageTenantCertificates, canManageTenantMembers, isTenantStudent } from '../features/tenant/tenantRoles';
+import { canManageTenantCertificates, canManageTenantMembers, getEffectiveTenantRole, isTenantStudent } from '../features/tenant/tenantRoles';
 
 export type NavItem = { to: string; labelKey: string; icon: typeof FiHome; feature?: TenantFeatureKey };
 
@@ -24,6 +24,13 @@ export const studentNavItems = [
 
 export const primaryMobileRoutes = new Set(['/', '/courses', '/groups', '/sessions']);
 
+const mobileRoutePriorityByRole: Record<string, string[]> = {
+  instructor: ['/sessions', '/attendance', '/homework', '/courses'],
+  assistant: ['/sessions', '/attendance', '/homework', '/courses'],
+  owner: ['/', '/courses', '/members', '/settings'],
+  company_admin: ['/', '/courses', '/members', '/settings'],
+};
+
 export function getVisibleNavItems(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
   const learnerView = isTenantStudent(user, tenant);
   const navItems: NavItem[] = learnerView
@@ -37,10 +44,21 @@ export function getVisibleNavItems(user: AuthUser | null | undefined, tenant: Te
   return navItems.filter((item) => !item.feature || isTenantFeatureEnabled(tenant, item.feature));
 }
 
-export function getMobileNavGroups(visibleNavItems: NavItem[], learnerView: boolean) {
+export function getMobileNavGroups(
+  visibleNavItems: NavItem[],
+  learnerView: boolean,
+  user?: AuthUser | null,
+  tenant?: Tenant | null,
+) {
+  const role = getEffectiveTenantRole(user, tenant);
+  const preferredRoutes = mobileRoutePriorityByRole[role] ?? Array.from(primaryMobileRoutes);
+  const preferredPrimaryItems = preferredRoutes
+    .map((route) => visibleNavItems.find((item) => item.to === route))
+    .filter((item): item is NavItem => Boolean(item));
+  const overflowPrimaryItems = visibleNavItems.filter((item) => !preferredPrimaryItems.some((primaryItem) => primaryItem.to === item.to));
   const primaryMobileNavItems = learnerView
     ? visibleNavItems
-    : visibleNavItems.filter((item) => primaryMobileRoutes.has(item.to)).slice(0, 4);
+    : [...preferredPrimaryItems, ...overflowPrimaryItems].slice(0, 4);
   const secondaryMobileNavItems = visibleNavItems.filter((item) => !primaryMobileNavItems.some((primaryItem) => primaryItem.to === item.to));
 
   return { primaryMobileNavItems, secondaryMobileNavItems };

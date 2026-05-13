@@ -32,13 +32,14 @@ export function EmptyState({
   );
 }
 
-export function ErrorState({ message }: { message: string }) {
+export function ErrorState({ message, action }: { message: string; action?: ReactNode }) {
   const { t } = useTranslation();
   return (
     <div className="state-panel error-state" role="alert">
       <FiAlertCircle aria-hidden="true" />
       <strong>{t('states.somethingWentWrong')}</strong>
       <span>{message}</span>
+      {action ? <div className="state-panel-action">{action}</div> : null}
     </div>
   );
 }

@@ -21,6 +21,41 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - No unreleased changes yet.
 
+## 1.3.0 - 2026-05-13
+
+### Added
+
+- Tenant workspace contract support through `/companies/workspaces` and `/companies/workspaces/switch`, including workspace roles, permissions, availability, branding, host, billing, and CRM link metadata.
+- Vercel SPA rewrite configuration so direct visits to tenant frontend routes load the React app instead of Vercel 404 pages.
+- Shared async load-state helper for consistent loading, retry, and partial-failure state handling.
+- Inline retryable error states for course workspace loading and student dashboard partial data failures.
+- Access-denied states for unauthorized tenant routes instead of silent redirects.
+
+### Changed
+
+- Updated tenant access resolution to prefer workspace membership data and to honor both scalar `role` and multi-role `roles` arrays.
+- Blocked tenant entry when workspace availability is disabled or `canEnterWorkspace` is false.
+- Switched tenant selection to the workspace switch contract and disabled unavailable tenant options in the selector.
+- Prioritized mobile navigation by tenant role so instructors and assistants see daily teaching tools first.
+- Promoted clearer primary next actions on overview and student dashboard screens.
+- Reduced non-critical status badge noise in dense course and student lists.
+- Split Vite output into React, i18n, icons, and vendor chunks to keep the initial app bundle under the warning threshold.
+- Package version updated to `1.3.0`.
+
+### Fixed
+
+- Fixed stale course roster results after clearing student search/progress filters.
+- Fixed student dashboard tenant-switch races by ignoring stale in-flight responses.
+- Fixed student dashboard loading so one failed endpoint no longer blocks other learner data from rendering.
+- Fixed course operations loading so course-detail and group-detail requests cannot clear each other’s loading/error state.
+- Fixed tenant owner recognition for main app admin accounts whose tenant membership is returned through the workspace `roles` array.
+
+### Tests
+
+- `npm run lint` passes.
+- `npm test` passes with 14 test files and 52 tests.
+- `npm run build` passes without the previous Vite large initial chunk warning.
+
 ## 1.2.0 - 2026-05-13
 
 ### Added

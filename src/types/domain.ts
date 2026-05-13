@@ -18,6 +18,34 @@ export type Tenant = {
   id: number;
   name: string;
   role?: UserRole | string | null;
+  roles?: Array<UserRole | string>;
+  membershipStatus?: string[];
+  availability?: {
+    enabled: boolean;
+    reason?: string | null;
+    status?: string | null;
+  };
+  permissions?: {
+    canEnterWorkspace?: boolean;
+    canManageTenant?: boolean;
+    canManageOwners?: boolean;
+    canManageMembers?: boolean;
+    canManageCourses?: boolean;
+    canViewReports?: boolean;
+    canManageBranding?: boolean;
+    canManageSettings?: boolean;
+  };
+  host?: string | null;
+  crmLink?: {
+    linked: boolean;
+    crmTenantId?: string | null;
+    crmTenantSlug?: string | null;
+    crmPrimaryDomain?: string | null;
+    status?: string;
+  } | null;
+  crmTenantId?: string | null;
+  crmTenantSlug?: string | null;
+  crmPrimaryDomain?: string | null;
   logoUrl?: string | null;
   logoKey?: string | null;
   subdomain?: string | null;
@@ -59,15 +87,25 @@ export type TenantActivityLog = {
   createdAt: string;
 };
 
+export type TenantOverviewPermissions = {
+  canManageMembers: boolean;
+  canViewActivity: boolean;
+  canManageCertificates: boolean;
+  canCreateCourses: boolean;
+};
+
 export type TenantOverview = {
-  tenant: Pick<Tenant, 'id' | 'name' | 'timezone' | 'locale' | 'featureFlags' | 'branding'>;
-  role?: string | null;
-  permissions: {
-    canManageMembers: boolean;
-    canViewActivity: boolean;
-    canManageCertificates: boolean;
-    canCreateCourses: boolean;
+  generatedAt?: string;
+  workspace?: {
+    type: 'tenant';
+    companyId: number;
+    role?: string | null;
+    permissions: TenantOverviewPermissions;
   };
+  tenant: Pick<Tenant, 'id' | 'name' | 'timezone' | 'locale' | 'featureFlags' | 'branding'>;
+  crmLink?: Tenant['crmLink'];
+  role?: string | null;
+  permissions: TenantOverviewPermissions;
   stats: Record<string, number | string | null>;
   courses: Course[];
   sessions: {
@@ -101,6 +139,41 @@ export type TenantOverview = {
   };
   features: Array<{ key: string; enabled: boolean; explicit: boolean }>;
   activity: TenantActivityLog[];
+  analytics?: {
+    context: string;
+    metricScope: string;
+    adminOverview: string;
+    attendanceRate: string;
+    dropoutRisk: string;
+    groupFillRate: string;
+  } | null;
+};
+
+export type WorkspaceItem = {
+  id: string;
+  type: 'main' | 'tenant';
+  companyId: number | null;
+  name: string;
+  role?: UserRole | string | null;
+  roles?: Array<UserRole | string>;
+  membershipStatus?: string[];
+  status?: string | null;
+  plan?: string | null;
+  billingStatus?: string | null;
+  featureFlags?: Record<string, boolean> | null;
+  timezone?: string | null;
+  locale?: string | null;
+  availability?: Tenant['availability'];
+  permissions?: Tenant['permissions'];
+  branding?: Record<string, unknown> | null;
+  logoUrl?: string | null;
+  host?: string | null;
+  crmLink?: Tenant['crmLink'];
+};
+
+export type WorkspaceListResponse = {
+  active: WorkspaceItem | null;
+  items: WorkspaceItem[];
 };
 
 export type Course = {

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { listMyTenants, resolveTenantByHost, tenantStore } from '../../services/api';
+import { listTenantWorkspaces, resolveTenantByHost, switchTenantWorkspace, tenantStore } from '../../services/api';
 import type { Tenant } from '../../types/domain';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -143,7 +143,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const rows = await listMyTenants();
+      const workspaceState = await listTenantWorkspaces();
+      const rows = workspaceState.tenants;
       if (reloadSequence.current !== sequence) return;
       setTenants(rows);
       const saved = tenantStore.get();
@@ -188,13 +189,24 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     resolvingTenant,
     error,
     resolutionError,
-    setActiveTenantId: (tenantId) => {
+    setActiveTenantId: (nextTenantId) => {
       if (hostnameLocked) return;
-      tenantStore.set(tenantId);
-      setActiveTenantIdState(tenantId);
+      tenantStore.set(nextTenantId);
+      setActiveTenantIdState(nextTenantId);
+      void switchTenantWorkspace(nextTenantId)
+        .then((tenant) => {
+          setTenants((current) => current.map((item) => (
+            tenantId(item) === tenant.id ? { ...item, ...tenant } : item
+          )));
+          setError(null);
+        })
+        .catch(() => {
+          setError(t('errors.tenantAccessLoadDetail'));
+          void reloadTenants().catch(() => undefined);
+        });
     },
     reloadTenants,
-  }), [activeTenantId, error, hostnameLocked, loading, reloadTenants, resolvedTenant, resolvingTenant, resolutionError, tenants]);
+  }), [activeTenantId, error, hostnameLocked, loading, reloadTenants, resolvedTenant, resolvingTenant, resolutionError, t, tenants]);
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
 }

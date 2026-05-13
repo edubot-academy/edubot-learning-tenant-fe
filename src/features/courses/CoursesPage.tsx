@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { FiBookOpen, FiCalendar, FiCheckSquare, FiEdit2, FiFileText, FiPlus, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
-import { EmptyState, LoadingState } from '../../components/DataState';
+import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
 import { FormModal } from '../../components/Modal';
 import { createTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
@@ -13,6 +13,7 @@ import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { getEffectiveTenantRole } from '../tenant/tenantRoles';
 import { formatDate, readable } from '../../lib/format';
+import { useAsyncLoadState } from '../../lib/asyncState';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 
 type TenantCourseType = 'offline' | 'online_live' | 'video';
@@ -29,6 +30,7 @@ export function CoursesPage() {
   const [groups, setGroups] = useState<CourseGroup[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
   const [students, setStudents] = useState<GroupStudent[]>([]);
+  const [unfilteredStudents, setUnfilteredStudents] = useState<GroupStudent[]>([]);
   const [homework, setHomework] = useState<SessionHomework[]>([]);
   const [members, setMembers] = useState<CompanyMember[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
@@ -36,8 +38,30 @@ export function CoursesPage() {
   const [query, setQuery] = useState('');
   const [studentQuery, setStudentQuery] = useState('');
   const [progressFilter, setProgressFilter] = useState<'all' | 'not_started' | 'in_progress' | 'completed'>('all');
-  const [loading, setLoading] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const courseLoad = useAsyncLoadState(false);
+  const courseDetailLoad = useAsyncLoadState(false);
+  const groupDetailLoad = useAsyncLoadState(false);
+  const {
+    start: startCourseLoad,
+    succeed: succeedCourseLoad,
+    fail: failCourseLoad,
+    retry: retryCourseLoad,
+    reloadToken: courseReloadToken,
+  } = courseLoad;
+  const {
+    start: startCourseDetailLoad,
+    succeed: succeedCourseDetailLoad,
+    fail: failCourseDetailLoad,
+    retry: retryCourseDetailLoad,
+    reloadToken: courseDetailReloadToken,
+  } = courseDetailLoad;
+  const {
+    start: startGroupDetailLoad,
+    succeed: succeedGroupDetailLoad,
+    fail: failGroupDetailLoad,
+    retry: retryGroupDetailLoad,
+    reloadToken: groupDetailReloadToken,
+  } = groupDetailLoad;
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
@@ -170,10 +194,10 @@ export function CoursesPage() {
     setSelectedCourseId(undefined);
     setSelectedGroupId(undefined);
     if (!activeTenantId) {
-      setLoading(false);
+      succeedCourseLoad();
       return undefined;
     }
-    setLoading(true);
+    startCourseLoad();
     Promise.all([
       listTenantCourses(activeTenantId),
       canAssignInstructor ? listTenantMembers(activeTenantId).catch(() => [] as CompanyMember[]) : Promise.resolve([] as CompanyMember[]),
@@ -182,17 +206,18 @@ export function CoursesPage() {
         if (cancelled) return;
         setCourses(items);
         setMembers(nextMembers);
+        succeedCourseLoad();
       })
       .catch(() => {
-        if (!cancelled) toast.error(t('courses.loadFailed'));
+        if (!cancelled) {
+          failCourseLoad();
+          toast.error(t('courses.loadFailed'));
+        }
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, canAssignInstructor, t]);
+  }, [activeTenantId, canAssignInstructor, courseReloadToken, failCourseLoad, startCourseLoad, succeedCourseLoad, t]);
 
   useEffect(() => {
     setSelectedCourseId((current) => {
@@ -206,28 +231,33 @@ export function CoursesPage() {
     setGroups([]);
     setSessions([]);
     setStudents([]);
+    setUnfilteredStudents([]);
     setHomework([]);
     setSelectedGroupId(undefined);
-    if (!selectedCourseId) return;
+    if (!selectedCourseId) {
+      succeedCourseDetailLoad();
+      return;
+    }
 
     let cancelled = false;
-    setDetailLoading(true);
+    startCourseDetailLoad();
     Promise.all([listCourseGroups(selectedCourseId), listHomework(selectedCourseId)])
       .then(([nextGroups, nextHomework]) => {
         if (cancelled) return;
         setGroups(nextGroups);
         setHomework(nextHomework);
+        succeedCourseDetailLoad();
       })
       .catch(() => {
-        if (!cancelled) toast.error(t('courses.detailLoadFailed'));
+        if (!cancelled) {
+          failCourseDetailLoad();
+          toast.error(t('courses.detailLoadFailed'));
+        }
       })
-      .finally(() => {
-        if (!cancelled) setDetailLoading(false);
-      });
     return () => {
       cancelled = true;
     };
-  }, [selectedCourseId, t]);
+  }, [courseDetailReloadToken, failCourseDetailLoad, selectedCourseId, startCourseDetailLoad, succeedCourseDetailLoad, t]);
 
   useEffect(() => {
     setSelectedGroupId((current) => {
@@ -247,30 +277,39 @@ export function CoursesPage() {
   useEffect(() => {
     setSessions([]);
     setStudents([]);
-    if (!selectedGroupId) return;
+    setUnfilteredStudents([]);
+    if (!selectedGroupId) {
+      succeedGroupDetailLoad();
+      return;
+    }
 
     let cancelled = false;
-    setDetailLoading(true);
+    startGroupDetailLoad();
     Promise.all([listGroupSessions(selectedGroupId), listGroupStudents(selectedGroupId, { limit: 200 })])
       .then(([nextSessions, nextStudents]) => {
         if (cancelled) return;
         setSessions(nextSessions);
         setStudents(nextStudents);
+        setUnfilteredStudents(nextStudents);
+        succeedGroupDetailLoad();
       })
       .catch(() => {
-        if (!cancelled) toast.error(t('courses.groupDetailLoadFailed'));
+        if (!cancelled) {
+          failGroupDetailLoad();
+          toast.error(t('courses.groupDetailLoadFailed'));
+        }
       })
-      .finally(() => {
-        if (!cancelled) setDetailLoading(false);
-      });
     return () => {
       cancelled = true;
     };
-  }, [selectedGroupId, t]);
+  }, [failGroupDetailLoad, groupDetailReloadToken, selectedGroupId, startGroupDetailLoad, succeedGroupDetailLoad, t]);
 
   useEffect(() => {
     if (!selectedGroupId) return;
-    if (!studentQuery.trim() && progressFilter === 'all') return;
+    if (!studentQuery.trim() && progressFilter === 'all') {
+      setStudents(unfilteredStudents);
+      return;
+    }
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       const params = {
@@ -292,7 +331,7 @@ export function CoursesPage() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [progressFilter, selectedGroupId, studentQuery, t]);
+  }, [progressFilter, selectedGroupId, studentQuery, t, unfilteredStudents]);
 
   const stats = useMemo(() => [
     { label: t('courses.groups'), value: groups.length, hint: selectedCourse?.title ?? t('courses.selectedCourse') },
@@ -432,7 +471,15 @@ export function CoursesPage() {
     }
   };
 
-  if (loading) return <LoadingState label={t('courses.loading')} />;
+  if (courseLoad.loading) return <LoadingState label={t('courses.loading')} />;
+  if (courseLoad.failed) {
+    return (
+      <ErrorState
+        message={t('courses.loadFailed')}
+        action={<button type="button" className="secondary-button" onClick={retryCourseLoad}>{t('actions.retry')}</button>}
+      />
+    );
+  }
 
   return (
     <>
@@ -485,7 +532,7 @@ export function CoursesPage() {
                 </div>
               </div>
               <div className="course-context-badges">
-                <span className="status-badge">{courseTypeLabel(selectedCourse.courseType)}</span>
+                <span className="muted-text">{courseTypeLabel(selectedCourse.courseType)}</span>
                 <span className={`status-badge ${selectedCourse.status || 'draft'}`}>{statusLabel(selectedCourse.status)}</span>
                 <span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>
                   {publishLabel(selectedCourse.isPublished)}
@@ -521,7 +568,7 @@ export function CoursesPage() {
                             {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
                           </button>
                         </td>
-                        <td><span className="status-badge">{courseTypeLabel(course.courseType)}</span></td>
+                        <td>{courseTypeLabel(course.courseType)}</td>
                         <td><span className={`status-badge ${course.status || 'draft'}`}>{statusLabel(course.status)}</span></td>
                         <td><span className={`status-badge ${course.isPublished ? 'published' : 'draft'}`}>{publishLabel(course.isPublished)}</span></td>
                         <td>{course.enrolledStudents ?? 0}</td>
@@ -548,8 +595,21 @@ export function CoursesPage() {
               </div>
               {!selectedCourse ? (
                 <EmptyState title={t('courses.selectCourse')} detail={t('courses.selectCourseDetail')} />
-              ) : detailLoading ? (
+              ) : courseDetailLoad.loading || groupDetailLoad.loading ? (
                 <LoadingState label={t('courses.loadingDetail')} />
+              ) : courseDetailLoad.failed || groupDetailLoad.failed ? (
+                <ErrorState
+                  message={courseDetailLoad.failed ? t('courses.detailLoadFailed') : t('courses.groupDetailLoadFailed')}
+                  action={(
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={courseDetailLoad.failed ? retryCourseDetailLoad : retryGroupDetailLoad}
+                    >
+                      {t('actions.retry')}
+                    </button>
+                  )}
+                />
               ) : (
                 <div className="course-operations-stack">
                   <section className="course-panel-block">
@@ -782,7 +842,7 @@ export function CoursesPage() {
                               <strong>{student.progressPercent ?? 0}%</strong>
                             </div>
                           </td>
-                          <td><span className={`status-badge ${student.completed ? 'published' : 'draft'}`}>{student.completed ? t('courses.completed') : t('courses.progressInProgress')}</span></td>
+                          <td>{student.completed ? t('courses.completed') : t('courses.progressInProgress')}</td>
                           <td>{formatDate(student.enrolledAt)}</td>
                         </tr>
                       ))}

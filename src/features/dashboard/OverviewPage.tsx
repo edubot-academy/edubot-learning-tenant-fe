@@ -18,7 +18,7 @@ import {
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, LoadingState } from '../../components/DataState';
-import { getTenantOverview } from '../../services/api';
+import { getTenantDashboard } from '../../services/api';
 import type { TenantOverview } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate, readable } from '../../lib/format';
@@ -88,7 +88,7 @@ export function OverviewPage() {
     if (!activeTenantId) return;
     let cancelled = false;
     setLoading(true);
-    getTenantOverview(activeTenantId)
+    getTenantDashboard(activeTenantId)
       .then((nextOverview) => {
         if (!cancelled) setOverview(nextOverview);
       })
@@ -291,6 +291,29 @@ export function OverviewPage() {
   if (!overview) return <EmptyState title={t('overview.overviewUnavailableTitle')} detail={t('overview.overviewUnavailableDetail')} />;
 
   const heading = canManageMembers ? t('overview.tenantOverview') : isAssistant ? t('overview.assistantOverview') : t('overview.instructorOverview');
+  const primaryPriorityItem = priorityItems[0];
+  const primaryAvailableAction = actionCards.find((action) => !action.disabled);
+  const primaryOverviewAction = primaryPriorityItem
+    ? {
+      to: primaryPriorityItem.to,
+      icon: primaryPriorityItem.icon,
+      title: primaryPriorityItem.title,
+      detail: primaryPriorityItem.detail,
+      tone: primaryPriorityItem.tone,
+    }
+    : primaryAvailableAction
+      ? {
+        to: primaryAvailableAction.to,
+        icon: primaryAvailableAction.icon,
+        title: primaryAvailableAction.title,
+        detail: primaryAvailableAction.detail,
+        tone: 'info' as const,
+      }
+      : null;
+  const supportingActionCards = primaryPriorityItem
+    ? actionCards
+    : actionCards.filter((action) => action.title !== primaryAvailableAction?.title);
+  const PrimaryOverviewIcon = primaryOverviewAction?.icon;
 
   return (
     <>
@@ -305,6 +328,18 @@ export function OverviewPage() {
         )}
       />
       <StatGrid items={stats} />
+
+      {primaryOverviewAction && PrimaryOverviewIcon ? (
+        <Link className={`overview-next-action ${primaryOverviewAction.tone}`} to={primaryOverviewAction.to} aria-label={primaryOverviewAction.title}>
+          <span className="ui-icon-tile overview-action-icon"><PrimaryOverviewIcon /></span>
+          <span>
+            <span className="ui-kicker">{t('overview.primaryActions')}</span>
+            <strong>{primaryOverviewAction.title}</strong>
+            <small>{primaryOverviewAction.detail}</small>
+          </span>
+          <span className="primary-link-button">{t('student.open')}</span>
+        </Link>
+      ) : null}
 
       <section className={`overview-priority-strip ${priorityItems.length ? '' : 'all-clear'}`} aria-label={t('overview.needsAttention')}>
         {priorityItems.length ? (
@@ -348,7 +383,7 @@ export function OverviewPage() {
       </section>
 
       <section className="overview-action-grid" aria-label={t('overview.primaryActions')}>
-        {actionCards.map((action) => {
+        {supportingActionCards.map((action) => {
           const Icon = action.icon;
           const content = (
             <>

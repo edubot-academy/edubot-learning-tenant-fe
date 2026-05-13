@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n/config';
 import { AppLayout } from '../components/AppLayout';
@@ -141,28 +141,55 @@ function HomeRoute() {
   return isTenantStudent(user, activeTenant) ? <Navigate to="/student" replace /> : <OverviewPage />;
 }
 
+function AccessDeniedState({
+  detailKey,
+  to,
+  actionKey,
+}: {
+  detailKey: string;
+  to: string;
+  actionKey: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <EmptyState
+      title={t('errors.accessDeniedTitle')}
+      detail={t(detailKey)}
+      action={<Link className="secondary-link-button" to={to}>{t(actionKey)}</Link>}
+    />
+  );
+}
+
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canOperateTenantLearning(user, activeTenant) ? children : <Navigate to="/student" replace />;
+  return canOperateTenantLearning(user, activeTenant)
+    ? children
+    : <AccessDeniedState detailKey="errors.staffOnlyDetail" to="/student" actionKey="navigation.myLearning" />;
 }
 
 function StudentRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return isTenantStudent(user, activeTenant) ? children : <Navigate to="/" replace />;
+  return isTenantStudent(user, activeTenant)
+    ? children
+    : <AccessDeniedState detailKey="errors.studentOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
 
 function TenantAdminRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canManageTenantMembers(user, activeTenant) ? children : <Navigate to="/" replace />;
+  return canManageTenantMembers(user, activeTenant)
+    ? children
+    : <AccessDeniedState detailKey="errors.tenantAdminOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
 
 function CertificateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canManageTenantCertificates(user, activeTenant) ? children : <Navigate to="/" replace />;
+  return canManageTenantCertificates(user, activeTenant)
+    ? children
+    : <AccessDeniedState detailKey="errors.certificateManagerOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
 
 function FeatureRoute({ feature, children }: { feature: TenantFeatureKey; children: React.ReactNode }) {

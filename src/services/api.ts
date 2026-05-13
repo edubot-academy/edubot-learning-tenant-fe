@@ -34,6 +34,7 @@ import { getCurrentLocale } from '../i18n/locale';
 declare module 'axios' {
   export interface AxiosRequestConfig {
     skipTenantHeader?: boolean;
+    __csrfRetry?: boolean;
   }
 }
 
@@ -69,6 +70,16 @@ export const api = axios.create({
 });
 
 export const AUTH_EXPIRED_EVENT = 'edubot_tenant_auth_expired';
+const CSRF_ERROR_TEXT = 'CSRF token missing or invalid';
+
+function getCookieValue(name: string) {
+  if (typeof document === 'undefined') return null;
+  const cookie = document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : null;
+}
 
 api.interceptors.request.use((config) => {
   const token = tokenStore.get();
@@ -79,13 +90,35 @@ api.interceptors.request.use((config) => {
   } else if (tenantId) {
     config.headers['X-Company-Id'] = String(tenantId);
   }
+  const method = String(config.method || 'get').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrfToken = getCookieValue('edubot_csrf_token');
+    if (csrfToken) config.headers['X-CSRF-Token'] = csrfToken;
+  }
   config.headers['Accept-Language'] = getCurrentLocale();
   return config;
 });
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const message = error?.response?.data?.message;
+    const isCsrfError =
+      error?.response?.status === 403 &&
+      (Array.isArray(message)
+        ? message.includes(CSRF_ERROR_TEXT)
+        : String(message || '').includes(CSRF_ERROR_TEXT));
+
+    if (isCsrfError && error.config && !error.config.__csrfRetry) {
+      error.config.__csrfRetry = true;
+      try {
+        await api.get('/auth/profile', { skipTenantHeader: true, __csrfRetry: true });
+        return api(error.config);
+      } catch {
+        return Promise.reject(error);
+      }
+    }
+
     if (error?.response?.status === 401) {
       tokenStore.clear();
       tenantStore.clear();

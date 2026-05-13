@@ -19,6 +19,20 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.4.2 - 2026-05-13
+
+### Fixed
+
+- Added CSRF token headers for unsafe API requests and a one-time profile refresh retry when the backend rejects an expired or missing CSRF token.
+- Package version updated to `1.4.2`.
+
+### Tests
+
+- Added API client coverage for CSRF token headers, safe-method exclusions, one-time retry behavior, and retry-loop prevention.
+- `npm run lint` passes.
+- `npm test` passes with 18 test files and 65 tests.
+- `npm run build` passes.
+
 ## 1.4.1 - 2026-05-13
 
 ### Changed

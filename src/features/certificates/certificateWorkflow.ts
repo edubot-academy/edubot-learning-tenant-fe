@@ -1,6 +1,6 @@
 import type { CourseCertificate, CourseCertificateSettings, GroupStudent } from '../../types/domain';
-import { readable } from '../../lib/format';
 import i18n from '../../i18n/config';
+import { enumLabel, unknownEnumLabel } from '../../lib/enumLabels';
 
 export type CertificateTab = 'branding' | 'rules' | 'registry';
 export type CertificateLanguageValue = 'en' | 'ru' | 'ky';
@@ -29,7 +29,7 @@ export function describeEligibility(student?: GroupStudent | null) {
   const reasons = eligibility.reasons ?? [];
   return reasons.map((reason) => {
     const labelKey = eligibilityReasonLabels[reason];
-    return labelKey ? i18n.t(labelKey) : readable(reason);
+    return labelKey ? i18n.t(labelKey) : unknownEnumLabel(reason, i18n.t.bind(i18n));
   }).join(', ') || i18n.t('certificates.requirementsNotMet');
 }
 
@@ -117,5 +117,5 @@ export function formatApprovalMode(value?: CourseCertificateSettings['approvalMo
   if (value === 'admin') return i18n.t('certificates.ownerCompanyAdmin');
   if (value === 'instructor') return i18n.t('members.roleInstructor');
   if (!value || value === 'none') return i18n.t('certificates.none');
-  return readable(value);
+  return enumLabel(value, {}, i18n.t.bind(i18n));
 }

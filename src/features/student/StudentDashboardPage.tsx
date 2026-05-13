@@ -22,6 +22,7 @@ import {
   uploadStudentHomeworkAttachment,
 } from '../../services/api';
 import { formatDate, readable } from '../../lib/format';
+import { activityTypeLabelKeys, commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
 import { useTenant } from '../tenant/TenantProvider';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
@@ -140,6 +141,18 @@ function taskContext(task?: StudentTask | StudentHomework | null) {
 function taskDueDate(task?: StudentTask | StudentHomework | null) {
   if (!task) return undefined;
   return isActivityTask(task) ? task.dueAt : task.deadline ?? task.dueAt;
+}
+
+function taskDueTime(task?: StudentTask | StudentHomework | null) {
+  const value = taskDueDate(task);
+  if (!value) return Number.POSITIVE_INFINITY;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+}
+
+function isOpenTask(task: StudentTask) {
+  const status = String(task.status ?? '').toLowerCase();
+  return !['approved', 'completed', 'submitted', 'passed'].includes(status);
 }
 
 function progressLabel(value: number, labels: { completed: string; notStarted: string; inProgress: string }) {
@@ -336,11 +349,25 @@ export function StudentDashboardPage() {
   const nextSession = useMemo(() => sessions[0] ?? null, [sessions]);
 
   const openTasks = useMemo(() => {
-    return tasks.filter((task) => {
-      const status = String(task.status ?? '').toLowerCase();
-      return !['approved', 'completed', 'submitted', 'passed'].includes(status);
-    });
+    const now = Date.now();
+    return [...tasks]
+      .filter(isOpenTask)
+      .sort((first, second) => {
+        const firstTime = taskDueTime(first);
+        const secondTime = taskDueTime(second);
+        const firstOverdue = firstTime < now ? 0 : 1;
+        const secondOverdue = secondTime < now ? 0 : 1;
+        if (firstOverdue !== secondOverdue) return firstOverdue - secondOverdue;
+        if (firstTime !== secondTime) return firstTime - secondTime;
+        return String(first.title ?? first.id ?? '').localeCompare(String(second.title ?? second.id ?? ''));
+      });
   }, [tasks]);
+
+  const prioritizedTasks = useMemo(() => {
+    const openTaskIds = new Set(openTasks.map((task) => task.id).filter((id): id is number => typeof id === 'number'));
+    const closedTasks = tasks.filter((task) => !isOpenTask(task) || (typeof task.id === 'number' && !openTaskIds.has(task.id)));
+    return [...openTasks, ...closedTasks];
+  }, [openTasks, tasks]);
 
   const nextHomework = useMemo(() => {
     return homework.find((item) => {
@@ -355,41 +382,18 @@ export function StudentDashboardPage() {
   const dueText = (value?: string | null) => dueLabel(value, (date) => t('student.due', { date }), t('student.noDueDate'));
   const statusLabel = (value: string | null | undefined, fallback: string) => {
     const status = String(value ?? '').trim();
-    const key = status.toLowerCase();
-    const labels: Record<string, string> = {
-      absent: t('attendance.statusAbsent'),
-      approved: t('homework.reviewApproved'),
-      completed: t('student.completed'),
-      draft: t('courses.draft'),
-      excused: t('attendance.statusExcused'),
-      issued: t('certificates.statusIssued'),
-      late: t('attendance.statusLate'),
-      missing: t('homework.reviewMissing'),
-      needs_review: t('homework.reviewNeedsReview'),
-      needs_revision: t('homework.reviewNeedsRevision'),
-      passed: t('student.completed'),
-      pending: t('student.pending'),
-      pending_approval: t('overview.pendingApprovals'),
-      pending_submission: t('homework.reviewMissing'),
-      present: t('attendance.statusPresent'),
-      rejected: t('homework.reviewRejected'),
-      revoked: t('certificates.statusRevoked'),
-      submitted: t('student.submitted'),
-    };
-    return status ? labels[key] ?? readable(status) : fallback;
+    return status ? enumLabel(status, {
+      ...commonStatusLabelKeys,
+      approved: 'homework.reviewApproved',
+      completed: 'student.completed',
+      draft: 'courses.draft',
+      pending: 'student.pending',
+      rejected: 'homework.reviewRejected',
+      submitted: 'student.submitted',
+    }, t) : fallback;
   };
   const activityTypeLabel = (value: string | number | boolean | null | undefined, fallback: string) => {
-    const key = String(value ?? '').trim().toLowerCase();
-    const labels: Record<string, string> = {
-      discussion: t('sessions.activityTypeDiscussion'),
-      exercise: t('sessions.activityTypeExercise'),
-      group_work: t('sessions.activityTypeGroupWork'),
-      homework: t('navigation.homework'),
-      quiz: t('sessions.activityTypeQuiz'),
-      resource: t('student.resource'),
-      submission: t('sessions.activityTypeSubmission'),
-    };
-    return key ? labels[key] ?? readable(value) : fallback;
+    return value === null || value === undefined || value === '' ? fallback : enumLabel(value, activityTypeLabelKeys, t);
   };
   const progressText = (value: number) => progressLabel(value, {
     completed: t('student.completed'),
@@ -515,9 +519,9 @@ export function StudentDashboardPage() {
             <span>{t('student.openTasksNeedAttention', { count: openTasks.length })}</span>
           </div>
         </div>
-        {!tasks.length ? <EmptyState title={t('student.tasksEmptyTitle')} detail={t('student.tasksEmptyDetail')} /> : (
+        {!prioritizedTasks.length ? <EmptyState title={t('student.tasksEmptyTitle')} detail={t('student.tasksEmptyDetail')} /> : (
           <div className="student-task-list">
-            {tasks.map((task, index) => (
+            {prioritizedTasks.map((task, index) => (
               <article className="student-task-card" key={task.id ?? index}>
                 <div>
                   <strong>{task.title ?? activityTypeLabel(task.type, t('student.activity'))}</strong>

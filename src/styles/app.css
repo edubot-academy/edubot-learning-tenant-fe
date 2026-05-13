@@ -2562,6 +2562,63 @@ button.stack-list-item.active {
   gap: 8px;
 }
 
+.course-workflow-checklist {
+  display: grid;
+  gap: 8px;
+}
+
+.course-workflow-checklist article {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 10px;
+}
+
+.course-workflow-checklist article.complete {
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+}
+
+.course-workflow-checklist article.current {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+}
+
+.course-workflow-checklist svg {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.course-workflow-checklist article.complete svg {
+  color: var(--status-success-text);
+}
+
+.course-workflow-checklist span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.course-workflow-checklist strong,
+.course-workflow-checklist small {
+  overflow-wrap: anywhere;
+}
+
+.course-workflow-checklist strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.course-workflow-checklist small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .course-operations-stack {
   display: grid;
   gap: 14px;
@@ -3564,6 +3621,90 @@ button.stack-list-item.active {
 .overview-priority-strip.all-clear {
   border-color: var(--line);
   background: var(--surface);
+}
+
+.overview-today-strip {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.3fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  margin: 0 0 18px;
+}
+
+.overview-today-heading,
+.overview-today-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.overview-today-heading {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 14px;
+}
+
+.overview-today-heading strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.overview-today-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.overview-today-card {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 96px;
+  padding: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.overview-today-card.disabled {
+  opacity: 0.68;
+}
+
+.overview-today-card svg {
+  margin-top: 2px;
+  color: var(--brand-primary);
+}
+
+.overview-today-card span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.overview-today-card strong {
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.overview-today-card small,
+.overview-today-card em {
+  overflow-wrap: anywhere;
+}
+
+.overview-today-card small {
+  color: var(--text);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.overview-today-card em {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
 }
 
 .overview-priority-heading {
@@ -4809,6 +4950,14 @@ html[data-theme='dark'] textarea {
     grid-template-columns: 1fr;
   }
 
+  .overview-today-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-today-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .overview-priority-heading {
     border-right: 0;
     border-bottom: 1px solid var(--line);
@@ -5265,6 +5414,7 @@ html[data-theme='dark'] textarea {
   .homework-workflow-strip,
   .create-action-grid,
   .overview-action-grid,
+  .overview-today-list,
   .overview-priority-list {
     grid-template-columns: 1fr;
   }

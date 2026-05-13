@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { formatDate, readable } from '../../lib/format';
+import { activityActionLabelKeys, enumLabel, roleLabelKeys } from '../../lib/enumLabels';
 import { useTenant } from '../tenant/TenantProvider';
 import { useTheme } from '../theme/themeContext';
 import { useAuth } from '../auth/AuthProvider';
@@ -212,7 +213,7 @@ export function SettingsPage() {
       light: t('settings.themeLight'),
       system: t('settings.themeSystem'),
     };
-    return labels[value] ?? readable(value);
+    return labels[value] ?? enumLabel(value, {}, t);
   };
   const visibilityLabel = (value: string) => {
     const labels: Record<string, string> = {
@@ -220,7 +221,7 @@ export function SettingsPage() {
       PUBLIC: t('settings.visibilityPublic'),
       TENANT_ONLY: t('settings.visibilityTenantOnly'),
     };
-    return labels[value] ?? readable(value);
+    return labels[value] ?? enumLabel(value, {}, t);
   };
   const booleanLabel = (value: boolean) => (value ? t('overview.enabled') : t('overview.disabled'));
   const roleLabel = (value?: string | null) => {
@@ -233,7 +234,7 @@ export function SettingsPage() {
       student: t('members.roleStudent'),
       superadmin: t('members.roleSuperAdmin'),
     };
-    return labels[String(value || '').toLowerCase()] ?? readable(value);
+    return labels[String(value || '').toLowerCase()] ?? enumLabel(value, roleLabelKeys, t);
   };
   const activityActionLabel = (value?: string | null) => {
     const labels: Record<string, string> = {
@@ -248,7 +249,7 @@ export function SettingsPage() {
       session: t('navigation.sessions'),
       tenant: t('overview.tenantTarget'),
     };
-    return labels[String(value || '').toLowerCase()] ?? readable(value);
+    return labels[String(value || '').toLowerCase()] ?? enumLabel(value, activityActionLabelKeys, t);
   };
   const profileErrorMessage = (message?: string) => {
     if (!message) return '';

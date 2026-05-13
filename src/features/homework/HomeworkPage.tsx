@@ -32,7 +32,8 @@ import {
 } from '../../services/api';
 import type { Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
+import { commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 const emptyForm = {
@@ -165,7 +166,7 @@ export function HomeworkPage() {
       overdue: t('homework.overdue'),
       total: t('homework.assignments'),
     };
-    return labels[key] ?? readable(key);
+    return labels[key] ?? enumLabel(key, commonStatusLabelKeys, t);
   };
   const reviewFilterLabel = (key: ReviewFilter) => {
     const labels: Record<ReviewFilter, string> = {
@@ -187,7 +188,7 @@ export function HomeworkPage() {
       rejected: t('homework.reviewRejected'),
       submitted: t('homework.reviewSubmitted'),
     };
-    return labels[state] ?? readable(state);
+    return labels[state] ?? enumLabel(state, commonStatusLabelKeys, t);
   };
   const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const selectedCountLabel = (count: number) => (

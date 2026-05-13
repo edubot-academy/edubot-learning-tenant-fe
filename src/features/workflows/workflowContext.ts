@@ -1,6 +1,6 @@
 import type { Course } from '../../types/domain';
-import { readable } from '../../lib/format';
 import i18n from '../../i18n/config';
+import { courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 
 export type WorkflowScope = {
   courseId?: number;
@@ -37,12 +37,7 @@ export function courseWorkflowBlocker(course: Course | undefined | null, require
 }
 
 export function formatCourseType(value: Course['courseType'] | string | undefined | null) {
-  const labels: Record<string, string> = {
-    offline: i18n.t('courses.typeOffline'),
-    online_live: i18n.t('courses.typeOnlineLive'),
-    video: i18n.t('courses.typeVideo'),
-  };
-  return labels[String(value || 'video')] ?? readable(value || 'video');
+  return enumLabel(value || 'video', courseTypeLabelKeys, i18n.t.bind(i18n));
 }
 
 export function workflowPath(path: string, scope: WorkflowScope) {

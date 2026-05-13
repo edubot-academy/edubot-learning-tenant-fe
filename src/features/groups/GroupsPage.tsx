@@ -22,7 +22,8 @@ import {
   updateCourseGroup,
 } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionGenerationPreview, UserSummary } from '../../types/domain';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
+import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { isTenantAdmin } from '../tenant/tenantRoles';
@@ -149,27 +150,9 @@ export function GroupsPage() {
   const scheduleDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
   const generationReady = scheduleBlocksReady && scheduleDatesReady;
   const selectedCourseReady = isCourseWorkflowReady(selectedCourse);
-  const courseTypeLabel = (value: Course['courseType'] | string | undefined | null) => (
-    value === 'offline' ? t('courses.typeOffline') : value === 'online_live' ? t('courses.typeOnlineLive') : t('courses.typeVideo')
-  );
+  const courseTypeLabel = (value: Course['courseType'] | string | undefined | null) => enumLabel(value, courseTypeLabelKeys, t);
   const statusLabel = (value: string | undefined | null) => {
-    const status = value || 'planned';
-    const key = status.replaceAll('_', '');
-    const statusKeys: Record<string, string> = {
-      active: 'groups.statusActive',
-      approved: 'courses.statusApproved',
-      cancelled: 'groups.statusCancelled',
-      completed: 'groups.statusCompleted',
-      draft: 'courses.statusDraft',
-      existing: 'groups.existing',
-      new: 'groups.new',
-      open: 'groups.statusOpen',
-      pending: 'courses.statusPending',
-      planned: 'courses.statusPlanned',
-      rejected: 'courses.statusRejected',
-      scheduled: 'courses.statusScheduled',
-    };
-    return statusKeys[key] ? t(statusKeys[key]) : readable(status);
+    return enumLabel(value || 'planned', commonStatusLabelKeys, t);
   };
   const selectedCourseBlocker = (() => {
     if (!selectedCourse) return t('courses.blockerChooseCourse');
@@ -703,6 +686,11 @@ export function GroupsPage() {
                   <EmptyState
                     title={t('groups.noStudentsTitle')}
                     detail={t('groups.noStudentsDetail')}
+                    action={(
+                      <button type="button" className="secondary-button" onClick={() => setEnrollmentMode('new')}>
+                        {t('groups.newStudent')}
+                      </button>
+                    )}
                   />
                 ) : null}
               </div>
@@ -720,6 +708,7 @@ export function GroupsPage() {
                   <EmptyState
                     title={t('groups.noSessionsTitle')}
                     detail={t('groups.noSessionsDetail')}
+                    action={<Link className="secondary-link-button" to={nextSessionLink}>{t('attendance.scheduleSessions')}</Link>}
                   />
                 ) : null}
               </div>

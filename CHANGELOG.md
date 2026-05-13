@@ -21,6 +21,34 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - No unreleased changes yet.
 
+## 1.4.0 - 2026-05-13
+
+### Added
+
+- Course workflow checklist with actionable readiness steps for approval, publishing, delivery type, groups, and sessions.
+- Today operations strip on the overview dashboard with today’s sessions, unmarked attendance, homework reviews, and next live link status.
+- Mobile more-menu interaction tests for open, Escape close, outside-click close, and route-close behavior.
+- Shared enum label helper for localized backend status, role, course type, activity type, and activity action labels.
+
+### Changed
+
+- Student dashboard now orders open tasks deterministically by overdue state and due date before closed tasks.
+- Empty states now include clearer next actions for inviting members, enrolling students, and scheduling sessions.
+- Unknown backend enum values now render through a localized explicit unknown-value fallback instead of prettified English.
+- Package version updated to `1.4.0`.
+
+### Fixed
+
+- Fixed overview crash when backend dashboard payloads omit top-level `permissions` by falling back to workspace permissions and safe defaults.
+- Added confirmation before rejecting pending courses.
+- Associated course create/edit form validation errors with their fields through `aria-describedby`.
+
+### Tests
+
+- `npm run lint` passes.
+- `npm test` passes with 15 test files and 54 tests.
+- `npm run build` passes.
+
 ## 1.3.0 - 2026-05-13
 
 ### Added

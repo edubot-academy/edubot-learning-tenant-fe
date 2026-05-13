@@ -6,13 +6,14 @@ import { FiBookOpen, FiCalendar, FiCheckSquare, FiEdit2, FiFileText, FiPlus, FiU
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
-import { FormModal } from '../../components/Modal';
+import { FormModal, Modal } from '../../components/Modal';
 import { createTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { getEffectiveTenantRole } from '../tenant/tenantRoles';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
+import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 
@@ -67,6 +68,7 @@ export function CoursesPage() {
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [savingCourse, setSavingCourse] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [courseRejectPending, setCourseRejectPending] = useState<Course | null>(null);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [createForm, setCreateForm] = useState({
     title: '',
@@ -93,28 +95,13 @@ export function CoursesPage() {
     return options;
   }, [activeTenant?.featureFlags, t]);
 
-  const courseTypeLabel = (value: Course['courseType'] | string | undefined | null) => (
-    value === 'offline'
-      ? t('courses.typeOffline')
-      : value === 'online_live'
-        ? t('courses.typeOnlineLive')
-        : t('courses.typeVideo')
-  );
+  const courseTypeLabel = (value: Course['courseType'] | string | undefined | null) => enumLabel(value, courseTypeLabelKeys, t);
   const statusLabel = (value: string | undefined | null) => {
-    const status = value || 'draft';
-    const key = status.replaceAll('_', '');
-    const statusKeys: Record<string, string> = {
-      approved: 'courses.statusApproved',
-      completed: 'courses.completed',
-      draft: 'courses.statusDraft',
+    return enumLabel(value || 'draft', {
+      ...commonStatusLabelKeys,
       inprogress: 'courses.progressInProgress',
       notstarted: 'courses.progressNotStarted',
-      pending: 'courses.statusPending',
-      planned: 'courses.statusPlanned',
-      rejected: 'courses.statusRejected',
-      scheduled: 'courses.statusScheduled',
-    };
-    return statusKeys[key] ? t(statusKeys[key]) : readable(status);
+    }, t);
   };
   const publishLabel = (published?: boolean | null) => t(published ? 'courses.published' : 'courses.draft');
   const workflowBlockerMessage = (course: Course | undefined, requireDelivery = true) => {
@@ -171,6 +158,40 @@ export function CoursesPage() {
   const selectedCourseDeliveryReady = isCourseWorkflowReady(selectedCourse);
   const courseBlockerMessage = workflowBlockerMessage(selectedCourse, false);
   const courseDeliveryBlockerMessage = workflowBlockerMessage(selectedCourse);
+  const workflowChecklist = useMemo(() => {
+    if (!selectedCourse) return [];
+    const deliveryTypeReady = ['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''));
+    const deliveryTypeLabel = enumLabel(selectedCourse.courseType, courseTypeLabelKeys, t);
+    const approved = selectedCourse.status === 'approved';
+    const published = selectedCourse.isPublished === true;
+    return [
+      {
+        label: t('courses.workflowApproval'),
+        detail: approved ? t('courses.workflowReady') : t('courses.workflowSubmitApprove'),
+        complete: approved,
+      },
+      {
+        label: t('courses.workflowPublish'),
+        detail: published ? t('courses.workflowReady') : t('courses.workflowPublishDetail'),
+        complete: published,
+      },
+      {
+        label: t('courses.workflowDeliveryType'),
+        detail: deliveryTypeReady ? deliveryTypeLabel : t('courses.blockerDeliveryType'),
+        complete: deliveryTypeReady,
+      },
+      {
+        label: t('courses.workflowGroups'),
+        detail: groups.length ? t('courses.workflowCountReady', { count: groups.length }) : t('courses.workflowCreateGroup'),
+        complete: groups.length > 0,
+      },
+      {
+        label: t('courses.workflowSessions'),
+        detail: sessions.length ? t('courses.workflowCountReady', { count: sessions.length }) : t('courses.workflowScheduleSession'),
+        complete: sessions.length > 0,
+      },
+    ];
+  }, [groups.length, selectedCourse, sessions.length, t]);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId),
@@ -614,6 +635,17 @@ export function CoursesPage() {
                 <div className="course-operations-stack">
                   <section className="course-panel-block">
                     <h3>{t('courses.nextActions')}</h3>
+                    <div className="course-workflow-checklist" aria-label={t('courses.workflowChecklist')}>
+                      {workflowChecklist.map((step) => (
+                        <article className={step.complete ? 'complete' : 'current'} key={step.label}>
+                          <FiCheckSquare aria-hidden="true" />
+                          <span>
+                            <strong>{step.label}</strong>
+                            <small>{step.detail}</small>
+                          </span>
+                        </article>
+                      ))}
+                    </div>
                     <div className="course-action-grid">
                       {selectedCourseDeliveryReady ? (
                         <Link className="course-action-card" to={workflowPath('/groups', selectedScope)}>
@@ -703,7 +735,7 @@ export function CoursesPage() {
                           type="button"
                           className="secondary-button"
                           disabled={statusUpdating}
-                          onClick={() => changeCourseStatus(selectedCourse.id, 'rejected')}
+                          onClick={() => setCourseRejectPending(selectedCourse)}
                         >
                           {t('courses.reject')}
                         </button>
@@ -864,17 +896,21 @@ export function CoursesPage() {
             {t('courses.title')}
             <input
               className={createErrors.title ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.title)}
+              aria-describedby={createErrors.title ? 'create-course-title-error' : undefined}
               value={createForm.title}
               onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
               placeholder={t('courses.titlePlaceholder')}
               autoFocus
             />
-            {createErrors.title ? <small className="field-error">{createErrors.title}</small> : null}
+            {createErrors.title ? <small className="field-error" id="create-course-title-error">{createErrors.title}</small> : null}
           </label>
           <label>
             {t('courses.type')}
             <select
               className={createErrors.courseType ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.courseType)}
+              aria-describedby={createErrors.courseType ? 'create-course-type-error' : undefined}
               value={createForm.courseType}
               onChange={(event) => setCreateForm((current) => ({ ...current, courseType: event.target.value as TenantCourseType }))}
             >
@@ -882,23 +918,27 @@ export function CoursesPage() {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-            {createErrors.courseType ? <small className="field-error">{createErrors.courseType}</small> : null}
+            {createErrors.courseType ? <small className="field-error" id="create-course-type-error">{createErrors.courseType}</small> : null}
           </label>
           <label>
             {t('courses.description')}
             <textarea
               className={createErrors.description ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.description)}
+              aria-describedby={createErrors.description ? 'create-course-description-error' : undefined}
               value={createForm.description}
               onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
               placeholder={t('courses.descriptionPlaceholder')}
               rows={4}
             />
-            {createErrors.description ? <small className="field-error">{createErrors.description}</small> : null}
+            {createErrors.description ? <small className="field-error" id="create-course-description-error">{createErrors.description}</small> : null}
           </label>
           <label>
             {t('courses.instructor')}
             <select
               className={createErrors.instructorId ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.instructorId)}
+              aria-describedby={createErrors.instructorId ? 'create-course-instructor-error' : undefined}
               value={createForm.instructorId ?? ''}
               onChange={(event) => setCreateForm((current) => ({ ...current, instructorId: Number(event.target.value) || undefined }))}
               disabled={activeRole === 'instructor'}
@@ -910,7 +950,7 @@ export function CoursesPage() {
                 </option>
               ))}
             </select>
-            {createErrors.instructorId ? <small className="field-error">{createErrors.instructorId}</small> : null}
+            {createErrors.instructorId ? <small className="field-error" id="create-course-instructor-error">{createErrors.instructorId}</small> : null}
           </label>
           {activeTenant?.featureFlags?.['courses.video.enabled'] !== true ? (
             <p className="muted-text">{t('courses.videoControlled')}</p>
@@ -933,17 +973,21 @@ export function CoursesPage() {
             {t('courses.title')}
             <input
               className={createErrors.title ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.title)}
+              aria-describedby={createErrors.title ? 'edit-course-title-error' : undefined}
               value={createForm.title}
               onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
               placeholder={t('courses.titlePlaceholder')}
               autoFocus
             />
-            {createErrors.title ? <small className="field-error">{createErrors.title}</small> : null}
+            {createErrors.title ? <small className="field-error" id="edit-course-title-error">{createErrors.title}</small> : null}
           </label>
           <label>
             {t('courses.type')}
             <select
               className={createErrors.courseType ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.courseType)}
+              aria-describedby={createErrors.courseType ? 'edit-course-type-error' : undefined}
               value={createForm.courseType}
               onChange={(event) => setCreateForm((current) => ({ ...current, courseType: event.target.value as TenantCourseType }))}
             >
@@ -951,23 +995,27 @@ export function CoursesPage() {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-            {createErrors.courseType ? <small className="field-error">{createErrors.courseType}</small> : null}
+            {createErrors.courseType ? <small className="field-error" id="edit-course-type-error">{createErrors.courseType}</small> : null}
           </label>
           <label>
             {t('courses.description')}
             <textarea
               className={createErrors.description ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.description)}
+              aria-describedby={createErrors.description ? 'edit-course-description-error' : undefined}
               value={createForm.description}
               onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
               placeholder={t('courses.descriptionPlaceholder')}
               rows={4}
             />
-            {createErrors.description ? <small className="field-error">{createErrors.description}</small> : null}
+            {createErrors.description ? <small className="field-error" id="edit-course-description-error">{createErrors.description}</small> : null}
           </label>
           <label>
             {t('courses.instructor')}
             <select
               className={createErrors.instructorId ? 'input-error' : undefined}
+              aria-invalid={Boolean(createErrors.instructorId)}
+              aria-describedby={createErrors.instructorId ? 'edit-course-instructor-error' : undefined}
               value={createForm.instructorId ?? ''}
               onChange={(event) => setCreateForm((current) => ({ ...current, instructorId: Number(event.target.value) || undefined }))}
               disabled={activeRole === 'instructor'}
@@ -979,7 +1027,7 @@ export function CoursesPage() {
                 </option>
               ))}
             </select>
-            {createErrors.instructorId ? <small className="field-error">{createErrors.instructorId}</small> : null}
+            {createErrors.instructorId ? <small className="field-error" id="edit-course-instructor-error">{createErrors.instructorId}</small> : null}
           </label>
           <p className="muted-text">{t('courses.privateScopeNote')}</p>
           <div className="modal-actions">
@@ -989,6 +1037,30 @@ export function CoursesPage() {
             </button>
           </div>
         </FormModal>
+      ) : null}
+      {courseRejectPending ? (
+        <Modal labelledBy="reject-course-title" onClose={() => setCourseRejectPending(null)}>
+          <div className="modal-header-block">
+            <span>{t('courses.reject')}</span>
+            <h2 id="reject-course-title">{t('courses.rejectCourseTitle')}</h2>
+            <p>{t('courses.rejectCourseDetail', { title: courseRejectPending.title })}</p>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setCourseRejectPending(null)} disabled={statusUpdating}>{t('courses.cancel')}</button>
+            <button
+              type="button"
+              className="danger-button"
+              disabled={statusUpdating}
+              onClick={() => {
+                const courseId = courseRejectPending.id;
+                setCourseRejectPending(null);
+                void changeCourseStatus(courseId, 'rejected');
+              }}
+            >
+              {statusUpdating ? t('auth.working') : t('courses.reject')}
+            </button>
+          </div>
+        </Modal>
       ) : null}
     </>
   );

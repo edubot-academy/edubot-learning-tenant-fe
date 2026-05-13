@@ -37,7 +37,8 @@ import {
   uploadSessionMaterial,
 } from '../../services/api';
 import type { AttendanceRecord, CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
+import { activityTypeLabelKeys, commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { isTenantAdmin } from '../tenant/tenantRoles';
@@ -256,39 +257,13 @@ export function SessionsPage() {
   const generationDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
   const generationReady = savedScheduleReady && generationDatesReady;
   const statusLabel = (value: string | undefined | null) => {
-    const status = value || 'scheduled';
-    const key = status.replaceAll('_', '');
-    const statusKeys: Record<string, string> = {
-      active: 'groups.statusActive',
-      approved: 'courses.statusApproved',
-      cancelled: 'groups.statusCancelled',
-      completed: 'groups.statusCompleted',
-      done: 'sessions.statusDone',
-      draft: 'courses.statusDraft',
-      existing: 'groups.existing',
-      needsrevision: 'sessions.statusNeedsRevision',
-      new: 'groups.new',
-      open: 'groups.statusOpen',
-      pending: 'courses.statusPending',
-      planned: 'courses.statusPlanned',
-      rejected: 'courses.statusRejected',
-      scheduled: 'courses.statusScheduled',
-      submitted: 'sessions.statusSubmitted',
-    };
-    return statusKeys[key] ? t(statusKeys[key]) : readable(status);
+    return enumLabel(value || 'scheduled', commonStatusLabelKeys, t);
   };
   const materialFallback = (index: number) => t('sessions.materialFallback', { number: index + 1 });
   const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const instructorFallback = (id: number) => t('groups.instructorFallback', { id });
   const activityTypeLabel = (value: string | undefined | null) => {
-    const activityTypeKeys: Record<string, string> = {
-      discussion: 'sessions.activityTypeDiscussion',
-      exercise: 'sessions.activityTypeExercise',
-      group_work: 'sessions.activityTypeGroupWork',
-      quiz: 'sessions.activityTypeQuiz',
-      submission: 'sessions.activityTypeSubmission',
-    };
-    return value && activityTypeKeys[value] ? t(activityTypeKeys[value]) : readable(value);
+    return enumLabel(value, activityTypeLabelKeys, t, t('student.activity'));
   };
   const removalTypeLabel = (value: PendingRemoval['type']) => {
     const removalTypeKeys: Record<PendingRemoval['type'], string> = {

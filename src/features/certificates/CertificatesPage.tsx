@@ -28,7 +28,8 @@ import {
 } from '../../services/api';
 import type { CertificateBranding, Course, CourseCertificate, CourseCertificateSettings, GroupStudent } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
+import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAuth } from '../auth/AuthProvider';
 import { isTenantAdmin } from '../tenant/tenantRoles';
 import {
@@ -221,15 +222,10 @@ export function CertificatesPage() {
       auto: t('certificates.auto'),
       manual: t('certificates.manual'),
     };
-    return labels[value || ''] ?? readable(value ?? 'auto');
+    return labels[value || ''] ?? enumLabel(value ?? 'auto', {}, t);
   };
   const courseTypeLabel = (value?: Course['courseType'] | string | null) => {
-    const labels: Record<string, string> = {
-      offline: t('courses.typeOffline'),
-      online_live: t('courses.typeOnlineLive'),
-      video: t('courses.typeVideo'),
-    };
-    return labels[value || ''] ?? t('courses.course');
+    return value ? enumLabel(value, courseTypeLabelKeys, t) : t('courses.course');
   };
   const approvalModeLabel = (value?: CourseCertificateSettings['approvalMode'] | null) => {
     if (value === 'admin') return t('certificates.ownerCompanyAdmin');
@@ -237,15 +233,10 @@ export function CertificatesPage() {
     return t('certificates.none');
   };
   const certificateStatusLabel = (value?: string | null) => {
-    const labels: Record<string, string> = {
-      all: t('attendance.allStatuses'),
-      issued: t('certificates.statusIssued'),
-      pending_approval: t('overview.pendingApprovals'),
-      rejected: t('courses.statusRejected'),
-      revoked: t('certificates.statusRevoked'),
-      total: t('groups.total'),
-    };
-    return labels[value || ''] ?? readable(value);
+    return enumLabel(value, {
+      ...commonStatusLabelKeys,
+      all: 'attendance.allStatuses',
+    }, t);
   };
   const eligibilityLabel = (student?: GroupStudent | null) => (
     isStudentEligibleForCertificate(student) ? t('certificates.eligible') : t('certificates.notEligible')

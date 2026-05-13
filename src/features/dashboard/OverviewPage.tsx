@@ -22,6 +22,7 @@ import { getTenantDashboard } from '../../services/api';
 import type { TenantOverview } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate, readable } from '../../lib/format';
+import { activityActionLabelKeys, commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
 
 function statValue(value: unknown) {
@@ -103,9 +104,11 @@ export function OverviewPage() {
     };
   }, [activeTenantId, t]);
 
-  const canManageMembers = Boolean(overview?.permissions.canManageMembers);
-  const canManageCertificates = Boolean(overview?.permissions.canManageCertificates);
-  const canCreateCourses = Boolean(overview?.permissions.canCreateCourses);
+  const overviewPermissions = overview?.permissions ?? overview?.workspace?.permissions;
+  const canManageMembers = Boolean(overviewPermissions?.canManageMembers);
+  const canManageCertificates = Boolean(overviewPermissions?.canManageCertificates);
+  const canCreateCourses = Boolean(overviewPermissions?.canCreateCourses);
+  const canViewActivity = Boolean(overviewPermissions?.canViewActivity);
   const isAssistant = overview?.role === 'assistant';
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
   const certificatesEnabled = isTenantFeatureEnabled(activeTenant, 'certificates.enabled');
@@ -242,48 +245,62 @@ export function OverviewPage() {
       ...(canCreateCourses ? [{ label: t('overview.pendingCourses'), value: overview.stats.pendingCourses ?? 0 }] : []),
     ];
   }, [attendanceEnabled, canCreateCourses, overview, t]);
+
+  const todayOperations = useMemo(() => {
+    if (!overview) return [];
+    const nextLiveSession = overview.sessions.upcoming.find((session) => session.liveJoinUrl || session.liveHostUrl);
+    return [
+      {
+        to: '/sessions',
+        label: t('overview.todaySessions'),
+        value: overview.sessions.today,
+        detail: overview.sessions.upcoming[0]
+          ? `${overview.sessions.upcoming[0].title} · ${formatDate(overview.sessions.upcoming[0].startsAt)}`
+          : t('overview.noSessionsToday'),
+        icon: FiCalendar,
+        enabled: true,
+      },
+      {
+        to: '/attendance',
+        label: t('overview.unmarkedAttendance'),
+        value: attendanceEnabled ? overview.sessions.unmarkedAttendance : t('overview.disabled'),
+        detail: attendanceEnabled ? t('overview.markClasses') : t('overview.attendanceDisabled'),
+        icon: FiCheckSquare,
+        enabled: attendanceEnabled,
+      },
+      {
+        to: '/homework',
+        label: t('overview.pendingHomeworkReviews'),
+        value: homeworkEnabled ? overview.stats.homeworkNeedsReview ?? 0 : t('overview.disabled'),
+        detail: homeworkEnabled ? t('overview.homeworkReviewDetail') : t('overview.homeworkDisabled'),
+        icon: FiBookOpen,
+        enabled: homeworkEnabled,
+      },
+      {
+        to: nextLiveSession?.liveHostUrl || nextLiveSession?.liveJoinUrl || '/sessions',
+        label: t('overview.nextLiveLink'),
+        value: nextLiveSession ? t('overview.ready') : '-',
+        detail: nextLiveSession ? nextLiveSession.title : t('overview.noLiveLinkReady'),
+        icon: FiActivity,
+        enabled: Boolean(nextLiveSession),
+        external: Boolean(nextLiveSession?.liveHostUrl || nextLiveSession?.liveJoinUrl),
+      },
+    ];
+  }, [attendanceEnabled, homeworkEnabled, overview, t]);
+
   const overviewCourseTypeLabel = (value?: string | null) => {
-    const labels: Record<string, string> = {
-      offline: t('courses.typeOffline'),
-      online_live: t('courses.typeOnlineLive'),
-      video: t('courses.typeVideo'),
-    };
-    return labels[value || ''] ?? t('overview.courseTypeDefault');
+    return value ? enumLabel(value, courseTypeLabelKeys, t) : t('overview.courseTypeDefault');
   };
   const overviewStatusLabel = (value?: string | null) => {
-    const status = String(value || 'draft').toLowerCase();
-    const labels: Record<string, string> = {
-      approved: t('courses.statusApproved'),
-      cancelled: t('groups.statusCancelled'),
-      completed: t('courses.completed'),
-      draft: t('courses.statusDraft'),
-      missing: t('homework.reviewMissing'),
-      needs_review: t('homework.reviewNeedsReview'),
-      needs_revision: t('homework.reviewNeedsRevision'),
-      overdue: t('homework.overdue'),
-      pending: t('courses.statusPending'),
-      rejected: t('courses.statusRejected'),
-      scheduled: t('overview.scheduledSessions'),
-      submitted: t('student.submitted'),
-      total: t('groups.total'),
-    };
-    return labels[status] ?? readable(value);
+    return enumLabel(value || 'draft', {
+      ...commonStatusLabelKeys,
+      completed: 'courses.completed',
+      scheduled: 'overview.scheduledSessions',
+      submitted: 'student.submitted',
+    }, t);
   };
   const activityActionLabel = (value?: string | null) => {
-    const key = String(value || '').toLowerCase();
-    const labels: Record<string, string> = {
-      create: t('actions.create'),
-      delete: t('actions.delete'),
-      update: t('actions.update'),
-      updated: t('actions.update'),
-      certificate: t('navigation.certificates'),
-      course: t('navigation.courses'),
-      group: t('navigation.groups'),
-      member: t('navigation.members'),
-      session: t('navigation.sessions'),
-      tenant: t('overview.tenantTarget'),
-    };
-    return labels[key] ?? readable(value);
+    return enumLabel(value, activityActionLabelKeys, t, t('overview.tenantTarget'));
   };
 
   if (!activeTenant) return <EmptyState title={t('overview.noTenantAssignedTitle')} detail={t('overview.noTenantAssignedDetail')} />;
@@ -340,6 +357,36 @@ export function OverviewPage() {
           <span className="primary-link-button">{t('student.open')}</span>
         </Link>
       ) : null}
+
+      <section className="overview-today-strip" aria-label={t('overview.todayOperations')}>
+        <div className="overview-today-heading">
+          <span className="ui-kicker">{t('overview.today')}</span>
+          <strong>{t('overview.todayOperations')}</strong>
+        </div>
+        <div className="overview-today-list">
+          {todayOperations.map((item) => {
+            const Icon = item.icon;
+            const content = (
+              <>
+                <Icon aria-hidden="true" />
+                <span>
+                  <strong>{item.value}</strong>
+                  <small>{item.label}</small>
+                  <em>{item.detail}</em>
+                </span>
+              </>
+            );
+            if (item.external && item.enabled) {
+              return <a className="overview-today-card" href={item.to} target="_blank" rel="noreferrer" key={item.label}>{content}</a>;
+            }
+            return item.enabled ? (
+              <Link className="overview-today-card" to={item.to} key={item.label}>{content}</Link>
+            ) : (
+              <article className="overview-today-card disabled" key={item.label}>{content}</article>
+            );
+          })}
+        </div>
+      </section>
 
       <section className={`overview-priority-strip ${priorityItems.length ? '' : 'all-clear'}`} aria-label={t('overview.needsAttention')}>
         {priorityItems.length ? (
@@ -600,7 +647,7 @@ export function OverviewPage() {
         ) : null}
       </div>
 
-      {overview.permissions.canViewActivity ? (
+      {canViewActivity ? (
         <section className="settings-panel full overview-activity-panel">
           <h2>{t('overview.recentActivity')}</h2>
           <div className="stack-list activity-timeline">

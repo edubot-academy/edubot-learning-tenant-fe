@@ -24,7 +24,8 @@ import {
   saveSessionAttendance,
 } from '../../services/api';
 import type { AttendanceRecord, AttendanceStatus, Course, CourseGroup, CourseSession, GroupStudent } from '../../types/domain';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
+import { commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 function isAttendanceCourseReady(course: Course | undefined | null) {
@@ -107,13 +108,7 @@ export function AttendancePage() {
     return labels[status];
   };
   const sessionStatusLabel = (status?: string) => {
-    const normalized = String(status ?? 'scheduled').toLowerCase();
-    const labels: Record<string, string> = {
-      cancelled: t('groups.statusCancelled'),
-      completed: t('groups.statusCompleted'),
-      scheduled: t('courses.statusScheduled'),
-    };
-    return labels[normalized] ?? readable(status);
+    return enumLabel(status ?? 'scheduled', commonStatusLabelKeys, t);
   };
   const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const workflowSteps = useMemo(() => [

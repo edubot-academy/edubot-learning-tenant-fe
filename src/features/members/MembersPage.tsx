@@ -17,7 +17,8 @@ import {
 } from '../../services/api';
 import type { CompanyMember, UserSummary } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
+import { enumLabel, roleLabelKeys } from '../../lib/enumLabels';
 import { useAuth } from '../auth/AuthProvider';
 import { canManageTenantMembers } from '../tenant/tenantRoles';
 import {
@@ -127,7 +128,7 @@ export function MembersPage() {
       owner: t('members.roleOwner'),
       student: t('members.roleStudent'),
     };
-    return labels[value] ?? readable(value);
+    return labels[value] ?? enumLabel(value, roleLabelKeys, t);
   };
   const roleDescription = (value: string) => {
     const descriptions: Record<string, string> = {
@@ -363,6 +364,11 @@ export function MembersPage() {
           detail={canManageMembers
             ? t('members.emptyManageDetail')
             : t('members.emptyReadOnlyDetail')}
+          action={canManageMembers ? (
+            <button type="button" className="secondary-button" onClick={() => setMemberModal('invite')} disabled={working}>
+              {t('members.inviteMember')}
+            </button>
+          ) : null}
         />
       ) : !filteredMembers.length ? (
         <EmptyState title={t('members.noMatchesTitle')} detail={t('members.noMatchesDetail')} />

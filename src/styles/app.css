@@ -403,26 +403,30 @@ a {
 
 .brand-block {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-height: 48px;
 }
 
-.brand-block strong,
-.brand-block span {
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-copy strong,
+.brand-copy span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.brand-block strong {
+.brand-copy strong {
   color: #ffffff;
   font-size: 15px;
 }
 
-.brand-block span {
+.brand-copy span {
   color: #cbd5e1;
   font-size: 12px;
 }
@@ -446,6 +450,71 @@ a {
   height: 100%;
   object-fit: contain;
   padding: 4px;
+}
+
+.language-compact {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+}
+
+.language-compact > button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(203, 213, 225, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+  color: #ffffff;
+  padding: 0;
+}
+
+.language-compact > button svg {
+  width: 17px;
+  height: 17px;
+  color: #cbd5e1;
+}
+
+.language-compact > button:hover,
+.language-compact > button.active {
+  border-color: rgba(20, 184, 166, 0.58);
+  background: rgba(20, 184, 166, 0.16);
+}
+
+.language-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  min-width: 64px;
+  overflow: hidden;
+  border: 1px solid rgba(203, 213, 225, 0.2);
+  border-radius: 8px;
+  background: #0f172a;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+  padding: 4px;
+}
+
+.language-menu button {
+  justify-content: center;
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #d7dee9;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.language-menu button:hover,
+.language-menu button.active {
+  background: rgba(20, 184, 166, 0.16);
+  color: #ffffff;
 }
 
 .sidebar-workspace-card {
@@ -4659,7 +4728,7 @@ html[data-theme='dark'] textarea {
   }
 
   .brand-block {
-    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-columns: 36px minmax(0, 1fr) auto;
     min-height: 40px;
   }
 
@@ -4669,12 +4738,22 @@ html[data-theme='dark'] textarea {
     font-size: 16px;
   }
 
-  .brand-block strong {
+  .brand-copy strong {
     font-size: 14px;
   }
 
-  .brand-block span {
+  .brand-copy span {
     font-size: 11px;
+  }
+
+  .language-compact > button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .language-menu {
+    right: 0;
+    min-width: 64px;
   }
 
   .sidebar-workspace-card,

@@ -3,23 +3,23 @@ import type { AuthUser, Tenant } from '../types/domain';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
 import { canManageTenantCertificates, canManageTenantMembers, isTenantStudent } from '../features/tenant/tenantRoles';
 
-export type NavItem = { to: string; label: string; icon: typeof FiHome; feature?: TenantFeatureKey };
+export type NavItem = { to: string; labelKey: string; icon: typeof FiHome; feature?: TenantFeatureKey };
 
 export const staffNavItems = [
-  { to: '/', label: 'Overview', icon: FiHome },
-  { to: '/courses', label: 'Courses', icon: FiBookOpen },
-  { to: '/groups', label: 'Groups', icon: FiUsers },
-  { to: '/sessions', label: 'Sessions', icon: FiCalendar },
-  { to: '/attendance', label: 'Attendance', icon: FiCheckSquare, feature: 'attendance.enabled' },
-  { to: '/homework', label: 'Homework', icon: FiClipboard, feature: 'homework.enabled' },
-  { to: '/certificates', label: 'Certificates', icon: FiAward, feature: 'certificates.enabled' },
-  { to: '/members', label: 'Members', icon: FiUsers },
-  { to: '/settings', label: 'Settings', icon: FiSettings },
+  { to: '/', labelKey: 'navigation.overview', icon: FiHome },
+  { to: '/courses', labelKey: 'navigation.courses', icon: FiBookOpen },
+  { to: '/groups', labelKey: 'navigation.groups', icon: FiUsers },
+  { to: '/sessions', labelKey: 'navigation.sessions', icon: FiCalendar },
+  { to: '/attendance', labelKey: 'navigation.attendance', icon: FiCheckSquare, feature: 'attendance.enabled' },
+  { to: '/homework', labelKey: 'navigation.homework', icon: FiClipboard, feature: 'homework.enabled' },
+  { to: '/certificates', labelKey: 'navigation.certificates', icon: FiAward, feature: 'certificates.enabled' },
+  { to: '/members', labelKey: 'navigation.members', icon: FiUsers },
+  { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
 ] satisfies NavItem[];
 
 export const studentNavItems = [
-  { to: '/student', label: 'My learning', icon: FiHome },
-  { to: '/settings', label: 'Settings', icon: FiSettings },
+  { to: '/student', labelKey: 'navigation.myLearning', icon: FiHome },
+  { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
 ] satisfies NavItem[];
 
 export const primaryMobileRoutes = new Set(['/', '/courses', '/groups', '/sessions']);

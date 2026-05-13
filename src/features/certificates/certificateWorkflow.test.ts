@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { CourseCertificate, CourseCertificateSettings, GroupStudent } from '../../types/domain';
+import i18n from '../../i18n/config';
 import {
   describeEligibility,
   filterCertificates,
@@ -30,6 +31,10 @@ const certificate = (overrides: Partial<CourseCertificate>): CourseCertificate =
 });
 
 describe('certificate workflow helpers', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
   it('describes eligibility reasons for blocked students', () => {
     const blocked = student({
       certificateEligibility: {

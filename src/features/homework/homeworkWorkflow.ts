@@ -1,4 +1,5 @@
 import type { CourseSession, HomeworkReviewRoster } from '../../types/domain';
+import i18n from '../../i18n/config';
 
 export type ReviewFilter = 'total' | 'needsReview' | 'missing' | 'approved' | 'needsRevision' | 'late';
 
@@ -34,18 +35,18 @@ export function getHomeworkReviewBlocker(
 ) {
   const score = draft.score.trim() ? Number(draft.score) : undefined;
   if ((status === 'rejected' || status === 'needs_revision') && !draft.reviewComment.trim()) {
-    return 'Review comment is required.';
+    return i18n.t('homework.errorReviewCommentRequired');
   }
   if (score !== undefined && !Number.isFinite(score)) {
-    return 'Score must be a number.';
+    return i18n.t('homework.errorScoreNumber');
   }
   return '';
 }
 
 export function getHomeworkFormErrors(form: { title: string; maxScore: string }, sessionReady: boolean) {
   const errors: Record<string, string> = {};
-  if (!sessionReady) errors.session = 'Select a scheduled or completed session before creating homework.';
-  if (!form.title.trim()) errors.title = 'Homework title is required.';
-  if (form.maxScore && Number(form.maxScore) < 0) errors.maxScore = 'Max score cannot be negative.';
+  if (!sessionReady) errors.session = i18n.t('homework.errorSessionReady');
+  if (!form.title.trim()) errors.title = i18n.t('homework.errorTitleRequired');
+  if (form.maxScore && Number(form.maxScore) < 0) errors.maxScore = i18n.t('homework.errorMaxScoreNegative');
   return errors;
 }

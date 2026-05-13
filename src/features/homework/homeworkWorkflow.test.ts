@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { HomeworkReviewRoster } from '../../types/domain';
+import i18n from '../../i18n/config';
 import { filterHomeworkReviewItems, getHomeworkFormErrors, getHomeworkReviewBlocker } from './homeworkWorkflow';
 
 const rows: HomeworkReviewRoster['items'] = [
@@ -9,6 +10,10 @@ const rows: HomeworkReviewRoster['items'] = [
 ];
 
 describe('homework workflow helpers', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
   it('filters review roster by canonical review filters', () => {
     expect(filterHomeworkReviewItems(rows, 'needsReview').map((item) => item.studentId)).toEqual([1]);
     expect(filterHomeworkReviewItems(rows, 'late').map((item) => item.studentId)).toEqual([2, 3]);

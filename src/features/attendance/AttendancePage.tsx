@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { CountFilterRow } from '../../components/CountFilterRow';
@@ -31,6 +32,7 @@ function isAttendanceCourseReady(course: Course | undefined | null) {
 }
 
 export function AttendancePage() {
+  const { t } = useTranslation();
   const { activeTenant } = useTenant();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
@@ -84,28 +86,58 @@ export function AttendancePage() {
     markedCount: attendanceCounts.marked,
     changedCount: changedAttendanceRows.length,
   });
+  const attendanceSaveBlockerMessage = useMemo(() => {
+    if (!attendanceSaveBlocker) return '';
+    const blockers: Record<string, string> = {
+      'Attendance can only be saved for scheduled or completed sessions.': t('attendance.saveBlockerSessionReady'),
+      'No students are enrolled in this group.': t('attendance.saveBlockerNoStudents'),
+      'Mark at least one student before saving.': t('attendance.saveBlockerNoMarked'),
+      'No unsaved attendance changes.': t('attendance.saveBlockerNoChanges'),
+    };
+    return blockers[attendanceSaveBlocker] ?? attendanceSaveBlocker;
+  }, [attendanceSaveBlocker, t]);
+  const attendanceStatusLabel = (status: AttendanceStatus | 'unmarked') => {
+    const labels: Record<AttendanceStatus | 'unmarked', string> = {
+      absent: t('attendance.statusAbsent'),
+      excused: t('attendance.statusExcused'),
+      late: t('attendance.statusLate'),
+      present: t('attendance.statusPresent'),
+      unmarked: t('attendance.unmarked'),
+    };
+    return labels[status];
+  };
+  const sessionStatusLabel = (status?: string) => {
+    const normalized = String(status ?? 'scheduled').toLowerCase();
+    const labels: Record<string, string> = {
+      cancelled: t('groups.statusCancelled'),
+      completed: t('groups.statusCompleted'),
+      scheduled: t('courses.statusScheduled'),
+    };
+    return labels[normalized] ?? readable(status);
+  };
+  const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const workflowSteps = useMemo(() => [
     {
-      label: 'Course',
-      value: selectedCourse?.title ?? 'Choose course',
+      label: t('courses.course'),
+      value: selectedCourse?.title ?? t('sessions.chooseCourse'),
       state: selectedCourse ? 'ready' : 'current',
     },
     {
-      label: 'Group',
-      value: selectedGroup?.name ?? (selectedCourse ? 'Choose group' : 'Waiting for course'),
+      label: t('courses.group'),
+      value: selectedGroup?.name ?? (selectedCourse ? t('attendance.chooseGroup') : t('sessions.waitingForCourse')),
       state: selectedGroup ? 'ready' : selectedCourse ? 'current' : 'locked',
     },
     {
-      label: 'Session',
-      value: selectedSession?.title ?? (selectedGroup ? 'Choose session' : 'Waiting for group'),
+      label: t('courses.sessions'),
+      value: selectedSession?.title ?? (selectedGroup ? t('attendance.chooseSession') : t('sessions.waitingForGroup')),
       state: selectedSession ? 'ready' : selectedGroup ? 'current' : 'locked',
     },
     {
-      label: 'Mark',
-      value: selectedSession ? `${attendanceCounts.marked} of ${attendanceCounts.total} marked` : 'Attendance unlocks here',
+      label: t('attendance.mark'),
+      value: selectedSession ? t('attendance.markedOfTotal', { marked: attendanceCounts.marked, total: attendanceCounts.total }) : t('attendance.unlocksHere'),
       state: selectedSession ? 'current' : 'locked',
     },
-  ], [attendanceCounts.marked, attendanceCounts.total, selectedCourse, selectedGroup, selectedSession]);
+  ], [attendanceCounts.marked, attendanceCounts.total, selectedCourse, selectedGroup, selectedSession, t]);
 
   useEffect(() => {
     setCourses([]);
@@ -127,7 +159,7 @@ export function AttendancePage() {
         setCourses(readyCourses);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load courses');
+        if (!cancelled) toast.error(t('courses.loadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -135,7 +167,7 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, t]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -164,7 +196,7 @@ export function AttendancePage() {
         setGroups(nextGroups);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load groups');
+        if (!cancelled) toast.error(t('groups.courseGroupsLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -172,7 +204,7 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [courseId, t]);
 
   useEffect(() => {
     setGroupId((current) => {
@@ -201,7 +233,7 @@ export function AttendancePage() {
         setStudents(nextStudents);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load group attendance data');
+        if (!cancelled) toast.error(t('attendance.groupDataLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -209,7 +241,7 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, t]);
 
   useEffect(() => {
     setSessionId((current) => {
@@ -244,7 +276,7 @@ export function AttendancePage() {
         setSavedAttendance(nextAttendance);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load saved attendance');
+        if (!cancelled) toast.error(t('attendance.savedLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -252,7 +284,7 @@ export function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, t]);
 
   const updateStudentAttendance = (studentId: number, patch: Partial<EditableAttendance>) => {
     setAttendance((current) => ({
@@ -296,7 +328,7 @@ export function AttendancePage() {
   const saveAttendance = async () => {
     if (!sessionId) return;
     if (attendanceSaveBlocker) {
-      toast.error(attendanceSaveBlocker);
+      toast.error(attendanceSaveBlockerMessage);
       return;
     }
 
@@ -320,9 +352,9 @@ export function AttendancePage() {
       );
       setAttendance(nextAttendance);
       setSavedAttendance(nextAttendance);
-      toast.success('Attendance saved');
+      toast.success(t('attendance.saved'));
     } catch {
-      toast.error('Could not save attendance');
+      toast.error(t('attendance.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -331,18 +363,18 @@ export function AttendancePage() {
   return (
     <>
       <PageHeader
-        title="Attendance"
+        title={t('attendance.title')}
         eyebrow={activeTenant?.name}
         actions={sessionId ? (
-          <button type="button" onClick={saveAttendance} disabled={saving || Boolean(attendanceSaveBlocker)} title={attendanceSaveBlocker || undefined}>
-            {saving ? 'Saving...' : 'Save attendance'}
+          <button type="button" onClick={saveAttendance} disabled={saving || Boolean(attendanceSaveBlocker)} title={attendanceSaveBlockerMessage || undefined}>
+            {saving ? t('courses.saving') : t('attendance.saveAttendance')}
           </button>
         ) : null}
       />
 
       <div className="filters-row three">
         <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
-          <option value="">Select course</option>
+          <option value="">{t('courses.selectCourse')}</option>
           {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
         </select>
         <select
@@ -350,7 +382,7 @@ export function AttendancePage() {
           onChange={(event) => setGroupId(Number(event.target.value) || undefined)}
           disabled={!groups.length}
         >
-          <option value="">Select group</option>
+          <option value="">{t('courses.selectGroup')}</option>
           {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
         </select>
         <select
@@ -358,7 +390,7 @@ export function AttendancePage() {
           onChange={(event) => setSessionId(Number(event.target.value) || undefined)}
           disabled={!sessions.length}
         >
-          <option value="">Select session</option>
+          <option value="">{t('sessions.chooseSession')}</option>
           {sessions.map((session) => (
             <option key={session.id} value={session.id}>
               {session.title} {session.startsAt ? `- ${formatDate(session.startsAt)}` : ''}
@@ -367,9 +399,9 @@ export function AttendancePage() {
         </select>
       </div>
 
-      {loading ? <LoadingState label="Loading attendance" /> : null}
+      {loading ? <LoadingState label={t('attendance.loading')} /> : null}
 
-      <section className="session-workflow-strip attendance-workflow-strip" aria-label="Attendance workflow">
+      <section className="session-workflow-strip attendance-workflow-strip" aria-label={t('attendance.workflow')}>
         {workflowSteps.map((step, index) => (
           <article key={step.label} className={`workflow-step ${step.state}`}>
             <span>{index + 1}</span>
@@ -382,22 +414,22 @@ export function AttendancePage() {
       </section>
 
       {!loading && !courseId ? (
-        <EmptyState title="Choose a course" detail="Select a tenant course, then choose a group and session to mark attendance." />
+        <EmptyState title={t('attendance.chooseCourseTitle')} detail={t('attendance.chooseCourseDetail')} />
       ) : null}
 
       {!loading && courseId && groupId && !students.length ? (
         <EmptyState
-          title="No students in this group"
-          detail="Enroll students into the selected group before marking attendance."
-          action={<Link className="secondary-link-button" to="/sessions">Open sessions</Link>}
+          title={t('courses.noStudentsTitle')}
+          detail={t('attendance.noStudentsDetail')}
+          action={<Link className="secondary-link-button" to="/sessions">{t('attendance.openSessions')}</Link>}
         />
       ) : null}
 
       {!loading && groupId && students.length > 0 && !sessionId ? (
         <EmptyState
-          title="Choose a session"
-          detail="Select a scheduled or completed session to view and update attendance."
-          action={<Link className="secondary-link-button" to="/sessions">Schedule sessions</Link>}
+          title={t('attendance.chooseSessionTitle')}
+          detail={t('attendance.chooseSessionDetail')}
+          action={<Link className="secondary-link-button" to="/sessions">{t('attendance.scheduleSessions')}</Link>}
         />
       ) : null}
 
@@ -405,46 +437,46 @@ export function AttendancePage() {
         <section className="content-section workflow-context-panel">
           <div className="section-heading-row">
             <div>
-              <h2>{selectedSession?.title ?? 'Session attendance'}</h2>
-              <span>{attendanceCounts.marked} marked of {attendanceCounts.total}</span>
+              <h2>{selectedSession?.title ?? t('attendance.sessionAttendance')}</h2>
+              <span>{t('attendance.markedOfTotal', { marked: attendanceCounts.marked, total: attendanceCounts.total })}</span>
             </div>
             <div className="attendance-save-state">
               <span className={`status-badge ${hasAttendanceChanges ? 'pending_approval' : 'published'}`}>
-                {hasAttendanceChanges ? `${changedAttendanceRows.length} changed` : 'Saved'}
+                {hasAttendanceChanges ? t('attendance.changedCount', { count: changedAttendanceRows.length }) : t('attendance.savedState')}
               </span>
             </div>
           </div>
-          <div className="attendance-session-summary" aria-label="Attendance summary">
+          <div className="attendance-session-summary" aria-label={t('attendance.summary')}>
             <section>
-              <span>Marked</span>
+              <span>{t('sessions.marked')}</span>
               <strong>{attendanceCounts.marked}</strong>
             </section>
             <section>
-              <span>Unmarked</span>
+              <span>{t('attendance.unmarked')}</span>
               <strong>{attendanceCounts.unmarked}</strong>
             </section>
             <section>
-              <span>Changed</span>
+              <span>{t('attendance.changed')}</span>
               <strong>{changedAttendanceRows.length}</strong>
             </section>
             <section>
-              <span>Session</span>
-              <strong>{selectedSessionReady ? readable(selectedSession?.status ?? 'scheduled') : 'Not ready'}</strong>
+              <span>{t('courses.sessions')}</span>
+              <strong>{selectedSessionReady ? sessionStatusLabel(selectedSession?.status ?? 'scheduled') : t('attendance.notReady')}</strong>
             </section>
           </div>
           <CountFilterRow
             className="attendance-summary-row"
-            ariaLabel="Attendance status filters"
+            ariaLabel={t('attendance.statusFilters')}
             items={[
               ...attendanceStatuses.map((status) => ({
                 key: status,
-                label: readable(status),
+                label: attendanceStatusLabel(status),
                 count: attendanceCounts[status],
                 active: statusFilter === status,
               })),
               {
                 key: 'unmarked' as const,
-                label: 'Unmarked',
+                label: t('attendance.unmarked'),
                 count: attendanceCounts.unmarked,
                 active: statusFilter === 'unmarked',
               },
@@ -453,53 +485,53 @@ export function AttendancePage() {
           />
           <div className="filters-row three attendance-tools">
             <label>
-              Find student
+              {t('attendance.findStudent')}
               <input
                 value={studentQuery}
                 onChange={(event) => setStudentQuery(event.target.value)}
-                placeholder="Name, email, or ID"
+                placeholder={t('attendance.studentSearchPlaceholder')}
               />
             </label>
             <label>
-              Status filter
+              {t('attendance.statusFilter')}
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AttendanceStatus | 'all' | 'unmarked')}>
-                <option value="all">All statuses</option>
-                <option value="unmarked">Unmarked</option>
-                {attendanceStatuses.map((status) => <option key={status} value={status}>{readable(status)}</option>)}
+                <option value="all">{t('attendance.allStatuses')}</option>
+                <option value="unmarked">{t('attendance.unmarked')}</option>
+                {attendanceStatuses.map((status) => <option key={status} value={status}>{attendanceStatusLabel(status)}</option>)}
               </select>
             </label>
             <div className="attendance-bulk-actions">
               <button type="button" className="secondary-button" onClick={() => markVisible('present')} disabled={!filteredStudents.length || saving}>
-                Visible present
+                {t('attendance.visiblePresent')}
               </button>
               <button type="button" className="secondary-button" onClick={() => markVisible('absent')} disabled={!filteredStudents.length || saving}>
-                Visible absent
+                {t('attendance.visibleAbsent')}
               </button>
               <button type="button" className="secondary-button" onClick={() => markUnmarked('present')} disabled={!students.length || !attendanceCounts.unmarked || saving}>
-                Unmarked present
+                {t('attendance.unmarkedPresent')}
               </button>
             </div>
           </div>
           <div className="attendance-review-banner">
             <div>
-              <strong>{hasAttendanceChanges ? 'Review changes before saving' : 'Attendance is up to date'}</strong>
+              <strong>{hasAttendanceChanges ? t('attendance.reviewBeforeSaving') : t('attendance.upToDate')}</strong>
               <span>
                 {hasAttendanceChanges
-                  ? `${changedAttendanceRows.length} student${changedAttendanceRows.length === 1 ? '' : 's'} changed from the saved roster.`
-                  : 'No unsaved attendance changes for this session.'}
+                  ? t('attendance.studentsChanged', { count: changedAttendanceRows.length })
+                  : t('attendance.noUnsavedChanges')}
               </span>
             </div>
-            <span className={`status-badge ${attendanceCounts.unmarked ? 'draft' : 'published'}`}>{attendanceCounts.unmarked} unmarked</span>
+            <span className={`status-badge ${attendanceCounts.unmarked ? 'draft' : 'published'}`}>{t('attendance.unmarkedCount', { count: attendanceCounts.unmarked })}</span>
           </div>
-          <p className="panel-note attendance-note">Only marked rows are saved. Use bulk actions before saving when the whole class has the same status.</p>
+          <p className="panel-note attendance-note">{t('attendance.saveNote')}</p>
           <div className="table-wrap attendance-table-wrap">
             <table className="attendance-roster-table">
               <thead>
                 <tr>
-                  <th>Student</th>
-                  <th>Status</th>
-                  <th>Progress</th>
-                  <th>Notes</th>
+                  <th>{t('courses.student')}</th>
+                  <th>{t('courses.status')}</th>
+                  <th>{t('courses.progress')}</th>
+                  <th>{t('sessions.notes')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -508,37 +540,37 @@ export function AttendancePage() {
                   const progress = Math.round(student.progressPercent ?? 0);
                   return (
                     <tr key={student.userId} className={`attendance-row ${row ? row.status : 'unmarked'}`}>
-                      <td data-label="Student">
-                        <strong>{student.fullName || student.email || `Student ${student.userId}`}</strong>
+                      <td data-label={t('courses.student')}>
+                        <strong>{student.fullName || student.email || studentFallback(student.userId)}</strong>
                         {student.email ? <small>{student.email}</small> : null}
                       </td>
-                      <td data-label="Status">
+                      <td data-label={t('courses.status')}>
                         <span className={`status-badge attendance-${row ? row.status : 'unmarked'}`}>
-                          {row ? readable(row.status) : 'Unmarked'}
+                          {row ? attendanceStatusLabel(row.status) : t('attendance.unmarked')}
                         </span>
                         <select
                           className="attendance-status-select"
-                          aria-label={`Attendance status for ${student.fullName || student.email || `student ${student.userId}`}`}
+                          aria-label={t('attendance.statusForStudent', { name: student.fullName || student.email || studentFallback(student.userId) })}
                           value={row?.status ?? ''}
                           onChange={(event) => updateStudentAttendance(student.userId, { status: event.target.value as AttendanceStatus })}
                         >
-                          <option value="" disabled>Choose status</option>
+                          <option value="" disabled>{t('attendance.chooseStatus')}</option>
                           {attendanceStatuses.map((status) => (
-                            <option key={status} value={status}>{readable(status)}</option>
+                            <option key={status} value={status}>{attendanceStatusLabel(status)}</option>
                           ))}
                         </select>
                       </td>
-                      <td data-label="Progress">
+                      <td data-label={t('courses.progress')}>
                         <div className="progress-cell attendance-progress-cell">
                           <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
                           <strong>{progress}%</strong>
                         </div>
                       </td>
-                      <td data-label="Notes">
+                      <td data-label={t('sessions.notes')}>
                         <input
                           value={row?.notes ?? ''}
                           onChange={(event) => updateStudentAttendance(student.userId, { notes: event.target.value })}
-                          placeholder={row ? 'Optional note' : 'Choose status first'}
+                          placeholder={row ? t('attendance.optionalNote') : t('attendance.chooseStatusFirst')}
                           disabled={!row}
                         />
                       </td>
@@ -550,9 +582,9 @@ export function AttendancePage() {
           </div>
           {!filteredStudents.length ? (
             <EmptyState
-              title="No matching students"
-              detail="Clear the search or switch back to all attendance statuses."
-              action={<button type="button" className="secondary-button" onClick={() => { setStudentQuery(''); setStatusFilter('all'); }}>Reset filters</button>}
+              title={t('courses.noMatchingStudents')}
+              detail={t('attendance.noMatchingStudentsDetail')}
+              action={<button type="button" className="secondary-button" onClick={() => { setStudentQuery(''); setStatusFilter('all'); }}>{t('attendance.resetFilters')}</button>}
             />
           ) : null}
         </section>

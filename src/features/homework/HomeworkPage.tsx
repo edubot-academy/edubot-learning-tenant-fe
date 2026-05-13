@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { FiBookOpen, FiCalendar, FiCheckCircle, FiClipboard, FiPlus, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
@@ -11,7 +12,6 @@ import {
   getHomeworkFormErrors,
   getHomeworkReviewBlocker,
   isHomeworkSessionReady,
-  reviewFilterLabels,
   reviewFilters,
   type ReviewFilter,
 } from './homeworkWorkflow';
@@ -48,14 +48,8 @@ function isHomeworkCourseReady(course: Course | undefined | null) {
   return isCourseWorkflowReady(course);
 }
 
-const summaryLabels: Record<string, string> = {
-  total: 'Assignments',
-  needsReview: 'Need review',
-  missing: 'Missing',
-  overdue: 'Overdue',
-};
-
 export function HomeworkPage() {
+  const { t } = useTranslation();
   const { activeTenant } = useTenant();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
@@ -116,26 +110,26 @@ export function HomeworkPage() {
 
   const workflowSteps = [
     {
-      label: 'Course',
-      value: selectedCourse?.title ?? 'Choose course',
+      label: t('courses.course'),
+      value: selectedCourse?.title ?? t('sessions.chooseCourse'),
       icon: FiBookOpen,
       state: courseId ? 'ready' : 'current',
     },
     {
-      label: 'Group',
-      value: selectedGroup?.name ?? 'Choose group',
+      label: t('courses.group'),
+      value: selectedGroup?.name ?? t('attendance.chooseGroup'),
       icon: FiUsers,
       state: groupId ? 'ready' : courseId ? 'current' : 'locked',
     },
     {
-      label: 'Session',
-      value: selectedSession?.title ?? 'Choose session',
+      label: t('courses.sessions'),
+      value: selectedSession?.title ?? t('sessions.chooseSession'),
       icon: FiCalendar,
       state: sessionId ? 'ready' : groupId ? 'current' : 'locked',
     },
     {
-      label: 'Review',
-      value: selectedHomework?.title ?? 'Select homework',
+      label: t('homework.review'),
+      value: selectedHomework?.title ?? t('homework.selectHomework'),
       icon: FiCheckCircle,
       state: selectedHomeworkId ? 'ready' : sessionId ? 'current' : 'locked',
     },
@@ -145,6 +139,60 @@ export function HomeworkPage() {
     const rows = reviewRoster?.items ?? [];
     return filterHomeworkReviewItems(rows, reviewFilter);
   }, [reviewFilter, reviewRoster?.items]);
+  const homeworkFormMessage = (message?: string) => {
+    if (!message) return '';
+    const messages: Record<string, string> = {
+      'Select a scheduled or completed session before creating homework.': t('homework.errorSessionReady'),
+      'Select a session before creating homework.': t('homework.errorSessionRequired'),
+      'Homework title is required.': t('homework.errorTitleRequired'),
+      'Max score cannot be negative.': t('homework.errorMaxScoreNegative'),
+    };
+    return messages[message] ?? message;
+  };
+  const reviewBlockerMessage = (message?: string) => {
+    if (!message) return '';
+    const messages: Record<string, string> = {
+      'Review comment is required.': t('homework.errorReviewCommentRequired'),
+      'Score must be a number.': t('homework.errorScoreNumber'),
+    };
+    return messages[message] ?? message;
+  };
+  const summaryLabel = (key: string) => {
+    const labels: Record<string, string> = {
+      assigned: t('homework.assigned'),
+      missing: t('homework.missing'),
+      needsReview: t('homework.needReview'),
+      overdue: t('homework.overdue'),
+      total: t('homework.assignments'),
+    };
+    return labels[key] ?? readable(key);
+  };
+  const reviewFilterLabel = (key: ReviewFilter) => {
+    const labels: Record<ReviewFilter, string> = {
+      approved: t('homework.reviewApproved'),
+      late: t('homework.reviewLate'),
+      missing: t('homework.reviewMissing'),
+      needsReview: t('homework.reviewNeedsReview'),
+      needsRevision: t('homework.reviewNeedsRevision'),
+      total: t('homework.reviewAll'),
+    };
+    return labels[key];
+  };
+  const reviewStateLabel = (state: string) => {
+    const labels: Record<string, string> = {
+      approved: t('homework.reviewApproved'),
+      missing: t('homework.reviewMissing'),
+      needs_review: t('homework.reviewNeedsReview'),
+      needs_revision: t('homework.reviewNeedsRevision'),
+      rejected: t('homework.reviewRejected'),
+      submitted: t('homework.reviewSubmitted'),
+    };
+    return labels[state] ?? readable(state);
+  };
+  const studentFallback = (id: number) => t('courses.studentFallback', { id });
+  const selectedCountLabel = (count: number) => (
+    count ? t('homework.selectedCount', { count }) : t('homework.allStudentsInGroup')
+  );
 
   useEffect(() => {
     setCourses([]);
@@ -168,12 +216,12 @@ export function HomeworkPage() {
         setCourses(readyCourses);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load courses');
+        if (!cancelled) toast.error(t('courses.loadFailed'));
       });
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, t]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -200,7 +248,7 @@ export function HomeworkPage() {
         setItems(nextItems);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load homework');
+        if (!cancelled) toast.error(t('homework.loadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -208,7 +256,7 @@ export function HomeworkPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId, groupId]);
+  }, [courseId, groupId, t]);
 
   useEffect(() => {
     setGroups([]);
@@ -230,12 +278,12 @@ export function HomeworkPage() {
         setGroups(nextGroups);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load groups');
+        if (!cancelled) toast.error(t('groups.courseGroupsLoadFailed'));
       });
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [courseId, t]);
 
   useEffect(() => {
     setGroupId((current) => {
@@ -266,12 +314,12 @@ export function HomeworkPage() {
         setStudents(nextStudents);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load sessions');
+        if (!cancelled) toast.error(t('sessions.groupSessionsLoadFailed'));
       });
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, t]);
 
   useEffect(() => {
     setSessionId((current) => {
@@ -301,12 +349,12 @@ export function HomeworkPage() {
         if (!cancelled) setSessionItems(nextSessionItems);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load session homework');
+        if (!cancelled) toast.error(t('homework.sessionLoadFailed'));
       });
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, t]);
 
   const loadReviewRoster = async (homeworkId: number) => {
     if (!sessionId) return;
@@ -328,7 +376,7 @@ export function HomeworkPage() {
       });
       setReviewDrafts(drafts);
     } catch {
-      toast.error('Could not load review roster');
+      toast.error(t('homework.reviewRosterLoadFailed'));
     } finally {
       setReviewLoading(false);
     }
@@ -375,11 +423,11 @@ export function HomeworkPage() {
     event.preventDefault();
     const nextErrors = getHomeworkFormErrors(form, Boolean(sessionId && selectedSessionReady));
     if (!sessionId) {
-      nextErrors.session = 'Select a session before creating homework.';
+      nextErrors.session = t('homework.errorSessionRequired');
     }
     if (Object.keys(nextErrors).length) {
-      setFormErrors(nextErrors);
-      toast.error(nextErrors.title ?? nextErrors.session ?? nextErrors.maxScore);
+      setFormErrors(Object.fromEntries(Object.entries(nextErrors).map(([key, value]) => [key, homeworkFormMessage(value)])));
+      toast.error(homeworkFormMessage(nextErrors.title ?? nextErrors.session ?? nextErrors.maxScore));
       return;
     }
 
@@ -398,9 +446,9 @@ export function HomeworkPage() {
       await reloadHomeworkLists();
       setForm(emptyForm);
       setIsCreateModalOpen(false);
-      toast.success('Homework created');
+      toast.success(t('homework.created'));
     } catch {
-      toast.error('Could not create homework');
+      toast.error(t('homework.createFailed'));
     } finally {
       setSaving(false);
     }
@@ -425,14 +473,14 @@ export function HomeworkPage() {
     if (!sessionId || !editHomeworkId) return;
     const nextErrors: Record<string, string> = {};
     if (!editForm.title.trim()) {
-      nextErrors.editTitle = 'Homework title is required.';
+      nextErrors.editTitle = t('homework.errorTitleRequired');
     }
     if (editForm.maxScore && Number(editForm.maxScore) < 0) {
-      nextErrors.editMaxScore = 'Max score cannot be negative.';
+      nextErrors.editMaxScore = t('homework.errorMaxScoreNegative');
     }
     if (Object.keys(nextErrors).length) {
-      setFormErrors(nextErrors);
-      toast.error(nextErrors.editTitle ?? nextErrors.editMaxScore);
+      setFormErrors(Object.fromEntries(Object.entries(nextErrors).map(([key, value]) => [key, homeworkFormMessage(value)])));
+      toast.error(homeworkFormMessage(nextErrors.editTitle ?? nextErrors.editMaxScore));
       return;
     }
 
@@ -452,9 +500,9 @@ export function HomeworkPage() {
         await loadReviewRoster(editHomeworkId);
       }
       closeEditModal();
-      toast.success('Homework updated');
+      toast.success(t('homework.updated'));
     } catch {
-      toast.error('Could not update homework');
+      toast.error(t('homework.updateFailed'));
     } finally {
       setSaving(false);
     }
@@ -474,10 +522,10 @@ export function HomeworkPage() {
         setEditHomeworkId(undefined);
       }
       await reloadHomeworkLists();
-      toast.success('Homework deleted');
+      toast.success(t('homework.deleted'));
       setHomeworkPendingDelete(null);
     } catch {
-      toast.error('Could not delete homework');
+      toast.error(t('homework.deleteFailed'));
     } finally {
       setSaving(false);
     }
@@ -493,7 +541,7 @@ export function HomeworkPage() {
 
     const blocker = getHomeworkReviewBlocker(status, draft);
     if (blocker) {
-      toast.error(blocker);
+      toast.error(reviewBlockerMessage(blocker));
       return;
     }
 
@@ -514,9 +562,9 @@ export function HomeworkPage() {
       setSummary(nextSummary);
       setItems(nextItems);
       setSessionItems(nextSessionItems);
-      toast.success('Review saved');
+      toast.success(t('homework.reviewSaved'));
     } catch {
-      toast.error('Could not save review');
+      toast.error(t('homework.reviewSaveFailed'));
     } finally {
       setReviewingSubmission(undefined);
     }
@@ -525,26 +573,26 @@ export function HomeworkPage() {
   return (
     <>
       <PageHeader
-        title="Homework"
+        title={t('homework.title')}
         eyebrow={activeTenant?.name}
         actions={(
           <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady || saving}>
             <FiPlus />
-            Create homework
+            {t('homework.createHomework')}
           </button>
         )}
       />
       <div className="filters-row three">
         <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
-          <option value="">Choose course</option>
+          <option value="">{t('sessions.chooseCourse')}</option>
           {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
         </select>
         <select value={groupId ?? ''} onChange={(event) => setGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
-          <option value="">Choose group</option>
+          <option value="">{t('attendance.chooseGroup')}</option>
           {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
         </select>
         <select value={sessionId ?? ''} onChange={(event) => setSessionId(Number(event.target.value) || undefined)} disabled={!sessions.length}>
-          <option value="">Choose session</option>
+          <option value="">{t('sessions.chooseSession')}</option>
           {sessions.map((session) => (
             <option key={session.id} value={session.id}>
               {session.title} {session.startsAt ? `- ${formatDate(session.startsAt)}` : ''}
@@ -567,13 +615,13 @@ export function HomeworkPage() {
           );
         })}
       </section>
-      {loading ? <LoadingState label="Loading homework" /> : null}
+      {loading ? <LoadingState label={t('homework.loading')} /> : null}
       {summary ? (
         <div className="stat-grid compact">
           {['total', 'needsReview', 'missing', 'overdue'].map((key) => (
             <section className="stat-tile" key={key}>
               <FiClipboard />
-              <span>{summaryLabels[key] ?? readable(key)}</span>
+              <span>{summaryLabel(key)}</span>
               <strong>{summary[key] ?? 0}</strong>
             </section>
           ))}
@@ -585,27 +633,27 @@ export function HomeworkPage() {
           <div className="settings-panel-heading">
             <FiCalendar />
             <div>
-              <h2>Session assignments</h2>
-              <span className="panel-note">{selectedSession ? `${selectedSession.title} · ${formatDate(selectedSession.startsAt)}` : 'Choose a session to manage assignments.'}</span>
+              <h2>{t('homework.sessionAssignments')}</h2>
+              <span className="panel-note">{selectedSession ? `${selectedSession.title} · ${formatDate(selectedSession.startsAt)}` : t('homework.chooseSessionManage')}</span>
             </div>
           </div>
-          <div className="homework-session-summary" aria-label="Selected session homework summary">
-            <section><span>Assignments</span><strong>{sessionHomeworkSummary.total}</strong></section>
-            <section><span>Need review</span><strong>{sessionHomeworkSummary.needsReview}</strong></section>
-            <section><span>Missing</span><strong>{sessionHomeworkSummary.missing}</strong></section>
-            <section><span>Assigned</span><strong>{sessionHomeworkSummary.assigned}</strong></section>
+          <div className="homework-session-summary" aria-label={t('homework.selectedSessionSummary')}>
+            <section><span>{t('homework.assignments')}</span><strong>{sessionHomeworkSummary.total}</strong></section>
+            <section><span>{t('homework.needReview')}</span><strong>{sessionHomeworkSummary.needsReview}</strong></section>
+            <section><span>{t('homework.missing')}</span><strong>{sessionHomeworkSummary.missing}</strong></section>
+            <section><span>{t('homework.assigned')}</span><strong>{sessionHomeworkSummary.assigned}</strong></section>
           </div>
           {!sessionId ? (
             <EmptyState
-              title="No session selected"
-              detail="Choose a course, group, and session to create or review homework."
-              action={<Link className="secondary-link-button" to="/sessions">Open sessions</Link>}
+              title={t('homework.noSessionSelected')}
+              detail={t('homework.noScopeDetail')}
+              action={<Link className="secondary-link-button" to="/sessions">{t('attendance.openSessions')}</Link>}
             />
           ) : !sessionItems.length ? (
             <EmptyState
-              title="No homework in this session"
-              detail="Create the first assignment for this selected session."
-              action={<button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!selectedSessionReady}>Create homework</button>}
+              title={t('homework.noSessionHomework')}
+              detail={t('homework.createFirstAssignment')}
+              action={<button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!selectedSessionReady}>{t('homework.createHomework')}</button>}
             />
           ) : (
             <div className="stack-list homework-assignment-list">
@@ -616,15 +664,15 @@ export function HomeworkPage() {
                 >
                   <button type="button" className="stack-list-content-button" onClick={() => void loadReviewRoster(homework.id)}>
                     <strong>{homework.title}</strong>
-                    <span><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? 'Published' : 'Draft'}</span>{homework.deadline || homework.dueAt ? ` · due ${formatDate(homework.deadline ?? homework.dueAt)}` : ''}</span>
-                    <small>{selectedHomeworkId === homework.id ? 'Review roster open' : 'Open review roster'}</small>
+                    <span><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? t('courses.published') : t('courses.draft')}</span>{homework.deadline || homework.dueAt ? ` · ${t('homework.dueWithDate', { date: formatDate(homework.deadline ?? homework.dueAt) })}` : ''}</span>
+                    <small>{selectedHomeworkId === homework.id ? t('homework.reviewRosterOpen') : t('homework.openReviewRoster')}</small>
                   </button>
                   <div className="activity-actions">
                     <span className={`status-badge ${(homework.queue?.needsReview ?? 0) > 0 ? 'pending_approval' : 'approved'}`}>
-                      {homework.queue?.needsReview ?? 0} review
+                      {t('homework.reviewCount', { count: homework.queue?.needsReview ?? 0 })}
                     </span>
-                    <button type="button" className="secondary-button" onClick={() => startEditHomework(homework)}>Edit</button>
-                    <button type="button" className="link-button danger" disabled={saving} onClick={() => setHomeworkPendingDelete(homework)}>Delete</button>
+                    <button type="button" className="secondary-button" onClick={() => startEditHomework(homework)}>{t('homework.edit')}</button>
+                    <button type="button" className="link-button danger" disabled={saving} onClick={() => setHomeworkPendingDelete(homework)}>{t('homework.delete')}</button>
                   </div>
                 </article>
               ))}
@@ -635,21 +683,21 @@ export function HomeworkPage() {
         <aside className="settings-panel homework-review-panel workflow-context-panel">
           <div className="section-heading-row compact">
             <div>
-              <h2>Review roster</h2>
-              <span>{selectedHomework?.title ?? 'Select an assignment'}</span>
+              <h2>{t('homework.reviewRoster')}</h2>
+              <span>{selectedHomework?.title ?? t('homework.selectAssignment')}</span>
             </div>
           </div>
-          {reviewLoading ? <LoadingState label="Loading review roster" /> : null}
+          {reviewLoading ? <LoadingState label={t('homework.loadingReviewRoster')} /> : null}
           {!selectedHomeworkId ? (
-            <EmptyState title="Select homework to review" detail="Choose an assignment from the session list." />
+            <EmptyState title={t('homework.selectHomeworkToReview')} detail={t('homework.chooseAssignmentDetail')} />
           ) : reviewRoster ? (
             <>
               <CountFilterRow
                 className="review-summary-row"
-                ariaLabel="Homework review filters"
+                ariaLabel={t('homework.reviewFilters')}
                 items={reviewFilters.map((key) => ({
                   key,
-                  label: reviewFilterLabels[key],
+                  label: reviewFilterLabel(key),
                   count: reviewRoster.summary[key] ?? 0,
                   active: reviewFilter === key,
                 }))}
@@ -661,10 +709,10 @@ export function HomeworkPage() {
                   return (
                     <article key={item.studentId} className={`stack-list-item homework-review-item ${item.reviewState}`}>
                       <div className="homework-review-summary">
-                        <strong>{item.fullName || item.email || `Student #${item.studentId}`}</strong>
+                        <strong>{item.fullName || item.email || studentFallback(item.studentId)}</strong>
                         <span>
-                          <span className={`status-badge ${item.reviewState}`}>{readable(item.reviewState)}</span>
-                          {item.isLate ? ' · late' : ''}
+                          <span className={`status-badge ${item.reviewState}`}>{reviewStateLabel(item.reviewState)}</span>
+                          {item.isLate ? ` · ${t('homework.reviewLate')}` : ''}
                         </span>
                         {item.submission?.answerText ? <p>{isExpanded ? item.submission.answerText : `${item.submission.answerText.slice(0, 110)}${item.submission.answerText.length > 110 ? '...' : ''}`}</p> : null}
                         {item.submission?.attachmentUrl && item.submission.id ? (
@@ -673,7 +721,7 @@ export function HomeworkPage() {
                             className="link-button"
                             onClick={() => void openHomeworkSubmissionAttachment(sessionId!, selectedHomeworkId!, item.submission!.id)}
                           >
-                            Open attachment
+                            {t('homework.openAttachment')}
                           </button>
                         ) : null}
                       </div>
@@ -684,12 +732,12 @@ export function HomeworkPage() {
                             className="secondary-button"
                             onClick={() => setExpandedReviewStudentId(isExpanded ? undefined : item.studentId)}
                           >
-                            {isExpanded ? 'Hide review' : 'Review'}
+                            {isExpanded ? t('homework.hideReview') : t('homework.review')}
                           </button>
                           {isExpanded ? (
                             <>
                               <label>
-                                Score
+                                {t('homework.score')}
                                 <input
                                   value={reviewDrafts[item.submission.id]?.score ?? ''}
                                   onChange={(event) => setReviewDrafts((current) => ({
@@ -703,7 +751,7 @@ export function HomeworkPage() {
                                 />
                               </label>
                               <label>
-                                Review comment
+                                {t('homework.reviewComment')}
                                 <textarea
                                   value={reviewDrafts[item.submission.id]?.reviewComment ?? ''}
                                   onChange={(event) => setReviewDrafts((current) => ({
@@ -713,30 +761,30 @@ export function HomeworkPage() {
                                       reviewComment: event.target.value,
                                     },
                                   }))}
-                                  placeholder="Required for revision or rejection"
+                                  placeholder={t('homework.reviewCommentPlaceholder')}
                                 />
                               </label>
                               <div className="activity-actions">
-                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'approved')} disabled={reviewingSubmission === item.submission.id}>Approve</button>
-                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'needs_revision')} disabled={reviewingSubmission === item.submission.id}>Revise</button>
-                                <button type="button" className="link-button danger" onClick={() => void submitReview(item.submission!.id, 'rejected')} disabled={reviewingSubmission === item.submission.id}>Reject</button>
+                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'approved')} disabled={reviewingSubmission === item.submission.id}>{t('courses.approve')}</button>
+                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'needs_revision')} disabled={reviewingSubmission === item.submission.id}>{t('sessions.revise')}</button>
+                                <button type="button" className="link-button danger" onClick={() => void submitReview(item.submission!.id, 'rejected')} disabled={reviewingSubmission === item.submission.id}>{t('courses.reject')}</button>
                               </div>
                             </>
                           ) : null}
                         </div>
                       ) : (
                         <span className={`status-badge ${item.hasSubmission ? 'pending_approval' : 'destructive'}`}>
-                          {item.hasSubmission ? 'No review' : 'No submission'}
+                          {item.hasSubmission ? t('homework.noReview') : t('homework.noSubmission')}
                         </span>
                       )}
                     </article>
                   );
                 })}
-                {!filteredReviewItems.length ? <EmptyState title="No students in this filter" detail="Choose another review status or select a different homework item." /> : null}
+                {!filteredReviewItems.length ? <EmptyState title={t('homework.noStudentsInFilter')} detail={t('homework.noStudentsInFilterDetail')} /> : null}
               </div>
             </>
           ) : (
-            <EmptyState title="Review roster not loaded" detail="Choose an assignment again if the roster did not load." />
+            <EmptyState title={t('homework.reviewRosterNotLoaded')} detail={t('homework.reviewRosterNotLoadedDetail')} />
           )}
         </aside>
       </div>
@@ -744,12 +792,12 @@ export function HomeworkPage() {
       {editHomeworkId ? (
         <FormModal labelledBy="edit-homework-title" onClose={closeEditModal} onSubmit={saveHomeworkEdit}>
           <div className="modal-header-block">
-            <span>{selectedSession?.title ?? 'Selected session'}</span>
-            <h2 id="edit-homework-title">Edit homework</h2>
-            <p>{sessionItems.find((item) => item.id === editHomeworkId)?.title ?? 'Selected homework'}</p>
+            <span>{selectedSession?.title ?? t('homework.selectedSession')}</span>
+            <h2 id="edit-homework-title">{t('homework.editHomework')}</h2>
+            <p>{sessionItems.find((item) => item.id === editHomeworkId)?.title ?? t('homework.selectedHomework')}</p>
           </div>
           <label>
-            Title
+            {t('courses.title')}
             <input
               value={editForm.title}
               onChange={(event) => {
@@ -763,16 +811,16 @@ export function HomeworkPage() {
             {formErrors.editTitle ? <span className="field-error">{formErrors.editTitle}</span> : null}
           </label>
           <label>
-            Description
+            {t('courses.description')}
             <textarea value={editForm.description} onChange={(event) => setEditForm((current) => ({ ...current, description: event.target.value }))} />
           </label>
           <div className="two-col">
             <label>
-              Due date
+              {t('homework.dueDate')}
               <input type="datetime-local" value={editForm.dueAt} onChange={(event) => setEditForm((current) => ({ ...current, dueAt: event.target.value }))} />
             </label>
             <label>
-              Max score
+              {t('homework.maxScore')}
               <input
                 type="number"
                 min="0"
@@ -794,21 +842,21 @@ export function HomeworkPage() {
               checked={editForm.isPublished}
               onChange={(event) => setEditForm((current) => ({ ...current, isPublished: event.target.checked }))}
             />
-            Published
+            {t('courses.published')}
           </label>
           <div className="settings-panel compact assignee-panel">
             <div className="section-heading-row compact">
               <div>
-                <h3>Assignees</h3>
-                <span>{editForm.assignedStudentIds.length ? `${editForm.assignedStudentIds.length} selected` : 'All students in this group'}</span>
+                <h3>{t('homework.assignees')}</h3>
+                <span>{selectedCountLabel(editForm.assignedStudentIds.length)}</span>
               </div>
               <button type="button" className="secondary-button" onClick={() => setEditForm((current) => ({ ...current, assignedStudentIds: [] }))}>
-                All students
+                {t('homework.allStudents')}
               </button>
             </div>
             <label>
-              Find student
-              <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder="Name, email, or ID" />
+              {t('attendance.findStudent')}
+              <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder={t('attendance.studentSearchPlaceholder')} />
             </label>
             <div className="stack-list compact assignee-list">
               {visibleAssignees.map((student) => (
@@ -818,52 +866,52 @@ export function HomeworkPage() {
                     checked={editForm.assignedStudentIds.includes(student.userId)}
                     onChange={() => toggleAssignee(setEditForm, student.userId)}
                   />
-                  {student.fullName || student.email || `Student #${student.userId}`}
+                  {student.fullName || student.email || studentFallback(student.userId)}
                 </label>
               ))}
               {!students.length ? (
                 <EmptyState
-                  title="No students enrolled in this group"
-                  detail="Homework can be assigned after learners are enrolled in the selected group."
+                  title={t('courses.noStudentsTitle')}
+                  detail={t('homework.noAssigneeStudentsDetail')}
                 />
               ) : null}
               {students.length > 0 && !visibleAssignees.length ? (
-                <EmptyState title="No matching students" detail="Clear the assignee search to see the full roster." />
+                <EmptyState title={t('courses.noMatchingStudents')} detail={t('homework.noMatchingAssigneesDetail')} />
               ) : null}
             </div>
           </div>
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={closeEditModal} disabled={saving}>Cancel</button>
-            <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save homework'}</button>
+            <button type="button" className="secondary-button" onClick={closeEditModal} disabled={saving}>{t('courses.cancel')}</button>
+            <button type="submit" disabled={saving}>{saving ? t('courses.saving') : t('homework.saveHomework')}</button>
           </div>
         </FormModal>
       ) : null}
 
       {!loading && !items.length ? (
         <EmptyState
-          title={sessionId ? 'No homework in this scope' : 'No homework scope selected'}
-          detail={sessionId ? 'Homework appears here after assignments are created for the selected session.' : 'Choose a course, group, and session to create or review homework.'}
-          action={<button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady}>Create homework</button>}
+          title={sessionId ? t('homework.noHomeworkInScope') : t('homework.noHomeworkScope')}
+          detail={sessionId ? t('homework.noHomeworkInScopeDetail') : t('homework.noScopeDetail')}
+          action={<button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady}>{t('homework.createHomework')}</button>}
         />
       ) : null}
       {!loading && !!items.length ? (
         <section className="content-section homework-list-section">
           <div className="section-heading-row">
             <div>
-              <h2>Homework queue</h2>
-              <span>{items.length} assignment{items.length === 1 ? '' : 's'} across the selected scope</span>
+              <h2>{t('homework.queue')}</h2>
+              <span>{t('homework.assignmentScopeCount', { count: items.length })}</span>
             </div>
           </div>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Homework</th>
-                  <th>Course</th>
-                  <th>Group</th>
-                  <th>Due</th>
-                  <th>Review</th>
-                  <th>Status</th>
+                  <th>{t('homework.title')}</th>
+                  <th>{t('courses.course')}</th>
+                  <th>{t('courses.group')}</th>
+                  <th>{t('homework.due')}</th>
+                  <th>{t('homework.review')}</th>
+                  <th>{t('courses.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -891,7 +939,7 @@ export function HomeworkPage() {
                     <td>{homework.groupName ?? '-'}</td>
                     <td>{formatDate(homework.deadline ?? homework.dueAt)}</td>
                     <td>{homework.queue?.needsReview ?? 0}</td>
-                    <td><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? 'Published' : 'Draft'}</span></td>
+                    <td><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? t('courses.published') : t('courses.draft')}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -902,12 +950,12 @@ export function HomeworkPage() {
       {isCreateModalOpen ? (
         <FormModal labelledBy="create-homework-title" onClose={closeCreateModal} onSubmit={submitHomework}>
             <div className="modal-header-block">
-              <span>{selectedSession ? formatDate(selectedSession.startsAt) : 'Session required'}</span>
-              <h2 id="create-homework-title">Create homework</h2>
-              <p>{selectedSession ? `This assignment will be added to ${selectedSession.title}.` : 'Choose a session before creating homework.'}</p>
+              <span>{selectedSession ? formatDate(selectedSession.startsAt) : t('homework.sessionRequired')}</span>
+              <h2 id="create-homework-title">{t('homework.createHomework')}</h2>
+              <p>{selectedSession ? t('homework.assignmentAddedToSession', { title: selectedSession.title }) : t('homework.chooseSessionBeforeCreate')}</p>
             </div>
             <label>
-              Title
+              {t('courses.title')}
               <input
                 value={form.title}
                 onChange={(event) => {
@@ -921,16 +969,16 @@ export function HomeworkPage() {
               {formErrors.title ? <span className="field-error">{formErrors.title}</span> : null}
             </label>
             <label>
-              Description
+              {t('courses.description')}
               <textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
             </label>
             <div className="two-col">
               <label>
-                Due date
+                {t('homework.dueDate')}
                 <input type="datetime-local" value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} />
               </label>
               <label>
-                Max score
+                {t('homework.maxScore')}
                 <input
                   type="number"
                   min="0"
@@ -952,21 +1000,21 @@ export function HomeworkPage() {
                 checked={form.isPublished}
                 onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))}
               />
-              Publish immediately
+              {t('homework.publishImmediately')}
             </label>
             <div className="settings-panel compact assignee-panel">
               <div className="section-heading-row compact">
                 <div>
-                  <h3>Assignees</h3>
-                  <span>{form.assignedStudentIds.length ? `${form.assignedStudentIds.length} selected` : 'All students in this group'}</span>
+                  <h3>{t('homework.assignees')}</h3>
+                  <span>{selectedCountLabel(form.assignedStudentIds.length)}</span>
                 </div>
                 <button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, assignedStudentIds: [] }))}>
-                  All students
+                  {t('homework.allStudents')}
                 </button>
               </div>
               <label>
-                Find student
-                <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder="Name, email, or ID" />
+                {t('attendance.findStudent')}
+                <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder={t('attendance.studentSearchPlaceholder')} />
               </label>
               <div className="stack-list compact assignee-list">
                 {visibleAssignees.map((student) => (
@@ -976,38 +1024,38 @@ export function HomeworkPage() {
                       checked={form.assignedStudentIds.includes(student.userId)}
                       onChange={() => toggleAssignee(setForm, student.userId)}
                     />
-                    {student.fullName || student.email || `Student #${student.userId}`}
+                    {student.fullName || student.email || studentFallback(student.userId)}
                   </label>
                 ))}
                 {!students.length ? (
                   <EmptyState
-                    title="No students enrolled in this group"
-                    detail="Homework can be assigned after learners are enrolled in the selected group."
+                    title={t('courses.noStudentsTitle')}
+                    detail={t('homework.noAssigneeStudentsDetail')}
                   />
                 ) : null}
                 {students.length > 0 && !visibleAssignees.length ? (
-                  <EmptyState title="No matching students" detail="Clear the assignee search to see the full roster." />
+                  <EmptyState title={t('courses.noMatchingStudents')} detail={t('homework.noMatchingAssigneesDetail')} />
                 ) : null}
               </div>
             </div>
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={saving}>Cancel</button>
-              <button type="submit" disabled={!sessionId || !selectedSessionReady || saving}>{saving ? 'Creating...' : 'Create homework'}</button>
+              <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={saving}>{t('courses.cancel')}</button>
+              <button type="submit" disabled={!sessionId || !selectedSessionReady || saving}>{saving ? t('courses.creating') : t('homework.createHomework')}</button>
             </div>
         </FormModal>
       ) : null}
       {homeworkPendingDelete ? (
         <Modal labelledBy="delete-homework-title" onClose={() => setHomeworkPendingDelete(null)}>
             <div className="modal-header-block">
-              <span>Delete</span>
-              <h2 id="delete-homework-title">Delete homework</h2>
+              <span>{t('homework.delete')}</span>
+              <h2 id="delete-homework-title">{t('homework.deleteHomework')}</h2>
               <p>{homeworkPendingDelete.title}</p>
             </div>
-            <p className="panel-note">Homework with submitted work cannot be deleted. This action removes the assignment from the selected session.</p>
+            <p className="panel-note">{t('homework.deleteDetail')}</p>
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setHomeworkPendingDelete(null)} disabled={saving}>Cancel</button>
+              <button type="button" className="secondary-button" onClick={() => setHomeworkPendingDelete(null)} disabled={saving}>{t('courses.cancel')}</button>
               <button type="button" className="danger-button" onClick={() => void deleteHomework(homeworkPendingDelete.id)} disabled={saving}>
-                {saving ? 'Deleting...' : 'Delete homework'}
+                {saving ? t('homework.deleting') : t('homework.deleteHomework')}
               </button>
             </div>
         </Modal>

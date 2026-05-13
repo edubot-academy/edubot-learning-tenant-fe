@@ -2,22 +2,23 @@ import { FormEvent, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiAward, FiBookOpen, FiCalendar, FiCheckCircle, FiUsers } from 'react-icons/fi';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 
-const proofPoints = [
-  { icon: FiCalendar, label: 'Sessions', value: 'Schedules, links, materials' },
-  { icon: FiCheckCircle, label: 'Daily operations', value: 'Attendance and homework queues' },
-  { icon: FiAward, label: 'Achievements', value: 'Certificates and progress' },
-];
-
 export function LoginPage() {
+  const { t } = useTranslation();
   const { user, signIn } = useAuth();
   const { resolvedTenant, resolvingTenant, resolutionError } = useTenant();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const proofPoints = [
+    { icon: FiCalendar, label: t('navigation.sessions'), value: t('auth.sessionsProof') },
+    { icon: FiCheckCircle, label: t('auth.dailyOperations'), value: t('auth.dailyOperationsProof') },
+    { icon: FiAward, label: t('auth.achievements'), value: t('auth.achievementsProof') },
+  ];
 
   if (user) return <Navigate to="/" replace />;
 
@@ -33,7 +34,7 @@ export function LoginPage() {
     try {
       await signIn(email, password);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Login failed';
+      const message = error instanceof Error ? error.message : t('auth.loginFailed');
       setErrorMessage(message);
       toast.error(message);
     } finally {
@@ -43,23 +44,20 @@ export function LoginPage() {
 
   return (
     <main className="login-page landing-page">
-      <section className="landing-hero" aria-label="Learning workspace sign in">
+      <section className="landing-hero" aria-label={t('auth.signInToWorkspace')}>
         <div className="landing-brand-row">
           <div className={`landing-logo-mark ${resolvedTenant?.logoUrl ? 'has-logo' : ''}`}>
             {resolvedTenant?.logoUrl ? <img src={resolvedTenant.logoUrl} alt="" /> : 'L'}
           </div>
-          <span>{resolvedTenant?.name ?? 'Learning workspace'}</span>
+          <span>{resolvedTenant?.name ?? t('app.defaultTenant')}</span>
         </div>
         <div className="landing-copy">
           <span className="eyebrow">
-            {resolvingTenant ? 'Preparing workspace' : resolvedTenant ? 'Private learning portal' : 'Learning portal'}
+            {resolvingTenant ? t('app.preparingWorkspace') : resolvedTenant ? t('auth.privatePortal') : t('auth.learningPortal')}
           </span>
-          <h1>{resolvedTenant ? `Welcome to ${resolvedTenant.name}` : 'Sign in to your learning workspace'}</h1>
-          <p>
-            Manage classes, attendance, homework, certificates, and student progress in one workspace
-            configured for your organization.
-          </p>
-          <p className="login-support-note">Powered by EduBot Learning.</p>
+          <h1>{resolvedTenant ? t('auth.welcomeTenant', { name: resolvedTenant.name }) : t('auth.signInToWorkspace')}</h1>
+          <p>{t('auth.heroDescription')}</p>
+          <p className="login-support-note">{t('auth.poweredBy')}</p>
           {resolutionError ? <p className="field-error auth-error-banner">{resolutionError}</p> : null}
         </div>
         <div className="landing-proof-grid">
@@ -83,18 +81,18 @@ export function LoginPage() {
           </div>
           <div className="preview-main">
             <div className="preview-header">
-              <strong>Today</strong>
-              <span>3 sessions</span>
+              <strong>{t('auth.previewToday')}</strong>
+              <span>{t('auth.previewSessions')}</span>
             </div>
             <div className="preview-stat-row">
-              <span><strong>92%</strong> attendance</span>
-              <span><strong>18</strong> homework reviews</span>
-              <span><strong>7</strong> certificate approvals</span>
+              <span><strong>92%</strong> {t('navigation.attendance')}</span>
+              <span><strong>18</strong> {t('auth.previewHomeworkReviews')}</span>
+              <span><strong>7</strong> {t('auth.previewCertificateApprovals')}</span>
             </div>
             <div className="preview-list">
-              <span><FiBookOpen /> English A2 · 10:00 session</span>
-              <span><FiUsers /> Group B1 · homework queue</span>
-              <span><FiAward /> Certificate approvals ready</span>
+              <span><FiBookOpen /> {t('auth.previewCourseSample')} · 10:00 {t('navigation.sessions')}</span>
+              <span><FiUsers /> {t('auth.previewGroupSample')} · {t('auth.previewHomeworkQueue')}</span>
+              <span><FiAward /> {t('auth.previewCertificateApprovalsReady')}</span>
             </div>
           </div>
         </div>
@@ -102,12 +100,12 @@ export function LoginPage() {
 
       <form className="login-panel" onSubmit={onSubmit}>
         <div className="login-heading">
-          <span>Sign in</span>
-          <h2>{resolvedTenant ? `Access ${resolvedTenant.name}` : 'Access your workspace'}</h2>
-          <p>Use the account assigned by your organization administrator.</p>
+          <span>{t('titles.signIn')}</span>
+          <h2>{resolvedTenant ? t('auth.accessTenant', { name: resolvedTenant.name }) : t('auth.accessWorkspace')}</h2>
+          <p>{t('auth.signInDescription')}</p>
         </div>
         <label>
-          Email
+          {t('auth.email')}
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -119,7 +117,7 @@ export function LoginPage() {
           />
         </label>
         <label>
-          Password
+          {t('auth.password')}
           <input
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -132,12 +130,12 @@ export function LoginPage() {
         </label>
         {errorMessage ? <p className="field-error">{errorMessage}</p> : null}
         <button type="submit" disabled={submitting || resolvingTenant || Boolean(resolutionError)}>
-          {submitting ? 'Signing in...' : resolvingTenant ? 'Preparing workspace...' : 'Sign in'}
+          {submitting ? t('auth.signingIn') : resolvingTenant ? t('app.preparingWorkspace') : t('titles.signIn')}
         </button>
         <p className="login-support-note">
-          Forgot your password? <Link to="/forgot-password">Reset it</Link>
+          {t('auth.forgotPassword')} <Link to="/forgot-password">{t('auth.resetPassword')}</Link>
         </p>
-        <p className="login-support-note">Need access? Ask your organization administrator to add you to this workspace.</p>
+        <p className="login-support-note">{t('auth.needAccess')}</p>
       </form>
     </main>
   );

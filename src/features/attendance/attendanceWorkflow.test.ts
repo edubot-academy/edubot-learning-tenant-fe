@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { GroupStudent } from '../../types/domain';
+import i18n from '../../i18n/config';
 import {
   filterAttendanceStudents,
   getAttendanceCounts,
@@ -14,6 +15,10 @@ const students: GroupStudent[] = [
 ];
 
 describe('attendance workflow helpers', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
   it('counts marked and unmarked attendance against enrolled students', () => {
     const attendance: Record<number, EditableAttendance> = {
       10: { status: 'present', notes: '' },

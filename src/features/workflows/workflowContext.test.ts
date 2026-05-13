@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Course } from '../../types/domain';
+import i18n from '../../i18n/config';
 import { courseWorkflowBlocker, isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from './workflowContext';
 
 const course = (overrides: Partial<Course>): Course => ({
@@ -12,6 +13,10 @@ const course = (overrides: Partial<Course>): Course => ({
 });
 
 describe('workflow context helpers', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
   it('requires approved published delivery courses for group and session workflows', () => {
     expect(isCourseWorkflowReady(course({}))).toBe(true);
     expect(isCourseWorkflowReady(course({ courseType: 'video' }))).toBe(false);

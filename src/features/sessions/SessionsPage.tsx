@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
@@ -40,7 +41,7 @@ import { formatDate, readable } from '../../lib/format';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { isTenantAdmin } from '../tenant/tenantRoles';
-import { courseWorkflowBlocker, isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
+import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
 type ScheduleDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
@@ -161,14 +162,15 @@ type PendingRemoval =
   | { type: 'material'; materialIndex: number };
 
 const sessionOperationTabs: Array<{ key: SessionOperationTab; label: string }> = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'activities', label: 'Activities' },
-  { key: 'meeting', label: 'Live meeting' },
-  { key: 'materials', label: 'Materials' },
-  { key: 'insights', label: 'Insights' },
+  { key: 'overview', label: 'sessions.tabOverview' },
+  { key: 'activities', label: 'sessions.tabActivities' },
+  { key: 'meeting', label: 'sessions.tabMeeting' },
+  { key: 'materials', label: 'sessions.tabMaterials' },
+  { key: 'insights', label: 'sessions.tabInsights' },
 ];
 
 export function SessionsPage() {
+  const { t } = useTranslation();
   const { activeTenant } = useTenant();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -231,7 +233,13 @@ export function SessionsPage() {
 
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
   const selectedCourseReady = isCourseWorkflowReady(selectedCourse);
-  const selectedCourseBlocker = courseWorkflowBlocker(selectedCourse);
+  const selectedCourseBlocker = (() => {
+    if (!selectedCourse) return t('courses.blockerChooseCourse');
+    if (!['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''))) return t('courses.blockerDeliveryType');
+    if (selectedCourse.status !== 'approved') return t('courses.blockerApproval');
+    if (selectedCourse.isPublished !== true) return t('courses.blockerPublish');
+    return '';
+  })();
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
   const canAssignInstructor = isTenantAdmin(user, activeTenant);
@@ -247,12 +255,60 @@ export function SessionsPage() {
   const savedScheduleReady = Boolean(selectedGroup?.scheduleBlocks?.some((block) => block.day && block.startTime && block.endTime));
   const generationDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
   const generationReady = savedScheduleReady && generationDatesReady;
+  const statusLabel = (value: string | undefined | null) => {
+    const status = value || 'scheduled';
+    const key = status.replaceAll('_', '');
+    const statusKeys: Record<string, string> = {
+      active: 'groups.statusActive',
+      approved: 'courses.statusApproved',
+      cancelled: 'groups.statusCancelled',
+      completed: 'groups.statusCompleted',
+      done: 'sessions.statusDone',
+      draft: 'courses.statusDraft',
+      existing: 'groups.existing',
+      needsrevision: 'sessions.statusNeedsRevision',
+      new: 'groups.new',
+      open: 'groups.statusOpen',
+      pending: 'courses.statusPending',
+      planned: 'courses.statusPlanned',
+      rejected: 'courses.statusRejected',
+      scheduled: 'courses.statusScheduled',
+      submitted: 'sessions.statusSubmitted',
+    };
+    return statusKeys[key] ? t(statusKeys[key]) : readable(status);
+  };
+  const materialFallback = (index: number) => t('sessions.materialFallback', { number: index + 1 });
+  const studentFallback = (id: number) => t('courses.studentFallback', { id });
+  const instructorFallback = (id: number) => t('groups.instructorFallback', { id });
+  const activityTypeLabel = (value: string | undefined | null) => {
+    const activityTypeKeys: Record<string, string> = {
+      discussion: 'sessions.activityTypeDiscussion',
+      exercise: 'sessions.activityTypeExercise',
+      group_work: 'sessions.activityTypeGroupWork',
+      quiz: 'sessions.activityTypeQuiz',
+      submission: 'sessions.activityTypeSubmission',
+    };
+    return value && activityTypeKeys[value] ? t(activityTypeKeys[value]) : readable(value);
+  };
+  const removalTypeLabel = (value: PendingRemoval['type']) => {
+    const removalTypeKeys: Record<PendingRemoval['type'], string> = {
+      activity: 'sessions.removalTypeActivity',
+      material: 'sessions.removalTypeMaterial',
+      student: 'sessions.removalTypeStudent',
+    };
+    return t(removalTypeKeys[value]);
+  };
+  const sessionPlaceholder = (index: number) => t('sessions.sessionPlaceholder', { index });
+  const translatedSessionTabs = useMemo(
+    () => sessionOperationTabs.map((tab) => ({ ...tab, label: t(tab.label) })),
+    [t],
+  );
   const pendingRemovalTitle = pendingRemoval?.type === 'student'
-    ? (pendingRemoval.student.fullName || pendingRemoval.student.email || `Student #${pendingRemoval.student.userId}`)
+    ? (pendingRemoval.student.fullName || pendingRemoval.student.email || studentFallback(pendingRemoval.student.userId))
     : pendingRemoval?.type === 'activity'
-      ? (sessionActivities.find((activity) => activity.id === pendingRemoval.activityId)?.title ?? 'this activity')
+      ? (sessionActivities.find((activity) => activity.id === pendingRemoval.activityId)?.title ?? t('sessions.thisActivity'))
       : pendingRemoval?.type === 'material'
-        ? ((selectedSession?.materials ?? [])[pendingRemoval.materialIndex]?.title ?? `Material ${pendingRemoval.materialIndex + 1}`)
+        ? ((selectedSession?.materials ?? [])[pendingRemoval.materialIndex]?.title ?? materialFallback(pendingRemoval.materialIndex))
         : '';
   const pendingRemovalBusy = pendingRemoval?.type === 'student'
     ? removingStudentId === pendingRemoval.student.userId
@@ -263,26 +319,26 @@ export function SessionsPage() {
         : false;
   const workflowSteps = useMemo(() => [
     {
-      label: 'Course',
-      value: selectedCourse?.title ?? 'Choose course',
+      label: t('courses.course'),
+      value: selectedCourse?.title ?? t('sessions.chooseCourse'),
       state: selectedCourse ? 'ready' : 'current',
     },
     {
-      label: 'Group',
-      value: selectedGroup?.name ?? (selectedCourse ? 'Choose or create group' : 'Waiting for course'),
+      label: t('courses.group'),
+      value: selectedGroup?.name ?? (selectedCourse ? t('sessions.chooseOrCreateGroup') : t('sessions.waitingForCourse')),
       state: selectedGroup ? 'ready' : selectedCourse ? 'current' : 'locked',
     },
     {
-      label: 'Session',
-      value: selectedSession?.title ?? (selectedGroup ? 'Choose or schedule session' : 'Waiting for group'),
+      label: t('sessions.session'),
+      value: selectedSession?.title ?? (selectedGroup ? t('sessions.chooseOrScheduleSession') : t('sessions.waitingForGroup')),
       state: selectedSession ? 'ready' : selectedGroup ? 'current' : 'locked',
     },
     {
-      label: 'Operate',
-      value: selectedSession ? 'Attendance, homework, materials' : 'Session tools unlock here',
+      label: t('sessions.operate'),
+      value: selectedSession ? t('sessions.toolsReady') : t('sessions.toolsLocked'),
       state: selectedSession ? 'current' : 'locked',
     },
-  ], [selectedCourse, selectedGroup, selectedSession]);
+  ], [selectedCourse, selectedGroup, selectedSession, t]);
 
   useEffect(() => {
     setCourses([]);
@@ -306,7 +362,7 @@ export function SessionsPage() {
         setCourses(nextCourses);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load courses');
+        if (!cancelled) toast.error(t('courses.loadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -314,7 +370,7 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, t]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -333,12 +389,12 @@ export function SessionsPage() {
         if (!cancelled) setTenantMembers(members);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load tenant instructors');
+        if (!cancelled) toast.error(t('sessions.instructorsLoadFailed'));
       });
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, canAssignInstructor]);
+  }, [activeTenantId, canAssignInstructor, t]);
 
   useEffect(() => {
     setGroups([]);
@@ -357,7 +413,7 @@ export function SessionsPage() {
         setGroups(nextGroups);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load groups');
+        if (!cancelled) toast.error(t('groups.courseGroupsLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -365,7 +421,7 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [courseId, t]);
 
   useEffect(() => {
     setGroupId((current) => {
@@ -391,7 +447,7 @@ export function SessionsPage() {
         setStudents(nextStudents);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load group sessions');
+        if (!cancelled) toast.error(t('sessions.groupSessionsLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -399,7 +455,7 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, t]);
 
   useEffect(() => {
     setSessionId((current) => {
@@ -440,7 +496,7 @@ export function SessionsPage() {
         setLiveMeeting(nextLiveMeeting);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load session detail');
+        if (!cancelled) toast.error(t('sessions.detailLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -448,7 +504,7 @@ export function SessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, t]);
 
   useEffect(() => {
     if (!createModal) setCreateErrors({});
@@ -535,10 +591,10 @@ export function SessionsPage() {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     if (!courseId) {
-      nextErrors.course = 'Select a course before creating a group.';
+      nextErrors.course = t('sessions.selectCourseBeforeGroup');
     }
     if (!groupForm.name.trim()) {
-      nextErrors.groupName = 'Group name is required.';
+      nextErrors.groupName = t('groups.groupNameRequired');
     }
     if (Object.keys(nextErrors).length) {
       setCreateErrors(nextErrors);
@@ -571,9 +627,9 @@ export function SessionsPage() {
       setGroupForm(emptyGroupForm);
       setCreateModal(null);
       setCreateErrors({});
-      toast.success('Group created');
+      toast.success(t('groups.groupCreated'));
     } catch {
-      toast.error('Could not create group');
+      toast.error(t('groups.groupCreateFailed'));
     } finally {
       setSavingGroup(false);
     }
@@ -583,7 +639,7 @@ export function SessionsPage() {
     event.preventDefault();
     if (!groupId || !courseId) return;
     if (!editGroupForm.name.trim()) {
-      toast.error('Group name is required');
+      toast.error(t('groups.groupNameRequired'));
       return;
     }
 
@@ -606,9 +662,9 @@ export function SessionsPage() {
       });
       await reloadGroups(courseId);
       setEditGroupOpen(false);
-      toast.success('Group updated');
+      toast.success(t('groups.groupUpdated'));
     } catch {
-      toast.error('Could not update group');
+      toast.error(t('groups.groupUpdateFailed'));
     } finally {
       setUpdatingGroup(false);
     }
@@ -618,13 +674,13 @@ export function SessionsPage() {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     if (!groupId) {
-      nextErrors.group = 'Select a group before scheduling a session.';
+      nextErrors.group = t('sessions.selectGroupBeforeSession');
     }
-    if (!sessionForm.title.trim()) nextErrors.sessionTitle = 'Session title is required.';
-    if (!sessionForm.startsAt) nextErrors.startsAt = 'Start date and time are required.';
-    if (!sessionForm.endsAt) nextErrors.endsAt = 'End date and time are required.';
+    if (!sessionForm.title.trim()) nextErrors.sessionTitle = t('sessions.sessionTitleRequired');
+    if (!sessionForm.startsAt) nextErrors.startsAt = t('sessions.startRequired');
+    if (!sessionForm.endsAt) nextErrors.endsAt = t('sessions.endRequired');
     if (sessionForm.startsAt && sessionForm.endsAt && new Date(sessionForm.endsAt) <= new Date(sessionForm.startsAt)) {
-      nextErrors.endsAt = 'End time must be after the start time.';
+      nextErrors.endsAt = t('sessions.endAfterStart');
     }
     if (Object.keys(nextErrors).length) {
       setCreateErrors(nextErrors);
@@ -650,9 +706,9 @@ export function SessionsPage() {
       setSessionForm(emptySessionForm);
       setCreateModal(null);
       setCreateErrors({});
-      toast.success('Session scheduled');
+      toast.success(t('sessions.sessionScheduled'));
     } catch {
-      toast.error('Could not schedule session');
+      toast.error(t('sessions.sessionScheduleFailed'));
     } finally {
       setSavingSession(false);
     }
@@ -661,7 +717,7 @@ export function SessionsPage() {
   const previewSessionGeneration = async () => {
     if (!groupId) return;
     if (!generationReady) {
-      toast.error('Complete saved schedule and generation dates first');
+      toast.error(t('sessions.completeSavedScheduleFirst'));
       return;
     }
 
@@ -669,9 +725,9 @@ export function SessionsPage() {
     try {
       const preview = await previewGeneratedSessions(groupId, generationRange);
       setGenerationPreview(preview);
-      toast.success('Preview ready');
+      toast.success(t('groups.previewReady'));
     } catch {
-      toast.error('Could not preview sessions. Check group schedule settings.');
+      toast.error(t('sessions.previewFailed'));
     } finally {
       setGenerationLoading(false);
     }
@@ -680,7 +736,7 @@ export function SessionsPage() {
   const generateSessions = async () => {
     if (!groupId) return;
     if (!generationPreview?.newCount) {
-      toast.error('Preview new sessions first');
+      toast.error(t('groups.previewNewSessionsFirst'));
       return;
     }
 
@@ -689,9 +745,9 @@ export function SessionsPage() {
       const result = await generateGroupSessions(groupId, generationRange);
       await reloadSessions(groupId);
       setGenerationPreview(null);
-      toast.success(`Created ${result.createdCount} sessions`);
+      toast.success(t('groups.sessionsCreated', { count: result.createdCount }));
     } catch {
-      toast.error('Could not generate sessions');
+      toast.error(t('groups.generateFailed'));
     } finally {
       setGenerationLoading(false);
     }
@@ -704,7 +760,7 @@ export function SessionsPage() {
       setStudentResults(results);
       setSelectedStudentId(results[0]?.id);
     } catch {
-      toast.error('Could not search students');
+      toast.error(t('groups.studentSearchFailed'));
     } finally {
       setEnrolling(false);
     }
@@ -714,7 +770,7 @@ export function SessionsPage() {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     if (!courseId || !groupId || !selectedStudentId) {
-      nextErrors.student = 'Select a student to enroll.';
+      nextErrors.student = t('groups.selectStudentToEnroll');
     }
     if (Object.keys(nextErrors).length) {
       setCreateErrors(nextErrors);
@@ -735,9 +791,9 @@ export function SessionsPage() {
       setStudentResults([]);
       setSelectedStudentId(undefined);
       setCreateErrors({});
-      toast.success('Student enrolled');
+      toast.success(t('groups.studentEnrolled'));
     } catch {
-      toast.error('Could not enroll student');
+      toast.error(t('groups.studentEnrollFailed'));
     } finally {
       setEnrolling(false);
     }
@@ -746,7 +802,7 @@ export function SessionsPage() {
   const submitInviteAndEnroll = async () => {
     if (!activeTenantId || !courseId || !groupId) return;
     if (!studentInviteForm.fullName.trim() || !studentInviteForm.email.trim()) {
-      toast.error('Student name and email are required');
+      toast.error(t('groups.studentNameEmailRequired'));
       return;
     }
 
@@ -764,9 +820,9 @@ export function SessionsPage() {
       await reloadSessions(activeGroupId);
       setStudentInviteForm(emptyStudentInviteForm);
       setCreateModal(null);
-      toast.success(member.onboarding?.emailSent ? 'Student invited and enrolled' : 'Student created and enrolled');
+      toast.success(member.onboarding?.emailSent ? t('groups.studentInvitedEnrolled') : t('groups.studentCreatedEnrolled'));
     } catch {
-      toast.error('Could not create and enroll student');
+      toast.error(t('groups.studentCreateEnrollFailed'));
     } finally {
       setEnrolling(false);
     }
@@ -778,9 +834,9 @@ export function SessionsPage() {
     try {
       await unenrollUser(courseId, student.userId);
       await reloadSessions(groupId);
-      toast.success('Student removed from group');
+      toast.success(t('sessions.studentRemovedFromGroup'));
     } catch {
-      toast.error('Could not remove student');
+      toast.error(t('groups.studentRemoveFailed'));
     } finally {
       setRemovingStudentId(undefined);
       setPendingRemoval(null);
@@ -791,14 +847,14 @@ export function SessionsPage() {
     event.preventDefault();
     if (!sessionId || !groupId) return;
     const nextErrors: Record<string, string> = {};
-    if (!editSessionForm.title.trim()) nextErrors.title = 'Session title is required.';
-    if (!editSessionForm.startsAt) nextErrors.startsAt = 'Start date and time are required.';
-    if (!editSessionForm.endsAt) nextErrors.endsAt = 'End date and time are required.';
+    if (!editSessionForm.title.trim()) nextErrors.title = t('sessions.sessionTitleRequired');
+    if (!editSessionForm.startsAt) nextErrors.startsAt = t('sessions.startRequired');
+    if (!editSessionForm.endsAt) nextErrors.endsAt = t('sessions.endRequired');
     if (editSessionForm.startsAt && editSessionForm.endsAt && new Date(editSessionForm.endsAt) <= new Date(editSessionForm.startsAt)) {
-      nextErrors.endsAt = 'End time must be after the start time.';
+      nextErrors.endsAt = t('sessions.endAfterStart');
     }
     if (editSessionForm.recordingUrl.trim() && !/^https?:\/\/\S+\.\S+/.test(editSessionForm.recordingUrl.trim())) {
-      nextErrors.recordingUrl = 'Use a full recording URL.';
+      nextErrors.recordingUrl = t('sessions.fullRecordingUrl');
     }
     if (Object.keys(nextErrors).length) {
       setSessionEditErrors(nextErrors);
@@ -819,9 +875,9 @@ export function SessionsPage() {
       });
       await reloadSessions(groupId);
       setEditSessionOpen(false);
-      toast.success('Session updated');
+      toast.success(t('sessions.sessionUpdated'));
     } catch {
-      toast.error('Could not update session');
+      toast.error(t('sessions.sessionUpdateFailed'));
     } finally {
       setUpdatingSession(false);
     }
@@ -829,8 +885,8 @@ export function SessionsPage() {
 
   const uploadMaterial = async (file: File | undefined) => {
     if (!file) {
-      setMaterialError('Choose a file to upload.');
-      toast.error('Choose a file to upload');
+      setMaterialError(t('sessions.chooseFile'));
+      toast.error(t('sessions.chooseFile'));
       return;
     }
     if (!sessionId || !groupId || !selectedSession) return;
@@ -843,9 +899,9 @@ export function SessionsPage() {
         materials: [...currentMaterials, uploaded],
       });
       await reloadSessions(groupId);
-      toast.success('Material uploaded');
+      toast.success(t('sessions.materialUploaded'));
     } catch {
-      toast.error('Could not upload material');
+      toast.error(t('sessions.materialUploadFailed'));
     } finally {
       setUploadingMaterial(false);
     }
@@ -855,16 +911,16 @@ export function SessionsPage() {
     if (!sessionId || !groupId) return;
     const nextErrors: Record<string, string> = {};
     if (meetingForm.provider !== 'zoom' && !meetingForm.customJoinUrl.trim()) {
-      nextErrors.customJoinUrl = 'Meeting URL is required.';
+      nextErrors.customJoinUrl = t('sessions.meetingUrlRequired');
     }
     if (meetingForm.provider !== 'zoom' && meetingForm.customJoinUrl.trim() && !/^https?:\/\/\S+\.\S+/.test(meetingForm.customJoinUrl.trim())) {
-      nextErrors.customJoinUrl = 'Use a full meeting URL.';
+      nextErrors.customJoinUrl = t('sessions.fullMeetingUrl');
     }
     if (meetingForm.provider === 'zoom' && !meetingForm.hostUserId.trim()) {
-      nextErrors.hostUserId = 'Zoom host user ID is required.';
+      nextErrors.hostUserId = t('sessions.zoomHostRequired');
     }
     if (meetingForm.durationMinutes && Number(meetingForm.durationMinutes) < 1) {
-      nextErrors.durationMinutes = 'Duration must be at least 1 minute.';
+      nextErrors.durationMinutes = t('sessions.durationMin');
     }
     if (Object.keys(nextErrors).length) {
       setMeetingErrors(nextErrors);
@@ -890,9 +946,9 @@ export function SessionsPage() {
         : await createLiveMeeting(sessionId, payload);
       setLiveMeeting(saved);
       await reloadSessions(groupId);
-      toast.success('Live meeting saved');
+      toast.success(t('sessions.liveMeetingSaved'));
     } catch {
-      toast.error('Could not save live meeting');
+      toast.error(t('sessions.liveMeetingSaveFailed'));
     } finally {
       setSavingMeeting(false);
     }
@@ -905,9 +961,9 @@ export function SessionsPage() {
       await deleteLiveMeeting(sessionId, meetingForm.provider);
       setLiveMeeting(null);
       await reloadSessions(groupId);
-      toast.success('Live meeting removed');
+      toast.success(t('sessions.liveMeetingRemoved'));
     } catch {
-      toast.error('Could not remove live meeting');
+      toast.error(t('sessions.liveMeetingRemoveFailed'));
     } finally {
       setSavingMeeting(false);
     }
@@ -922,9 +978,9 @@ export function SessionsPage() {
         materials: currentMaterials.filter((_, index) => index !== materialIndex),
       });
       await reloadSessions(groupId);
-      toast.success('Material removed');
+      toast.success(t('sessions.materialRemoved'));
     } catch {
-      toast.error('Could not remove material');
+      toast.error(t('sessions.materialRemoveFailed'));
     } finally {
       setUpdatingSession(false);
       setPendingRemoval(null);
@@ -953,12 +1009,12 @@ export function SessionsPage() {
     if (!sessionId || !groupId) return;
     const nextErrors: Record<string, string> = {};
     if (!activityForm.title.trim()) {
-      nextErrors.activityTitle = 'Activity title is required.';
+      nextErrors.activityTitle = t('sessions.activityTitleRequired');
     }
     if (activityForm.type === 'quiz') {
-      if (!activityForm.quizPrompt.trim()) nextErrors.quizPrompt = 'Quiz question is required.';
-      if (!activityForm.quizOptionA.trim()) nextErrors.quizOptionA = 'Option A is required.';
-      if (!activityForm.quizOptionB.trim()) nextErrors.quizOptionB = 'Option B is required.';
+      if (!activityForm.quizPrompt.trim()) nextErrors.quizPrompt = t('sessions.quizQuestionRequired');
+      if (!activityForm.quizOptionA.trim()) nextErrors.quizOptionA = t('sessions.optionARequired');
+      if (!activityForm.quizOptionB.trim()) nextErrors.quizOptionB = t('sessions.optionBRequired');
     }
     if (Object.keys(nextErrors).length) {
       setCreateErrors(nextErrors);
@@ -991,9 +1047,9 @@ export function SessionsPage() {
       setActivityForm(emptyActivityForm);
       setCreateModal(null);
       setCreateErrors({});
-      toast.success('Activity added');
+      toast.success(t('sessions.activityAdded'));
     } catch {
-      toast.error('Could not save activity');
+      toast.error(t('sessions.activitySaveFailed'));
     } finally {
       setSavingActivity(false);
     }
@@ -1008,9 +1064,9 @@ export function SessionsPage() {
         status,
       });
       await reloadSessions(groupId);
-      toast.success('Activity updated');
+      toast.success(t('sessions.activityUpdated'));
     } catch {
-      toast.error('Could not update activity');
+      toast.error(t('sessions.activityUpdateFailed'));
     } finally {
       setSavingActivity(false);
     }
@@ -1022,9 +1078,9 @@ export function SessionsPage() {
     try {
       await deleteSessionActivity(sessionId, activityId);
       await reloadSessions(groupId);
-      toast.success('Activity removed');
+      toast.success(t('sessions.activityRemoved'));
     } catch {
-      toast.error('Could not remove activity');
+      toast.error(t('sessions.activityRemoveFailed'));
     } finally {
       setSavingActivity(false);
       setPendingRemoval(null);
@@ -1049,7 +1105,7 @@ export function SessionsPage() {
       });
       setReviewDrafts(nextDrafts);
     } catch {
-      toast.error('Could not load activity responses');
+      toast.error(t('sessions.responsesLoadFailed'));
     } finally {
       setLoadingResponses(false);
     }
@@ -1064,11 +1120,11 @@ export function SessionsPage() {
     const draft = reviewDrafts[submissionId] ?? { score: '', reviewComment: '' };
     const score = draft.score.trim() ? Number(draft.score) : undefined;
     if ((status === 'rejected' || status === 'needs_revision') && !draft.reviewComment.trim()) {
-      toast.error('Review comment is required');
+      toast.error(t('sessions.reviewCommentRequired'));
       return;
     }
     if (score !== undefined && !Number.isFinite(score)) {
-      toast.error('Score must be a number');
+      toast.error(t('sessions.scoreNumberRequired'));
       return;
     }
 
@@ -1080,9 +1136,9 @@ export function SessionsPage() {
         reviewComment: draft.reviewComment.trim() || undefined,
       });
       await loadActivityResponses(activityId);
-      toast.success('Review saved');
+      toast.success(t('sessions.reviewSaved'));
     } catch {
-      toast.error('Could not save review');
+      toast.error(t('sessions.reviewSaveFailed'));
     } finally {
       setReviewingSubmission(undefined);
     }
@@ -1090,22 +1146,22 @@ export function SessionsPage() {
 
   return (
     <>
-      <PageHeader title="Sessions" eyebrow={activeTenant?.name} />
+      <PageHeader title={t('navigation.sessions')} eyebrow={activeTenant?.name} />
       <div className="filters-row three">
         <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
-          <option value="">Select course</option>
+          <option value="">{t('courses.selectCourse')}</option>
           {courses.map((course) => (
             <option key={course.id} value={course.id}>
-              {course.title}{isCourseWorkflowReady(course) ? '' : ' - locked'}
+              {course.title}{isCourseWorkflowReady(course) ? '' : ` - ${t('groups.locked')}`}
             </option>
           ))}
         </select>
         <select value={groupId ?? ''} onChange={(event) => setGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
-          <option value="">Select group</option>
+          <option value="">{t('courses.selectGroup')}</option>
           {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
         </select>
         <select value={sessionId ?? ''} onChange={(event) => setSessionId(Number(event.target.value) || undefined)} disabled={!sessions.length}>
-          <option value="">Select session</option>
+          <option value="">{t('sessions.selectSession')}</option>
           {sessions.map((session) => (
             <option key={session.id} value={session.id}>
               {session.title} {session.startsAt ? `- ${formatDate(session.startsAt)}` : ''}
@@ -1113,7 +1169,7 @@ export function SessionsPage() {
           ))}
         </select>
       </div>
-      <section className="session-workflow-strip" aria-label="Session workflow">
+      <section className="session-workflow-strip" aria-label={t('sessions.workflow')}>
         {workflowSteps.map((step, index) => (
           <article key={step.label} className={`workflow-step ${step.state}`}>
             <span>{index + 1}</span>
@@ -1124,37 +1180,37 @@ export function SessionsPage() {
           </article>
         ))}
       </section>
-      {loading ? <LoadingState label="Loading sessions" /> : null}
+      {loading ? <LoadingState label={t('sessions.loading')} /> : null}
       <section className="workflow-section workflow-context-panel">
         <div className="section-heading-row">
           <div>
-            <h2>Set up learning operations</h2>
-            <span>Create the container first, then schedule sessions and enroll learners.</span>
+            <h2>{t('sessions.setupTitle')}</h2>
+            <span>{t('sessions.setupDetail')}</span>
           </div>
           <div className="page-actions">
             <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>
-              Create group
+              {t('groups.createGroup')}
             </button>
             <button type="button" className="secondary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>
-              Schedule session
+              {t('sessions.scheduleSession')}
             </button>
             <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
-              Enroll student
+              {t('sessions.enrollStudent')}
             </button>
           </div>
         </div>
         <div className="create-action-grid">
           <article>
-            <strong>{selectedCourseReady ? 'Group ready to create' : selectedCourse ? 'Course locked for groups' : 'Choose a course first'}</strong>
-            <span>{selectedCourseReady ? 'Groups organize learners and unlock scheduling.' : selectedCourseBlocker}</span>
+            <strong>{selectedCourseReady ? t('sessions.groupReady') : selectedCourse ? t('sessions.courseLocked') : t('sessions.chooseCourseFirst')}</strong>
+            <span>{selectedCourseReady ? t('sessions.groupReadyDetail') : selectedCourseBlocker}</span>
           </article>
           <article>
-            <strong>{selectedGroup ? 'Schedule the next class' : 'Choose or create a group'}</strong>
-            <span>Sessions hold live links, materials, homework, and activities.</span>
+            <strong>{selectedGroup ? t('sessions.scheduleNextClass') : t('sessions.chooseOrCreateGroup')}</strong>
+            <span>{t('sessions.sessionToolsDetail')}</span>
           </article>
           <article>
-            <strong>{selectedGroup ? `${students.length} enrolled` : 'Enrollment unlocks after group selection'}</strong>
-            <span>Add existing student accounts to the selected group.</span>
+            <strong>{selectedGroup ? t('sessions.enrolledCount', { count: students.length }) : t('sessions.enrollmentLocked')}</strong>
+            <span>{t('sessions.enrollmentDetail')}</span>
           </article>
         </div>
       </section>
@@ -1163,52 +1219,52 @@ export function SessionsPage() {
         <section className="settings-panel group-edit-panel workflow-section workflow-context-panel">
           <div className="section-heading-row">
             <div>
-              <h2>Group schedule and defaults</h2>
-              <span>{selectedCourse?.title ?? 'Selected course'}</span>
+              <h2>{t('sessions.groupScheduleDefaults')}</h2>
+              <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
             </div>
-            <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(true)}>Edit group</button>
+            <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(true)}>{t('groups.editGroup')}</button>
           </div>
           <div className="group-summary-grid">
-            <section><span>Status</span><strong>{readable(selectedGroup.status ?? 'planned')}</strong></section>
-            <section><span>Dates</span><strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : 'Not scheduled'}</strong></section>
-            <section><span>Schedule</span><strong>{savedScheduleReady ? `${selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0} block${(selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0) === 1 ? '' : 's'}` : 'Needs setup'}</strong></section>
-            <section><span>Students</span><strong>{students.length}</strong></section>
-            <section><span>Capacity</span><strong>{selectedGroup.seatLimit ?? 'Open'}</strong></section>
-            <section><span>Location</span><strong>{selectedGroup.location || selectedGroup.meetingProvider || 'Not set'}</strong></section>
+            <section><span>{t('courses.status')}</span><strong>{statusLabel(selectedGroup.status)}</strong></section>
+            <section><span>{t('groups.dates')}</span><strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : t('groups.notScheduled')}</strong></section>
+            <section><span>{t('groups.schedule')}</span><strong>{savedScheduleReady ? t('groups.scheduleBlockCount', { count: selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0 }) : t('groups.needsSetup')}</strong></section>
+            <section><span>{t('courses.students')}</span><strong>{students.length}</strong></section>
+            <section><span>{t('groups.capacity')}</span><strong>{selectedGroup.seatLimit ?? t('groups.capacityOpen')}</strong></section>
+            <section><span>{t('groups.location')}</span><strong>{selectedGroup.location || selectedGroup.meetingProvider || t('states.notSet')}</strong></section>
           </div>
           <div className="session-generation-panel">
             <div className="section-heading-row compact">
               <div>
-                <h3>Generate sessions</h3>
-                <span>Uses the saved group schedule above</span>
+                <h3>{t('groups.generateSessions')}</h3>
+                <span>{t('sessions.generateSessionsHint')}</span>
               </div>
             </div>
             <p className={`panel-note ${generationReady ? 'success' : ''}`}>
-              {generationReady ? 'Schedule and dates are ready for preview.' : 'Add at least one complete saved schedule block and choose generation dates before previewing sessions.'}
+              {generationReady ? t('groups.generationReady') : t('sessions.generationNeedsSetup')}
             </p>
             <div className="three-col">
               <label>
-                From
+                {t('groups.from')}
                 <input type="date" value={generationRange.fromDate} onChange={(event) => setGenerationRange((current) => ({ ...current, fromDate: event.target.value }))} />
               </label>
               <label>
-                To
+                {t('groups.to')}
                 <input type="date" value={generationRange.toDate} onChange={(event) => setGenerationRange((current) => ({ ...current, toDate: event.target.value }))} />
               </label>
               <div className="generation-actions">
                 <button type="button" className="secondary-button" onClick={() => void previewSessionGeneration()} disabled={generationLoading || !generationReady}>
-                  Preview
+                  {t('groups.preview')}
                 </button>
                 <button type="button" onClick={() => void generateSessions()} disabled={generationLoading || !generationPreview?.newCount}>
-                  Generate
+                  {t('groups.generate')}
                 </button>
               </div>
             </div>
             {generationPreview ? (
               <div className="generation-preview">
-                <span>Total <strong>{generationPreview.total}</strong></span>
-                <span>New <strong>{generationPreview.newCount}</strong></span>
-                <span>Existing <strong>{generationPreview.existingCount}</strong></span>
+                <span>{t('groups.total')} <strong>{generationPreview.total}</strong></span>
+                <span>{t('groups.new')} <strong>{generationPreview.newCount}</strong></span>
+                <span>{t('groups.existing')} <strong>{generationPreview.existingCount}</strong></span>
                 <div className="stack-list">
                   {generationPreview.items.slice(0, 5).map((item) => (
                     <article key={`${item.kind}-${item.sessionIndex}-${item.startsAt}`} className="stack-list-item">
@@ -1216,7 +1272,7 @@ export function SessionsPage() {
                         <strong>{item.title}</strong>
                         <span>{item.day} · {formatDate(item.startsAt)} - {formatDate(item.endsAt)}</span>
                       </div>
-                      <span className={`status-badge ${item.kind === 'new' ? 'pending' : 'scheduled'}`}>{readable(item.kind)}</span>
+                      <span className={`status-badge ${item.kind === 'new' ? 'pending' : 'scheduled'}`}>{statusLabel(item.kind)}</span>
                     </article>
                   ))}
                 </div>
@@ -1226,21 +1282,21 @@ export function SessionsPage() {
           <div className="group-roster-panel">
             <div className="section-heading-row compact">
               <div>
-                <h3>Group roster</h3>
-                <span>{students.length} active learner{students.length === 1 ? '' : 's'}</span>
+                <h3>{t('courses.groupRoster')}</h3>
+                <span>{t('groups.activeLearnerCount', { count: students.length })}</span>
               </div>
               <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
-                Enroll student
+                {t('sessions.enrollStudent')}
               </button>
             </div>
             <div className="stack-list">
               {students.map((student) => (
                 <article key={student.userId} className="stack-list-item">
                   <div>
-                    <strong>{student.fullName || student.email || `Student #${student.userId}`}</strong>
+                    <strong>{student.fullName || student.email || studentFallback(student.userId)}</strong>
                     <span>
-                      {student.email || 'No email'} · progress {Math.round(student.progressPercent ?? 0)}%
-                      {student.completed ? ' · completed' : ''}
+                      {student.email || t('groups.noEmail')} · {t('groups.progressPercent', { percent: Math.round(student.progressPercent ?? 0) })}
+                      {student.completed ? ` · ${t('courses.completed')}` : ''}
                     </span>
                   </div>
                   <button
@@ -1249,14 +1305,14 @@ export function SessionsPage() {
                     onClick={() => setPendingRemoval({ type: 'student', student })}
                     disabled={removingStudentId === student.userId}
                   >
-                    {removingStudentId === student.userId ? 'Removing...' : 'Remove'}
+                    {removingStudentId === student.userId ? t('groups.removing') : t('groups.remove')}
                   </button>
                 </article>
               ))}
               {!students.length ? (
                 <EmptyState
-                  title="No students enrolled in this group"
-                  detail="Enroll students before running attendance, homework, and activity reviews for this group."
+                  title={t('sessions.noStudentsInGroup')}
+                  detail={t('sessions.noStudentsInGroupDetail')}
                 />
               ) : null}
             </div>
@@ -1266,12 +1322,12 @@ export function SessionsPage() {
 
       {!loading && !sessions.length ? (
         <EmptyState
-          title={selectedGroup ? 'No sessions scheduled' : 'No sessions selected'}
-          detail={selectedGroup ? 'Schedule a session manually or generate sessions from the saved group schedule.' : 'Choose or create a course group, then schedule sessions for learners.'}
+          title={selectedGroup ? t('sessions.emptyScheduledTitle') : t('sessions.emptySelectedTitle')}
+          detail={selectedGroup ? t('sessions.emptyScheduledDetail') : t('sessions.emptySelectedDetail')}
           action={(
             <>
-              <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>Create group</button>
-              <button type="button" className="primary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>Schedule session</button>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>{t('groups.createGroup')}</button>
+              <button type="button" className="primary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>{t('sessions.scheduleSession')}</button>
             </>
           )}
         />
@@ -1281,17 +1337,17 @@ export function SessionsPage() {
           <section className="content-section">
             <div className="section-heading-row">
               <div>
-                <h2>Session schedule</h2>
-                <span>Select a session to open its operations panel.</span>
+                <h2>{t('sessions.sessionSchedule')}</h2>
+                <span>{t('sessions.sessionScheduleDetail')}</span>
               </div>
             </div>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Session</th>
-                    <th>Starts</th>
-                    <th>Status</th>
+                    <th>{t('sessions.session')}</th>
+                    <th>{t('groups.starts')}</th>
+                    <th>{t('courses.status')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1311,7 +1367,7 @@ export function SessionsPage() {
                         </button>
                       </td>
                       <td>{formatDate(session.startsAt)}</td>
-                      <td><span className={`status-badge ${session.status || 'scheduled'}`}>{readable(session.status || 'scheduled')}</span></td>
+                      <td><span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1322,30 +1378,30 @@ export function SessionsPage() {
           <aside className="settings-panel workflow-context-panel">
             <div className="section-heading-row compact">
               <div>
-                <h2>Session workspace</h2>
-                <span>{selectedSession?.title ?? 'Select a session'}</span>
+                <h2>{t('sessions.workspace')}</h2>
+                <span>{selectedSession?.title ?? t('sessions.selectSession')}</span>
               </div>
             </div>
             {!selectedSession ? (
-              <EmptyState title="Choose a session" detail="Select a session row or use the session dropdown." />
+              <EmptyState title={t('sessions.chooseSession')} detail={t('sessions.chooseSessionDetail')} />
             ) : (
               <>
                 <WorkspaceTabs
-                  tabs={sessionOperationTabs}
+                  tabs={translatedSessionTabs}
                   activeTab={sessionOperationTab}
                   onChange={setSessionOperationTab}
-                  ariaLabel="Session operations"
+                  ariaLabel={t('sessions.operations')}
                   className="session-operation-tabs"
                 />
                 {sessionOperationTab === 'activities' ? (
                   <div className="session-activities-panel">
                     <div className="section-heading-row compact">
                       <div>
-                        <h3>Activities</h3>
+                        <h3>{t('sessions.tabActivities')}</h3>
                         <span>{selectedSession.title}</span>
                       </div>
                       <button type="button" className="secondary-button" onClick={() => setCreateModal('activity')} disabled={savingActivity}>
-                        Add activity
+                        {t('sessions.addActivity')}
                       </button>
                     </div>
                     <div className="stack-list activity-list">
@@ -1353,24 +1409,24 @@ export function SessionsPage() {
                         <article key={activity.id} className="stack-list-item activity-list-item">
                           <div>
                             <strong>{activity.title}</strong>
-                            <span>{readable(activity.type)} · <span className={`status-badge ${activity.status}`}>{readable(activity.status)}</span></span>
+                            <span>{activityTypeLabel(activity.type)} · <span className={`status-badge ${activity.status}`}>{statusLabel(activity.status)}</span></span>
                           </div>
                           <div className="activity-actions">
                             {activity.status !== 'active' ? (
-                              <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'active')} disabled={savingActivity}>Start</button>
+                              <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'active')} disabled={savingActivity}>{t('sessions.startActivity')}</button>
                             ) : null}
                             {activity.status !== 'done' ? (
-                              <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'done')} disabled={savingActivity}>Done</button>
+                              <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'done')} disabled={savingActivity}>{t('sessions.statusDone')}</button>
                             ) : null}
-                            <button type="button" className="secondary-button" onClick={() => void loadActivityResponses(activity.id)} disabled={loadingResponses && selectedActivityId === activity.id}>Responses</button>
-                            <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'activity', activityId: activity.id })} disabled={savingActivity}>Remove</button>
+                            <button type="button" className="secondary-button" onClick={() => void loadActivityResponses(activity.id)} disabled={loadingResponses && selectedActivityId === activity.id}>{t('sessions.responses')}</button>
+                            <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'activity', activityId: activity.id })} disabled={savingActivity}>{t('groups.remove')}</button>
                           </div>
                         </article>
                       ))}
                       {!sessionActivities.length ? (
                         <EmptyState
-                          title="No activities planned yet"
-                          detail="Add an activity when this session needs discussion, exercise, quiz, or group work tracking."
+                          title={t('sessions.noActivitiesTitle')}
+                          detail={t('sessions.noActivitiesDetail')}
                         />
                       ) : null}
                     </div>
@@ -1378,25 +1434,25 @@ export function SessionsPage() {
                       <div className="activity-responses-panel">
                         <div className="section-heading-row compact">
                           <div>
-                            <h3>Responses</h3>
-                            <span>{activityResponses.activity.title} · {readable(activityResponses.mode)}</span>
+                            <h3>{t('sessions.responses')}</h3>
+                            <span>{activityResponses.activity.title} · {activityTypeLabel(activityResponses.mode)}</span>
                           </div>
                         </div>
-                        {loadingResponses ? <LoadingState label="Loading responses" /> : null}
+                        {loadingResponses ? <LoadingState label={t('sessions.loadingResponses')} /> : null}
                         <div className="stack-list">
                           {activityResponses.items.map((item) => (
                             <article key={`${item.id ?? item.latestAttemptId ?? item.studentId}`} className="stack-list-item activity-response-item">
                               <div>
-                                <strong>{item.studentName || `Student #${item.studentId}`}</strong>
+                                <strong>{item.studentName || studentFallback(item.studentId)}</strong>
                                 {activityResponses.mode === 'quiz' ? (
                                   <span>
-                                    {item.passed ? 'Passed' : 'Not passed'} · score {item.score ?? 0} · attempts {item.attemptsCount ?? 0}
+                                    {item.passed ? t('sessions.passed') : t('sessions.notPassed')} · {t('sessions.scoreValue', { score: item.score ?? 0 })} · {t('sessions.attemptsValue', { count: item.attemptsCount ?? 0 })}
                                   </span>
                                 ) : (
                                   <>
-                                    <span>{readable(item.status ?? 'submitted')}{item.updatedAt ? ` · ${formatDate(item.updatedAt)}` : ''}</span>
+                                    <span>{statusLabel(item.status ?? 'submitted')}{item.updatedAt ? ` · ${formatDate(item.updatedAt)}` : ''}</span>
                                     {item.answerText ? <p>{item.answerText}</p> : null}
-                                    {item.attachmentUrl ? <a href={item.attachmentUrl} target="_blank" rel="noreferrer">Open attachment</a> : null}
+                                    {item.attachmentUrl ? <a href={item.attachmentUrl} target="_blank" rel="noreferrer">{t('sessions.openAttachment')}</a> : null}
                                   </>
                                 )}
                               </div>
@@ -1405,18 +1461,18 @@ export function SessionsPage() {
                                   <input
                                     value={reviewDrafts[item.id]?.score ?? ''}
                                     onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: event.target.value, reviewComment: current[item.id!]?.reviewComment ?? '' } }))}
-                                    placeholder="Score"
+                                    placeholder={t('sessions.score')}
                                     inputMode="numeric"
                                   />
                                   <input
                                     value={reviewDrafts[item.id]?.reviewComment ?? ''}
                                     onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: current[item.id!]?.score ?? '', reviewComment: event.target.value } }))}
-                                    placeholder="Review comment"
+                                    placeholder={t('sessions.reviewComment')}
                                   />
                                   <div className="activity-actions">
-                                    <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'approved')} disabled={reviewingSubmission === item.id}>Approve</button>
-                                    <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'needs_revision')} disabled={reviewingSubmission === item.id}>Revise</button>
-                                    <button type="button" className="link-button danger" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'rejected')} disabled={reviewingSubmission === item.id}>Reject</button>
+                                    <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'approved')} disabled={reviewingSubmission === item.id}>{t('courses.approve')}</button>
+                                    <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'needs_revision')} disabled={reviewingSubmission === item.id}>{t('sessions.revise')}</button>
+                                    <button type="button" className="link-button danger" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'rejected')} disabled={reviewingSubmission === item.id}>{t('courses.reject')}</button>
                                   </div>
                                 </div>
                               ) : null}
@@ -1424,8 +1480,8 @@ export function SessionsPage() {
                           ))}
                           {!activityResponses.items.length ? (
                             <EmptyState
-                              title="No responses yet"
-                              detail="Learner responses will appear here after the activity has submissions or quiz attempts."
+                              title={t('sessions.noResponsesTitle')}
+                              detail={t('sessions.noResponsesDetail')}
                             />
                           ) : null}
                         </div>
@@ -1436,16 +1492,16 @@ export function SessionsPage() {
                 {sessionOperationTab === 'overview' ? (
                   <>
                 <div className="definition-grid">
-                  <span>Course</span><strong>{selectedCourse?.title ?? '-'}</strong>
-                  <span>Group</span><strong>{selectedGroup?.name ?? '-'}</strong>
-                  <span>Starts</span><strong>{formatDate(selectedSession.startsAt)}</strong>
-                  <span>Ends</span><strong>{formatDate(selectedSession.endsAt)}</strong>
-                  <span>Status</span><strong><span className={`status-badge ${selectedSession.status || 'scheduled'}`}>{readable(selectedSession.status || 'scheduled')}</span></strong>
-                  <span>Recording</span><strong>{selectedSession.recordingUrl ? 'Attached' : 'Not attached'}</strong>
+                  <span>{t('courses.course')}</span><strong>{selectedCourse?.title ?? '-'}</strong>
+                  <span>{t('courses.group')}</span><strong>{selectedGroup?.name ?? '-'}</strong>
+                  <span>{t('groups.starts')}</span><strong>{formatDate(selectedSession.startsAt)}</strong>
+                  <span>{t('groups.ends')}</span><strong>{formatDate(selectedSession.endsAt)}</strong>
+                  <span>{t('courses.status')}</span><strong><span className={`status-badge ${selectedSession.status || 'scheduled'}`}>{statusLabel(selectedSession.status)}</span></strong>
+                  <span>{t('sessions.recording')}</span><strong>{selectedSession.recordingUrl ? t('sessions.attached') : t('sessions.notAttached')}</strong>
                 </div>
                 <div className="session-summary-actions">
                   <button type="button" className="secondary-button" onClick={() => setEditSessionOpen(true)}>
-                    Edit session
+                    {t('sessions.editSession')}
                   </button>
                 </div>
                   </>
@@ -1454,21 +1510,21 @@ export function SessionsPage() {
                 <div className="session-live-panel">
                   <div className="section-heading-row compact">
                     <div>
-                      <h3>Live meeting</h3>
-                      <span>{liveMeeting?.joinUrl || selectedSession.liveJoinUrl ? 'Meeting attached' : 'No meeting attached'}</span>
+                      <h3>{t('sessions.tabMeeting')}</h3>
+                      <span>{liveMeeting?.joinUrl || selectedSession.liveJoinUrl ? t('sessions.meetingAttached') : t('sessions.noMeetingAttached')}</span>
                     </div>
                   </div>
                   <div className="two-col">
                     <label>
-                      Provider
+                      {t('sessions.provider')}
                       <select value={meetingForm.provider} onChange={(event) => setMeetingForm((current) => ({ ...current, provider: event.target.value as 'zoom' | 'google_meet' | 'custom' }))}>
-                        <option value="custom">Custom</option>
+                        <option value="custom">{t('sessions.providerCustom')}</option>
                         <option value="google_meet">Google Meet</option>
                         <option value="zoom">Zoom</option>
                       </select>
                     </label>
                     <label>
-                      Duration
+                      {t('sessions.duration')}
                       <input
                         type="number"
                         min="1"
@@ -1485,7 +1541,7 @@ export function SessionsPage() {
                   </div>
                   {meetingForm.provider !== 'zoom' ? (
                     <label>
-                      Join URL
+                      {t('sessions.joinUrl')}
                       <input
                         value={meetingForm.customJoinUrl}
                         onChange={(event) => {
@@ -1500,7 +1556,7 @@ export function SessionsPage() {
                     </label>
                   ) : (
                     <label>
-                      Zoom host user ID
+                      {t('sessions.zoomHostUserId')}
                       <input
                         value={meetingForm.hostUserId}
                         onChange={(event) => {
@@ -1509,23 +1565,23 @@ export function SessionsPage() {
                         }}
                         className={meetingErrors.hostUserId ? 'input-error' : ''}
                         aria-invalid={!!meetingErrors.hostUserId}
-                        placeholder="me or Zoom user email"
+                        placeholder={t('sessions.zoomHostPlaceholder')}
                       />
                       {meetingErrors.hostUserId ? <span className="field-error">{meetingErrors.hostUserId}</span> : null}
                     </label>
                   )}
                   <label>
-                    Topic
+                    {t('sessions.topic')}
                     <input value={meetingForm.topic} onChange={(event) => setMeetingForm((current) => ({ ...current, topic: event.target.value }))} />
                   </label>
                   <div className="live-meeting-actions">
                     <button type="button" onClick={() => void saveLiveMeeting()} disabled={savingMeeting}>
-                      {savingMeeting ? 'Saving...' : 'Save meeting'}
+                      {savingMeeting ? t('courses.saving') : t('sessions.saveMeeting')}
                     </button>
                     {(liveMeeting?.joinUrl || selectedSession.liveJoinUrl) ? (
                       <>
-                        <a href={liveMeeting?.joinUrl ?? selectedSession.liveJoinUrl ?? '#'} target="_blank" rel="noreferrer">Open meeting</a>
-                        <button type="button" className="secondary-button" onClick={() => void removeLiveMeeting()} disabled={savingMeeting}>Remove</button>
+                        <a href={liveMeeting?.joinUrl ?? selectedSession.liveJoinUrl ?? '#'} target="_blank" rel="noreferrer">{t('sessions.openMeeting')}</a>
+                        <button type="button" className="secondary-button" onClick={() => void removeLiveMeeting()} disabled={savingMeeting}>{t('groups.remove')}</button>
                       </>
                     ) : null}
                   </div>
@@ -1535,11 +1591,11 @@ export function SessionsPage() {
                 <div className="session-materials-panel">
                   <div className="section-heading-row compact">
                     <div>
-                      <h3>Materials</h3>
-                      <span>Files shared for this session</span>
+                      <h3>{t('sessions.tabMaterials')}</h3>
+                      <span>{t('sessions.materialsHint')}</span>
                     </div>
                     <label className="file-button">
-                      {uploadingMaterial ? 'Uploading...' : 'Upload'}
+                      {uploadingMaterial ? t('sessions.uploading') : t('sessions.upload')}
                       <input
                         type="file"
                         disabled={uploadingMaterial}
@@ -1552,42 +1608,42 @@ export function SessionsPage() {
                     {(selectedSession.materials ?? []).map((material, index) => (
                       <article key={`${material.storageKey ?? material.url}-${index}`} className="stack-list-item material-list-item">
                         <div>
-                          <strong>{material.title || `Material ${index + 1}`}</strong>
-                          <a href={material.url} target="_blank" rel="noreferrer">Open file</a>
+                          <strong>{material.title || materialFallback(index)}</strong>
+                          <a href={material.url} target="_blank" rel="noreferrer">{t('sessions.openFile')}</a>
                         </div>
                         <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'material', materialIndex: index })} disabled={updatingSession}>
-                          Remove
+                          {t('groups.remove')}
                         </button>
                       </article>
                     ))}
                     {!selectedSession.materials?.length ? (
                       <EmptyState
-                        title="No materials uploaded yet"
-                        detail="Upload files when learners need session-specific material."
+                        title={t('sessions.noMaterialsTitle')}
+                        detail={t('sessions.noMaterialsDetail')}
                       />
                     ) : null}
                   </div>
                 </div>
                 ) : null}
-                {detailLoading ? <LoadingState label="Loading detail" /> : (
+                {detailLoading ? <LoadingState label={t('sessions.loadingDetail')} /> : (
                   <>
                     {sessionOperationTab === 'overview' ? (
                       <>
                     <div className="stat-grid compact session-stat-grid">
                       <section className="stat-tile">
-                        <span>Students</span>
+                        <span>{t('courses.students')}</span>
                         <strong>{students.length}</strong>
                       </section>
                       <section className="stat-tile">
-                        <span>Marked</span>
+                        <span>{t('sessions.marked')}</span>
                         <strong>{attendance.length}</strong>
                       </section>
                       <section className="stat-tile">
-                        <span>Homework</span>
+                        <span>{t('courses.homework')}</span>
                         <strong>{homework.length}</strong>
                       </section>
                       <section className="stat-tile">
-                        <span>Published</span>
+                        <span>{t('courses.published')}</span>
                         <strong>{homework.filter((item) => item.isPublished).length}</strong>
                       </section>
                     </div>
@@ -1597,55 +1653,55 @@ export function SessionsPage() {
                       <div className="session-insights-panel">
                         <div className="section-heading-row compact">
                           <div>
-                            <h3>Insights</h3>
-                            <span>Follow-up and session health</span>
+                            <h3>{t('sessions.tabInsights')}</h3>
+                            <span>{t('sessions.insightsHint')}</span>
                           </div>
                         </div>
                         <div className="insight-metrics">
-                          <span>Queue <strong>{insights.summary?.teacherQueue ?? 0}</strong></span>
-                          <span>Follow-ups <strong>{insights.summary?.followUpStudents ?? 0}</strong></span>
-                          <span>Positive <strong>{insights.summary?.positiveStudents ?? 0}</strong></span>
+                          <span>{t('sessions.queue')} <strong>{insights.summary?.teacherQueue ?? 0}</strong></span>
+                          <span>{t('sessions.followUps')} <strong>{insights.summary?.followUpStudents ?? 0}</strong></span>
+                          <span>{t('sessions.positive')} <strong>{insights.summary?.positiveStudents ?? 0}</strong></span>
                         </div>
                         <div className="insight-columns">
                           <div>
-                            <strong>Needs attention</strong>
+                            <strong>{t('sessions.needsAttention')}</strong>
                             {(insights.attentionStudents ?? []).slice(0, 4).map((student) => (
                               <article key={student.studentId} className={`insight-row ${student.severity ?? 'low'}`}>
                                 <span>{student.fullName}</span>
-                                <small>{student.reasons?.[0]?.label ?? 'Review student progress'}</small>
+                                <small>{student.reasons?.[0]?.label ?? t('sessions.reviewStudentProgress')}</small>
                               </article>
                             ))}
-                            {!insights.attentionStudents?.length ? <span className="muted-text">No urgent follow-up.</span> : null}
+                            {!insights.attentionStudents?.length ? <span className="muted-text">{t('sessions.noUrgentFollowUp')}</span> : null}
                           </div>
                           <div>
-                            <strong>Positive signals</strong>
+                            <strong>{t('sessions.positiveSignals')}</strong>
                             {(insights.positiveStudents ?? []).slice(0, 4).map((student) => (
                               <article key={student.studentId} className="insight-row positive">
                                 <span>{student.fullName}</span>
-                                <small>{student.signals?.[0] ?? `Attendance streak ${student.streak ?? 0}`}</small>
+                                <small>{student.signals?.[0] ?? t('sessions.attendanceStreak', { count: student.streak ?? 0 })}</small>
                               </article>
                             ))}
-                            {!insights.positiveStudents?.length ? <span className="muted-text">No positive signals yet.</span> : null}
+                            {!insights.positiveStudents?.length ? <span className="muted-text">{t('sessions.noPositiveSignals')}</span> : null}
                           </div>
                         </div>
                       </div>
                     ) : null}
-                    {sessionOperationTab === 'insights' && !insights ? <EmptyState title="No insights yet" detail="Insights appear after attendance, homework, and activity data are available." /> : null}
+                    {sessionOperationTab === 'insights' && !insights ? <EmptyState title={t('sessions.noInsightsTitle')} detail={t('sessions.noInsightsDetail')} /> : null}
                     {sessionOperationTab === 'overview' ? (
                     <div className="stack-list">
                       {homework.slice(0, 4).map((item) => (
                         <article key={item.id} className="stack-list-item">
                           <div>
                             <strong>{item.title}</strong>
-                            <span>{item.isPublished ? 'Published' : 'Draft'}{item.deadline || item.dueAt ? ` · ${formatDate(item.deadline ?? item.dueAt)}` : ''}</span>
+                            <span>{item.isPublished ? t('courses.published') : t('courses.draft')}{item.deadline || item.dueAt ? ` · ${formatDate(item.deadline ?? item.dueAt)}` : ''}</span>
                           </div>
                           <strong>{item.queue?.needsReview ?? 0}</strong>
                         </article>
                       ))}
                       {!homework.length ? (
                         <EmptyState
-                          title="No homework for this session"
-                          detail="Session homework appears here after it is created for this class."
+                          title={t('sessions.noHomeworkTitle')}
+                          detail={t('sessions.noHomeworkDetail')}
                         />
                       ) : null}
                     </div>
@@ -1660,61 +1716,61 @@ export function SessionsPage() {
       {editGroupOpen && selectedGroup ? (
         <FormModal labelledBy="edit-group-title" onClose={() => setEditGroupOpen(false)} onSubmit={submitGroupUpdate}>
           <div className="modal-header-block">
-            <span>{selectedCourse?.title ?? 'Selected course'}</span>
-            <h2 id="edit-group-title">Edit group</h2>
-            <p>Update the saved group defaults used for scheduling and generation.</p>
+            <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
+            <h2 id="edit-group-title">{t('groups.editGroup')}</h2>
+            <p>{t('sessions.editGroupDetail')}</p>
           </div>
           <section className="form-section">
-            <h3>Group details</h3>
+            <h3>{t('sessions.groupDetails')}</h3>
             <div className="two-col">
               <label>
-                Name
+                {t('groups.name')}
                 <input value={editGroupForm.name} onChange={(event) => setEditGroupForm((current) => ({ ...current, name: event.target.value }))} autoFocus />
               </label>
               <label>
-                Code
-                <input value={editGroupForm.code} onChange={(event) => setEditGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder="Auto if empty" />
+                {t('groups.code')}
+                <input value={editGroupForm.code} onChange={(event) => setEditGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder={t('sessions.autoIfEmpty')} />
               </label>
             </div>
             <div className="two-col">
               <label>
-                Status
+                {t('courses.status')}
                 <select value={editGroupForm.status} onChange={(event) => setEditGroupForm((current) => ({ ...current, status: event.target.value as GroupStatus }))}>
-                  <option value="planned">Planned</option>
-                  <option value="open">Open</option>
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
+                  <option value="planned">{t('courses.statusPlanned')}</option>
+                  <option value="open">{t('groups.statusOpen')}</option>
+                  <option value="active">{t('groups.statusActive')}</option>
+                  <option value="completed">{t('groups.statusCompleted')}</option>
+                  <option value="cancelled">{t('groups.statusCancelled')}</option>
                 </select>
               </label>
               <label>
-                Seat limit
-                <input type="number" min="1" value={editGroupForm.seatLimit} onChange={(event) => setEditGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder="No limit" />
+                {t('groups.seatLimit')}
+                <input type="number" min="1" value={editGroupForm.seatLimit} onChange={(event) => setEditGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder={t('groups.noLimit')} />
               </label>
             </div>
             <div className="two-col">
               <label>
-                Start date
+                {t('groups.startDate')}
                 <input type="date" value={editGroupForm.startDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, startDate: event.target.value }))} />
               </label>
               <label>
-                End date
+                {t('groups.endDate')}
                 <input type="date" value={editGroupForm.endDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, endDate: event.target.value }))} />
               </label>
             </div>
             <div className="two-col">
               <label>
-                Timezone
+                {t('groups.timezone')}
                 <input value={editGroupForm.timezone} onChange={(event) => setEditGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
               </label>
               {canAssignInstructor ? (
                 <label>
-                  Group instructor
+                  {t('sessions.groupInstructor')}
                   <select value={editGroupForm.instructorId} onChange={(event) => setEditGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
-                    <option value="">Use course instructor</option>
+                    <option value="">{t('groups.useCourseInstructor')}</option>
                     {instructorOptions.map((member) => (
                       <option key={member.userId} value={member.userId}>
-                        {member.fullName || member.user?.fullName || member.email || member.user?.email || `Instructor #${member.userId}`}
+                        {member.fullName || member.user?.fullName || member.email || member.user?.email || instructorFallback(member.userId)}
                       </option>
                     ))}
                   </select>
@@ -1722,49 +1778,49 @@ export function SessionsPage() {
               ) : null}
             </div>
             <label>
-              Location
-              <input value={editGroupForm.location} onChange={(event) => setEditGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder="Room, branch, or city" />
+              {t('groups.location')}
+              <input value={editGroupForm.location} onChange={(event) => setEditGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder={t('sessions.locationPlaceholder')} />
             </label>
             <div className="two-col">
               <label>
-                Meeting provider
-                <input value={editGroupForm.meetingProvider} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder="Zoom, Google Meet, branch room" />
+                {t('groups.meetingProvider')}
+                <input value={editGroupForm.meetingProvider} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder={t('sessions.meetingProviderPlaceholder')} />
               </label>
               <label>
-                Meeting URL
+                {t('groups.meetingUrl')}
                 <input value={editGroupForm.meetingUrl} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} placeholder="https://..." />
               </label>
             </div>
           </section>
           <section className="form-section">
-            <h3>Recurring schedule</h3>
+            <h3>{t('groups.recurringSchedule')}</h3>
             <div className="schedule-block-list">
               {editGroupForm.scheduleBlocks.map((block, index) => (
                 <div className="three-col" key={`${index}-${block.day}`}>
                   <label>
-                    Schedule day
+                    {t('groups.scheduleDay')}
                     <select value={block.day} onChange={(event) => setEditGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
                     }))}>
-                      <option value="mon">Monday</option>
-                      <option value="tue">Tuesday</option>
-                      <option value="wed">Wednesday</option>
-                      <option value="thu">Thursday</option>
-                      <option value="fri">Friday</option>
-                      <option value="sat">Saturday</option>
-                      <option value="sun">Sunday</option>
+                      <option value="mon">{t('groups.dayMon')}</option>
+                      <option value="tue">{t('groups.dayTue')}</option>
+                      <option value="wed">{t('groups.dayWed')}</option>
+                      <option value="thu">{t('groups.dayThu')}</option>
+                      <option value="fri">{t('groups.dayFri')}</option>
+                      <option value="sat">{t('groups.daySat')}</option>
+                      <option value="sun">{t('groups.daySun')}</option>
                     </select>
                   </label>
                   <label>
-                    Starts
+                    {t('groups.starts')}
                     <input type="time" value={block.startTime} onChange={(event) => setEditGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
                     }))} />
                   </label>
                   <label>
-                    Ends
+                    {t('groups.ends')}
                     <input type="time" value={block.endTime} onChange={(event) => setEditGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
@@ -1774,35 +1830,35 @@ export function SessionsPage() {
                     <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.filter((_, itemIndex) => itemIndex !== index),
-                    }))}>Remove block</button>
+                    }))}>{t('groups.removeBlock')}</button>
                   ) : null}
                 </div>
               ))}
               <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
                 ...current,
                 scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
-              }))}>Add schedule block</button>
+              }))}>{t('groups.addScheduleBlock')}</button>
             </div>
             <label>
-              Schedule note
-              <input value={editGroupForm.scheduleNote} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder="Optional recurring schedule note" />
+              {t('groups.scheduleNote')}
+              <input value={editGroupForm.scheduleNote} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder={t('sessions.scheduleNotePlaceholder')} />
             </label>
           </section>
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(false)} disabled={updatingGroup}>Cancel</button>
-            <button type="submit" disabled={updatingGroup}>{updatingGroup ? 'Saving...' : 'Save group'}</button>
+            <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(false)} disabled={updatingGroup}>{t('courses.cancel')}</button>
+            <button type="submit" disabled={updatingGroup}>{updatingGroup ? t('courses.saving') : t('groups.saveGroup')}</button>
           </div>
         </FormModal>
       ) : null}
       {editSessionOpen && selectedSession ? (
         <FormModal labelledBy="edit-session-title" onClose={() => setEditSessionOpen(false)} onSubmit={submitSessionUpdate}>
           <div className="modal-header-block">
-            <span>{selectedGroup?.name ?? 'Selected group'}</span>
-            <h2 id="edit-session-title">Edit session</h2>
-            <p>Update schedule, status, notes, and recording details for this session.</p>
+            <span>{selectedGroup?.name ?? t('courses.selectedGroup')}</span>
+            <h2 id="edit-session-title">{t('sessions.editSession')}</h2>
+            <p>{t('sessions.editSessionDetail')}</p>
           </div>
           <label>
-            Title
+            {t('courses.title')}
             <input
               value={editSessionForm.title}
               onChange={(event) => {
@@ -1817,7 +1873,7 @@ export function SessionsPage() {
           </label>
           <div className="two-col">
             <label>
-              Starts
+              {t('groups.starts')}
               <input
                 type="datetime-local"
                 value={editSessionForm.startsAt}
@@ -1831,7 +1887,7 @@ export function SessionsPage() {
               {sessionEditErrors.startsAt ? <span className="field-error">{sessionEditErrors.startsAt}</span> : null}
             </label>
             <label>
-              Ends
+              {t('groups.ends')}
               <input
                 type="datetime-local"
                 value={editSessionForm.endsAt}
@@ -1846,15 +1902,15 @@ export function SessionsPage() {
             </label>
           </div>
           <label>
-            Status
+            {t('courses.status')}
             <select value={editSessionForm.status} onChange={(event) => setEditSessionForm((current) => ({ ...current, status: event.target.value as 'scheduled' | 'completed' | 'cancelled' }))}>
-              <option value="scheduled">Scheduled</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="scheduled">{t('courses.statusScheduled')}</option>
+              <option value="completed">{t('groups.statusCompleted')}</option>
+              <option value="cancelled">{t('groups.statusCancelled')}</option>
             </select>
           </label>
           <label>
-            Recording URL
+            {t('sessions.recordingUrl')}
             <input
               value={editSessionForm.recordingUrl}
               onChange={(event) => {
@@ -1867,25 +1923,25 @@ export function SessionsPage() {
             {sessionEditErrors.recordingUrl ? <span className="field-error">{sessionEditErrors.recordingUrl}</span> : null}
           </label>
           <label>
-            Notes
+            {t('sessions.notes')}
             <textarea value={editSessionForm.notes} onChange={(event) => setEditSessionForm((current) => ({ ...current, notes: event.target.value }))} />
           </label>
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setEditSessionOpen(false)} disabled={updatingSession}>Cancel</button>
-            <button type="submit" disabled={updatingSession}>{updatingSession ? 'Saving...' : 'Save session'}</button>
+            <button type="button" className="secondary-button" onClick={() => setEditSessionOpen(false)} disabled={updatingSession}>{t('courses.cancel')}</button>
+            <button type="submit" disabled={updatingSession}>{updatingSession ? t('courses.saving') : t('sessions.saveSession')}</button>
           </div>
         </FormModal>
       ) : null}
       {pendingRemoval ? (
         <Modal labelledBy="confirm-removal-title" onClose={() => setPendingRemoval(null)}>
           <div className="modal-header-block">
-            <span>Confirm removal</span>
-            <h2 id="confirm-removal-title">Remove {pendingRemoval.type}</h2>
-            <p>This changes the selected group or session immediately.</p>
+            <span>{t('sessions.confirmRemoval')}</span>
+            <h2 id="confirm-removal-title">{t('sessions.removeType', { type: removalTypeLabel(pendingRemoval.type) })}</h2>
+            <p>{t('sessions.removalImmediate')}</p>
           </div>
-          <p className="muted-text">Remove <strong>{pendingRemovalTitle}</strong>?</p>
+          <p className="muted-text">{t('sessions.removeItemQuestion', { name: pendingRemovalTitle })}</p>
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setPendingRemoval(null)} disabled={pendingRemovalBusy}>Cancel</button>
+            <button type="button" className="secondary-button" onClick={() => setPendingRemoval(null)} disabled={pendingRemovalBusy}>{t('courses.cancel')}</button>
             <button
               type="button"
               className="danger-button"
@@ -1902,7 +1958,7 @@ export function SessionsPage() {
                 void removeMaterial(pendingRemoval.materialIndex);
               }}
             >
-              {pendingRemovalBusy ? 'Removing...' : 'Remove'}
+              {pendingRemovalBusy ? t('groups.removing') : t('groups.remove')}
             </button>
           </div>
         </Modal>
@@ -1910,13 +1966,13 @@ export function SessionsPage() {
       {createModal === 'group' ? (
         <FormModal labelledBy="create-group-title" onClose={() => setCreateModal(null)} onSubmit={submitGroup}>
             <div className="modal-header-block">
-              <span>{selectedCourse?.title ?? 'Course required'}</span>
-              <h2 id="create-group-title">Create group</h2>
-              <p>Groups organize learners inside the selected tenant course.</p>
+              <span>{selectedCourse?.title ?? t('groups.courseRequired')}</span>
+              <h2 id="create-group-title">{t('groups.createGroup')}</h2>
+              <p>{t('sessions.createGroupDetail')}</p>
             </div>
             <div className="two-col">
               <label>
-                Name
+                {t('groups.name')}
                 <input
                   value={groupForm.name}
                   onChange={(event) => {
@@ -1925,53 +1981,53 @@ export function SessionsPage() {
                   }}
                   className={createErrors.groupName ? 'input-error' : ''}
                   aria-invalid={!!createErrors.groupName}
-                  placeholder="Spring A1 group"
+                  placeholder={t('sessions.groupNamePlaceholder')}
                   autoFocus
                 />
                 {createErrors.groupName ? <span className="field-error">{createErrors.groupName}</span> : null}
               </label>
               <label>
-                Code
-                <input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder="Auto if empty" />
+                {t('groups.code')}
+                <input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder={t('sessions.autoIfEmpty')} />
               </label>
             </div>
             <div className="two-col">
               <label>
-                Status
+                {t('courses.status')}
                 <select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as 'planned' | 'open' | 'active' | 'completed' | 'cancelled' }))}>
-                  <option value="planned">Planned</option>
-                  <option value="open">Open</option>
-                  <option value="active">Active</option>
+                  <option value="planned">{t('courses.statusPlanned')}</option>
+                  <option value="open">{t('groups.statusOpen')}</option>
+                  <option value="active">{t('groups.statusActive')}</option>
                 </select>
               </label>
               <label>
-                Seat limit
-                <input type="number" min="1" value={groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder="No limit" />
+                {t('groups.seatLimit')}
+                <input type="number" min="1" value={groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder={t('groups.noLimit')} />
               </label>
             </div>
             <div className="two-col">
               <label>
-                Start date
+                {t('groups.startDate')}
                 <input type="date" value={groupForm.startDate} onChange={(event) => setGroupForm((current) => ({ ...current, startDate: event.target.value }))} />
               </label>
               <label>
-                End date
+                {t('groups.endDate')}
                 <input type="date" value={groupForm.endDate} onChange={(event) => setGroupForm((current) => ({ ...current, endDate: event.target.value }))} />
               </label>
             </div>
             <div className="two-col">
               <label>
-                Timezone
+                {t('groups.timezone')}
                 <input value={groupForm.timezone} onChange={(event) => setGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
               </label>
               {canAssignInstructor ? (
                 <label>
-                  Group instructor
+                  {t('sessions.groupInstructor')}
                   <select value={groupForm.instructorId} onChange={(event) => setGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
-                    <option value="">Use course instructor</option>
+                    <option value="">{t('groups.useCourseInstructor')}</option>
                     {instructorOptions.map((member) => (
                       <option key={member.userId} value={member.userId}>
-                        {member.fullName || member.user?.fullName || member.email || member.user?.email || `Instructor #${member.userId}`}
+                        {member.fullName || member.user?.fullName || member.email || member.user?.email || instructorFallback(member.userId)}
                       </option>
                     ))}
                   </select>
@@ -1979,16 +2035,16 @@ export function SessionsPage() {
               ) : null}
             </div>
             <label>
-              Location
-              <input value={groupForm.location} onChange={(event) => setGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder="Room, branch, or city" />
+              {t('groups.location')}
+              <input value={groupForm.location} onChange={(event) => setGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder={t('sessions.locationPlaceholder')} />
             </label>
             <div className="two-col">
               <label>
-                Meeting provider
-                <input value={groupForm.meetingProvider} onChange={(event) => setGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder="Zoom, Google Meet, branch room" />
+                {t('groups.meetingProvider')}
+                <input value={groupForm.meetingProvider} onChange={(event) => setGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder={t('sessions.meetingProviderPlaceholder')} />
               </label>
               <label>
-                Meeting URL
+                {t('groups.meetingUrl')}
                 <input value={groupForm.meetingUrl} onChange={(event) => setGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} placeholder="https://..." />
               </label>
             </div>
@@ -1996,29 +2052,29 @@ export function SessionsPage() {
               {groupForm.scheduleBlocks.map((block, index) => (
                 <div className="three-col" key={`${index}-${block.day}`}>
                   <label>
-                    Schedule day
+                    {t('groups.scheduleDay')}
                     <select value={block.day} onChange={(event) => setGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
                     }))}>
-                      <option value="mon">Monday</option>
-                      <option value="tue">Tuesday</option>
-                      <option value="wed">Wednesday</option>
-                      <option value="thu">Thursday</option>
-                      <option value="fri">Friday</option>
-                      <option value="sat">Saturday</option>
-                      <option value="sun">Sunday</option>
+                      <option value="mon">{t('groups.dayMon')}</option>
+                      <option value="tue">{t('groups.dayTue')}</option>
+                      <option value="wed">{t('groups.dayWed')}</option>
+                      <option value="thu">{t('groups.dayThu')}</option>
+                      <option value="fri">{t('groups.dayFri')}</option>
+                      <option value="sat">{t('groups.daySat')}</option>
+                      <option value="sun">{t('groups.daySun')}</option>
                     </select>
                   </label>
                   <label>
-                    Starts
+                    {t('groups.starts')}
                     <input type="time" value={block.startTime} onChange={(event) => setGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
                     }))} />
                   </label>
                   <label>
-                    Ends
+                    {t('groups.ends')}
                     <input type="time" value={block.endTime} onChange={(event) => setGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
@@ -2028,34 +2084,34 @@ export function SessionsPage() {
                     <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.filter((_, itemIndex) => itemIndex !== index),
-                    }))}>Remove block</button>
+                    }))}>{t('groups.removeBlock')}</button>
                   ) : null}
                 </div>
               ))}
               <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
                 ...current,
                 scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
-              }))}>Add schedule block</button>
+              }))}>{t('groups.addScheduleBlock')}</button>
             </div>
             <label>
-              Schedule note
-              <input value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder="Optional recurring schedule note" />
+              {t('groups.scheduleNote')}
+              <input value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder={t('sessions.scheduleNotePlaceholder')} />
             </label>
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingGroup}>Cancel</button>
-              <button type="submit" disabled={!courseId || savingGroup}>{savingGroup ? 'Creating...' : 'Create group'}</button>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingGroup}>{t('courses.cancel')}</button>
+              <button type="submit" disabled={!courseId || savingGroup}>{savingGroup ? t('courses.creating') : t('groups.createGroup')}</button>
             </div>
         </FormModal>
       ) : null}
       {createModal === 'session' ? (
         <FormModal labelledBy="schedule-session-title" onClose={() => setCreateModal(null)} onSubmit={submitSession}>
             <div className="modal-header-block">
-              <span>{selectedGroup?.name ?? 'Group required'}</span>
-              <h2 id="schedule-session-title">Schedule session</h2>
-              <p>Sessions hold live meeting links, materials, attendance, activities, and homework.</p>
+              <span>{selectedGroup?.name ?? t('sessions.groupRequired')}</span>
+              <h2 id="schedule-session-title">{t('sessions.scheduleSession')}</h2>
+              <p>{t('sessions.scheduleSessionDetail')}</p>
             </div>
             <label>
-              Title
+              {t('courses.title')}
               <input
                 value={sessionForm.title}
                 onChange={(event) => {
@@ -2064,14 +2120,14 @@ export function SessionsPage() {
                 }}
                 className={createErrors.sessionTitle ? 'input-error' : ''}
                 aria-invalid={!!createErrors.sessionTitle}
-                placeholder={`Session ${nextSessionIndex}`}
+                placeholder={sessionPlaceholder(nextSessionIndex)}
                 autoFocus
               />
               {createErrors.sessionTitle ? <span className="field-error">{createErrors.sessionTitle}</span> : null}
             </label>
             <div className="two-col">
               <label>
-                Starts
+                {t('groups.starts')}
                 <input
                   type="datetime-local"
                   value={sessionForm.startsAt}
@@ -2085,7 +2141,7 @@ export function SessionsPage() {
                 {createErrors.startsAt ? <span className="field-error">{createErrors.startsAt}</span> : null}
               </label>
               <label>
-                Ends
+                {t('groups.ends')}
                 <input
                   type="datetime-local"
                   value={sessionForm.endsAt}
@@ -2100,12 +2156,12 @@ export function SessionsPage() {
               </label>
             </div>
             <label>
-              Notes
-              <input value={sessionForm.notes} onChange={(event) => setSessionForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional internal note" />
+              {t('sessions.notes')}
+              <input value={sessionForm.notes} onChange={(event) => setSessionForm((current) => ({ ...current, notes: event.target.value }))} placeholder={t('sessions.optionalInternalNote')} />
             </label>
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingSession}>Cancel</button>
-              <button type="submit" disabled={!groupId || savingSession}>{savingSession ? 'Scheduling...' : 'Schedule session'}</button>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingSession}>{t('courses.cancel')}</button>
+              <button type="submit" disabled={!groupId || savingSession}>{savingSession ? t('sessions.scheduling') : t('sessions.scheduleSession')}</button>
             </div>
         </FormModal>
       ) : null}
@@ -2119,31 +2175,31 @@ export function SessionsPage() {
           }}
         >
             <div className="modal-header-block">
-              <span>{selectedGroup?.name ?? 'Group required'}</span>
-              <h2 id="enroll-student-title">Enroll student</h2>
-              <p>Add an existing learner account or create a tenant student and enroll them.</p>
+              <span>{selectedGroup?.name ?? t('sessions.groupRequired')}</span>
+              <h2 id="enroll-student-title">{t('sessions.enrollStudent')}</h2>
+              <p>{t('sessions.enrollStudentDetail')}</p>
             </div>
-            <div className="enrollment-tabs" role="tablist" aria-label="Enrollment mode">
+            <div className="enrollment-tabs" role="tablist" aria-label={t('groups.enrollmentMode')}>
               <button type="button" className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => setEnrollmentMode('existing')}>
-                Existing student
+                {t('groups.existingStudent')}
               </button>
               <button type="button" className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => setEnrollmentMode('new')}>
-                New student
+                {t('groups.newStudent')}
               </button>
             </div>
             {enrollmentMode === 'existing' ? (
               <>
                 <div className="student-search-row">
                   <label>
-                    Search student
-                    <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Name or email" autoFocus />
+                    {t('groups.searchStudent')}
+                    <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder={t('groups.nameOrEmail')} autoFocus />
                   </label>
                   <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>
-                    Search
+                    {t('groups.search')}
                   </button>
                 </div>
                 <label>
-                  Student
+                  {t('courses.student')}
                   <select
                     value={selectedStudentId ?? ''}
                     onChange={(event) => {
@@ -2154,7 +2210,7 @@ export function SessionsPage() {
                     className={createErrors.student ? 'input-error' : ''}
                     aria-invalid={!!createErrors.student}
                   >
-                    <option value="">Select student</option>
+                    <option value="">{t('groups.selectStudent')}</option>
                     {studentResults.map((student) => (
                       <option key={student.id} value={student.id}>
                         {student.fullName || student.email} ({student.email})
@@ -2168,16 +2224,16 @@ export function SessionsPage() {
               <>
                 <div className="two-col">
                   <label>
-                    Full name
+                    {t('groups.fullName')}
                     <input
                       value={studentInviteForm.fullName}
                       onChange={(event) => setStudentInviteForm((current) => ({ ...current, fullName: event.target.value }))}
-                      placeholder="Full name"
+                      placeholder={t('groups.fullName')}
                       autoFocus
                     />
                   </label>
                   <label>
-                    Email
+                    {t('groups.email')}
                     <input
                       type="email"
                       value={studentInviteForm.email}
@@ -2192,14 +2248,14 @@ export function SessionsPage() {
                     checked={studentInviteForm.sendEmail}
                     onChange={(event) => setStudentInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))}
                   />
-                  Send setup email
+                  {t('groups.sendSetupEmail')}
                 </label>
               </>
             )}
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={enrolling}>Cancel</button>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={enrolling}>{t('courses.cancel')}</button>
               <button type="submit" disabled={!courseId || !groupId || (enrollmentMode === 'existing' && !selectedStudentId) || enrolling}>
-                {enrolling ? 'Working...' : enrollmentMode === 'existing' ? 'Enroll student' : 'Create and enroll'}
+                {enrolling ? t('auth.working') : enrollmentMode === 'existing' ? t('sessions.enrollStudent') : t('groups.createAndEnroll')}
               </button>
             </div>
         </FormModal>
@@ -2207,13 +2263,13 @@ export function SessionsPage() {
       {createModal === 'activity' ? (
         <FormModal labelledBy="add-activity-title" onClose={() => setCreateModal(null)} onSubmit={submitActivity}>
             <div className="modal-header-block">
-              <span>{selectedSession?.title ?? 'Session required'}</span>
-              <h2 id="add-activity-title">Add activity</h2>
-              <p>Create a discussion, exercise, group work item, or quiz for the selected session.</p>
+              <span>{selectedSession?.title ?? t('sessions.sessionRequired')}</span>
+              <h2 id="add-activity-title">{t('sessions.addActivity')}</h2>
+              <p>{t('sessions.addActivityDetail')}</p>
             </div>
             <div className="two-col">
               <label>
-                Title
+                {t('courses.title')}
                 <input
                   value={activityForm.title}
                   onChange={(event) => {
@@ -2222,39 +2278,39 @@ export function SessionsPage() {
                   }}
                   className={createErrors.activityTitle ? 'input-error' : ''}
                   aria-invalid={!!createErrors.activityTitle}
-                  placeholder="Warm-up discussion"
+                  placeholder={t('sessions.activityTitlePlaceholder')}
                   autoFocus
                 />
                 {createErrors.activityTitle ? <span className="field-error">{createErrors.activityTitle}</span> : null}
               </label>
               <label>
-                Type
+                {t('courses.type')}
                 <select value={activityForm.type} onChange={(event) => setActivityForm((current) => ({ ...current, type: event.target.value as SessionActivityType }))}>
-                  <option value="discussion">Discussion</option>
-                  <option value="exercise">Exercise</option>
-                  <option value="group_work">Group work</option>
-                  <option value="quiz">Quiz</option>
+                  <option value="discussion">{t('sessions.activityTypeDiscussion')}</option>
+                  <option value="exercise">{t('sessions.activityTypeExercise')}</option>
+                  <option value="group_work">{t('sessions.activityTypeGroupWork')}</option>
+                  <option value="quiz">{t('sessions.activityTypeQuiz')}</option>
                 </select>
               </label>
             </div>
             <div className="two-col">
               <label>
-                Status
+                {t('courses.status')}
                 <select value={activityForm.status} onChange={(event) => setActivityForm((current) => ({ ...current, status: event.target.value as SessionActivityStatus }))}>
-                  <option value="planned">Planned</option>
-                  <option value="active">Active</option>
-                  <option value="done">Done</option>
+                  <option value="planned">{t('courses.statusPlanned')}</option>
+                  <option value="active">{t('groups.statusActive')}</option>
+                  <option value="done">{t('sessions.statusDone')}</option>
                 </select>
               </label>
               <label>
-                Description
-                <input value={activityForm.description} onChange={(event) => setActivityForm((current) => ({ ...current, description: event.target.value }))} placeholder="Optional instruction" />
+                {t('courses.description')}
+                <input value={activityForm.description} onChange={(event) => setActivityForm((current) => ({ ...current, description: event.target.value }))} placeholder={t('sessions.optionalInstruction')} />
               </label>
             </div>
             {activityForm.type === 'quiz' ? (
               <div className="quiz-builder">
                 <label>
-                  Question
+                  {t('sessions.question')}
                   <input
                     value={activityForm.quizPrompt}
                     onChange={(event) => {
@@ -2268,7 +2324,7 @@ export function SessionsPage() {
                 </label>
                 <div className="two-col">
                   <label>
-                    Option A
+                    {t('sessions.optionA')}
                     <input
                       value={activityForm.quizOptionA}
                       onChange={(event) => {
@@ -2281,7 +2337,7 @@ export function SessionsPage() {
                     {createErrors.quizOptionA ? <span className="field-error">{createErrors.quizOptionA}</span> : null}
                   </label>
                   <label>
-                    Option B
+                    {t('sessions.optionB')}
                     <input
                       value={activityForm.quizOptionB}
                       onChange={(event) => {
@@ -2295,17 +2351,17 @@ export function SessionsPage() {
                   </label>
                 </div>
                 <label>
-                  Correct answer
+                  {t('sessions.correctAnswer')}
                   <select value={activityForm.quizCorrectOption} onChange={(event) => setActivityForm((current) => ({ ...current, quizCorrectOption: event.target.value as 'a' | 'b' }))}>
-                    <option value="a">Option A</option>
-                    <option value="b">Option B</option>
+                    <option value="a">{t('sessions.optionA')}</option>
+                    <option value="b">{t('sessions.optionB')}</option>
                   </select>
                 </label>
               </div>
             ) : null}
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingActivity}>Cancel</button>
-              <button type="submit" disabled={savingActivity}>{savingActivity ? 'Saving...' : 'Add activity'}</button>
+              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingActivity}>{t('courses.cancel')}</button>
+              <button type="submit" disabled={savingActivity}>{savingActivity ? t('courses.saving') : t('sessions.addActivity')}</button>
             </div>
         </FormModal>
       ) : null}

@@ -1,5 +1,6 @@
 import type { Course } from '../../types/domain';
 import { readable } from '../../lib/format';
+import i18n from '../../i18n/config';
 
 export type WorkflowScope = {
   courseId?: number;
@@ -22,21 +23,26 @@ export function isCourseWorkflowReady(course: Course | undefined | null, require
 }
 
 export function courseWorkflowBlocker(course: Course | undefined | null, requireDelivery = true) {
-  if (!course) return 'Choose a course first.';
+  if (!course) return i18n.t('courses.blockerChooseCourse');
   if (requireDelivery && !isDeliveryCourseType(course)) {
-    return 'Groups and scheduled sessions require an approved offline or online live course.';
+    return i18n.t('courses.blockerDeliveryType');
   }
   if (course.status !== 'approved') {
-    return 'Submit and approve this course before opening delivery tools.';
+    return i18n.t('courses.blockerApproval');
   }
   if (course.isPublished !== true) {
-    return 'This course is approved but not published, so delivery tools remain locked.';
+    return i18n.t('courses.blockerPublish');
   }
   return '';
 }
 
 export function formatCourseType(value: Course['courseType'] | string | undefined | null) {
-  return readable(value || 'video');
+  const labels: Record<string, string> = {
+    offline: i18n.t('courses.typeOffline'),
+    online_live: i18n.t('courses.typeOnlineLive'),
+    video: i18n.t('courses.typeVideo'),
+  };
+  return labels[String(value || 'video')] ?? readable(value || 'video');
 }
 
 export function workflowPath(path: string, scope: WorkflowScope) {

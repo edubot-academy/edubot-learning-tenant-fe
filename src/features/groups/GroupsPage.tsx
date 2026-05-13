@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { FiCalendar, FiCheckSquare, FiClipboard, FiEdit2, FiPlus } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
@@ -25,7 +26,7 @@ import { formatDate, readable } from '../../lib/format';
 import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { isTenantAdmin } from '../tenant/tenantRoles';
-import { courseWorkflowBlocker, formatCourseType, isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
+import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 
 type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
 type ScheduleDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
@@ -93,6 +94,7 @@ function groupToForm(group?: CourseGroup | null) {
 }
 
 export function GroupsPage() {
+  const { t } = useTranslation();
   const { activeTenant } = useTenant();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -147,7 +149,35 @@ export function GroupsPage() {
   const scheduleDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
   const generationReady = scheduleBlocksReady && scheduleDatesReady;
   const selectedCourseReady = isCourseWorkflowReady(selectedCourse);
-  const selectedCourseBlocker = courseWorkflowBlocker(selectedCourse);
+  const courseTypeLabel = (value: Course['courseType'] | string | undefined | null) => (
+    value === 'offline' ? t('courses.typeOffline') : value === 'online_live' ? t('courses.typeOnlineLive') : t('courses.typeVideo')
+  );
+  const statusLabel = (value: string | undefined | null) => {
+    const status = value || 'planned';
+    const key = status.replaceAll('_', '');
+    const statusKeys: Record<string, string> = {
+      active: 'groups.statusActive',
+      approved: 'courses.statusApproved',
+      cancelled: 'groups.statusCancelled',
+      completed: 'groups.statusCompleted',
+      draft: 'courses.statusDraft',
+      existing: 'groups.existing',
+      new: 'groups.new',
+      open: 'groups.statusOpen',
+      pending: 'courses.statusPending',
+      planned: 'courses.statusPlanned',
+      rejected: 'courses.statusRejected',
+      scheduled: 'courses.statusScheduled',
+    };
+    return statusKeys[key] ? t(statusKeys[key]) : readable(status);
+  };
+  const selectedCourseBlocker = (() => {
+    if (!selectedCourse) return t('courses.blockerChooseCourse');
+    if (!['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''))) return t('courses.blockerDeliveryType');
+    if (selectedCourse.status !== 'approved') return t('courses.blockerApproval');
+    if (selectedCourse.isPublished !== true) return t('courses.blockerPublish');
+    return '';
+  })();
   const selectedScope = { courseId: selectedGroup?.courseId ?? selectedCourse?.id, groupId: selectedGroup?.id };
   const nextSessionLink = workflowPath('/sessions', selectedScope);
   const attendanceLink = workflowPath('/attendance', selectedScope);
@@ -174,7 +204,7 @@ export function GroupsPage() {
         setMembers(nextMembers);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load groups workspace');
+        if (!cancelled) toast.error(t('groups.workspaceLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -182,7 +212,7 @@ export function GroupsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, canAssignInstructor]);
+  }, [activeTenantId, canAssignInstructor, t]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -206,7 +236,7 @@ export function GroupsPage() {
         setGroups(nextGroups);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load course groups');
+        if (!cancelled) toast.error(t('groups.courseGroupsLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -214,7 +244,7 @@ export function GroupsPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+  }, [courseId, t]);
 
   useEffect(() => {
     setGroupId((current) => {
@@ -248,7 +278,7 @@ export function GroupsPage() {
         setStudents(nextStudents);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load group detail');
+        if (!cancelled) toast.error(t('groups.groupDetailLoadFailed'));
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -256,7 +286,7 @@ export function GroupsPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupId, groups]);
+  }, [groupId, groups, t]);
 
   useEffect(() => {
     const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId });
@@ -304,8 +334,8 @@ export function GroupsPage() {
 
   const submitCreateGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!courseId) return toast.error('Select a course first');
-    if (!groupForm.name.trim()) return toast.error('Group name is required');
+    if (!courseId) return toast.error(t('groups.selectCourseFirst'));
+    if (!groupForm.name.trim()) return toast.error(t('groups.groupNameRequired'));
     setSavingGroup(true);
     try {
       const payload = toPayload();
@@ -316,9 +346,9 @@ export function GroupsPage() {
       });
       await reloadGroups(courseId, saved.id);
       setIsCreateOpen(false);
-      toast.success('Group created');
+      toast.success(t('groups.groupCreated'));
     } catch {
-      toast.error('Could not create group');
+      toast.error(t('groups.groupCreateFailed'));
     } finally {
       setSavingGroup(false);
     }
@@ -327,15 +357,15 @@ export function GroupsPage() {
   const submitUpdateGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!groupId || !courseId) return;
-    if (!groupForm.name.trim()) return toast.error('Group name is required');
+    if (!groupForm.name.trim()) return toast.error(t('groups.groupNameRequired'));
     setSavingGroup(true);
     try {
       await updateCourseGroup(groupId, toPayload());
       await reloadGroups(courseId, groupId);
       setIsEditOpen(false);
-      toast.success('Group updated');
+      toast.success(t('groups.groupUpdated'));
     } catch {
-      toast.error('Could not update group');
+      toast.error(t('groups.groupUpdateFailed'));
     } finally {
       setSavingGroup(false);
     }
@@ -348,7 +378,7 @@ export function GroupsPage() {
       setStudentResults(results);
       setSelectedStudentId(results[0]?.id);
     } catch {
-      toast.error('Could not search students');
+      toast.error(t('groups.studentSearchFailed'));
     } finally {
       setEnrolling(false);
     }
@@ -356,7 +386,7 @@ export function GroupsPage() {
 
   const submitEnrollment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!courseId || !groupId || !selectedStudentId) return toast.error('Select a student to enroll');
+    if (!courseId || !groupId || !selectedStudentId) return toast.error(t('groups.selectStudentToEnroll'));
     setEnrolling(true);
     try {
       await enrollUser({ courseId, groupId, userId: selectedStudentId });
@@ -364,9 +394,9 @@ export function GroupsPage() {
       setStudentQuery('');
       setStudentResults([]);
       setSelectedStudentId(undefined);
-      toast.success('Student enrolled');
+      toast.success(t('groups.studentEnrolled'));
     } catch {
-      toast.error('Could not enroll student');
+      toast.error(t('groups.studentEnrollFailed'));
     } finally {
       setEnrolling(false);
     }
@@ -376,7 +406,7 @@ export function GroupsPage() {
     event.preventDefault();
     if (!activeTenantId || !courseId || !groupId) return;
     if (!studentInviteForm.fullName.trim() || !studentInviteForm.email.trim()) {
-      toast.error('Student name and email are required');
+      toast.error(t('groups.studentNameEmailRequired'));
       return;
     }
     setEnrolling(true);
@@ -390,9 +420,9 @@ export function GroupsPage() {
       await enrollUser({ courseId, groupId, userId: member.userId });
       await reloadGroupDetail(groupId);
       setStudentInviteForm(emptyStudentInviteForm);
-      toast.success(member.onboarding?.emailSent ? 'Student invited and enrolled' : 'Student created and enrolled');
+      toast.success(member.onboarding?.emailSent ? t('groups.studentInvitedEnrolled') : t('groups.studentCreatedEnrolled'));
     } catch {
-      toast.error('Could not create and enroll student');
+      toast.error(t('groups.studentCreateEnrollFailed'));
     } finally {
       setEnrolling(false);
     }
@@ -404,9 +434,9 @@ export function GroupsPage() {
     try {
       await unenrollUser(courseId, student.userId);
       await reloadGroupDetail(groupId);
-      toast.success('Student removed');
+      toast.success(t('groups.studentRemoved'));
     } catch {
-      toast.error('Could not remove student');
+      toast.error(t('groups.studentRemoveFailed'));
     } finally {
       setRemovingStudentId(undefined);
       setStudentToRemove(null);
@@ -415,28 +445,28 @@ export function GroupsPage() {
 
   const previewGeneration = async () => {
     if (!groupId) return;
-    if (!generationReady) return toast.error('Complete schedule blocks and generation dates first');
+    if (!generationReady) return toast.error(t('groups.completeScheduleFirst'));
     setGenerationLoading(true);
     try {
       setGenerationPreview(await previewGeneratedSessions(groupId, generationRange));
-      toast.success('Preview ready');
+      toast.success(t('groups.previewReady'));
     } catch {
-      toast.error('Could not preview sessions. Check schedule settings.');
+      toast.error(t('groups.previewFailed'));
     } finally {
       setGenerationLoading(false);
     }
   };
 
   const generateSessions = async () => {
-    if (!groupId || !generationPreview?.newCount) return toast.error('Preview new sessions first');
+    if (!groupId || !generationPreview?.newCount) return toast.error(t('groups.previewNewSessionsFirst'));
     setGenerationLoading(true);
     try {
       const result = await generateGroupSessions(groupId, generationRange);
       await reloadGroupDetail(groupId);
       setGenerationPreview(null);
-      toast.success(`Created ${result.createdCount} sessions`);
+      toast.success(t('groups.sessionsCreated', { count: result.createdCount }));
     } catch {
-      toast.error('Could not generate sessions');
+      toast.error(t('groups.generateFailed'));
     } finally {
       setGenerationLoading(false);
     }
@@ -445,56 +475,56 @@ export function GroupsPage() {
   const renderGroupForm = () => (
     <>
       <section className="form-section">
-        <h3>Group basics</h3>
+        <h3>{t('groups.groupBasics')}</h3>
         <div className="two-col">
-          <label>Name<input value={groupForm.name} onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value }))} /></label>
-          <label>Code<input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder="Auto-generated if empty" /></label>
+          <label>{t('groups.name')}<input value={groupForm.name} onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value }))} /></label>
+          <label>{t('groups.code')}<input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder={t('groups.codePlaceholder')} /></label>
         </div>
-        <label>Status<select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as GroupStatus }))}>
-          <option value="planned">Planned</option><option value="open">Open</option><option value="active">Active</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option>
+        <label>{t('groups.status')}<select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as GroupStatus }))}>
+          <option value="planned">{t('courses.statusPlanned')}</option><option value="open">{t('groups.statusOpen')}</option><option value="active">{t('groups.statusActive')}</option><option value="completed">{t('groups.statusCompleted')}</option><option value="cancelled">{t('groups.statusCancelled')}</option>
         </select></label>
       </section>
       <section className="form-section">
-        <h3>Dates and capacity</h3>
+        <h3>{t('groups.datesCapacity')}</h3>
         <div className="two-col">
-          <label>Start date<input type="date" value={groupForm.startDate} onChange={(event) => setGroupForm((current) => ({ ...current, startDate: event.target.value }))} /></label>
-          <label>End date<input type="date" value={groupForm.endDate} onChange={(event) => setGroupForm((current) => ({ ...current, endDate: event.target.value }))} /></label>
+          <label>{t('groups.startDate')}<input type="date" value={groupForm.startDate} onChange={(event) => setGroupForm((current) => ({ ...current, startDate: event.target.value }))} /></label>
+          <label>{t('groups.endDate')}<input type="date" value={groupForm.endDate} onChange={(event) => setGroupForm((current) => ({ ...current, endDate: event.target.value }))} /></label>
         </div>
         <div className="two-col">
-          <label>Seat limit<input type="number" min="1" value={groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder="No limit" /></label>
-          <label>Timezone<input value={groupForm.timezone} onChange={(event) => setGroupForm((current) => ({ ...current, timezone: event.target.value }))} /></label>
+          <label>{t('groups.seatLimit')}<input type="number" min="1" value={groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder={t('groups.noLimit')} /></label>
+          <label>{t('groups.timezone')}<input value={groupForm.timezone} onChange={(event) => setGroupForm((current) => ({ ...current, timezone: event.target.value }))} /></label>
         </div>
       </section>
       <section className="form-section">
-        <h3>Instructor and location</h3>
+        <h3>{t('groups.instructorLocation')}</h3>
         {canAssignInstructor ? (
-          <label>Instructor<select value={groupForm.instructorId} onChange={(event) => setGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
-            <option value="">Use course instructor</option>
-            {instructorOptions.map((member) => <option key={member.userId} value={member.userId}>{member.fullName || member.user?.fullName || member.email || member.user?.email || `Instructor #${member.userId}`}</option>)}
+          <label>{t('groups.instructor')}<select value={groupForm.instructorId} onChange={(event) => setGroupForm((current) => ({ ...current, instructorId: event.target.value }))}>
+            <option value="">{t('groups.useCourseInstructor')}</option>
+            {instructorOptions.map((member) => <option key={member.userId} value={member.userId}>{member.fullName || member.user?.fullName || member.email || member.user?.email || t('groups.instructorFallback', { id: member.userId })}</option>)}
           </select></label>
         ) : null}
-        <label>Location<input value={groupForm.location} onChange={(event) => setGroupForm((current) => ({ ...current, location: event.target.value }))} /></label>
+        <label>{t('groups.location')}<input value={groupForm.location} onChange={(event) => setGroupForm((current) => ({ ...current, location: event.target.value }))} /></label>
         <div className="two-col">
-          <label>Meeting provider<input value={groupForm.meetingProvider} onChange={(event) => setGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} /></label>
-          <label>Meeting URL<input value={groupForm.meetingUrl} onChange={(event) => setGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} /></label>
+          <label>{t('groups.meetingProvider')}<input value={groupForm.meetingProvider} onChange={(event) => setGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} /></label>
+          <label>{t('groups.meetingUrl')}<input value={groupForm.meetingUrl} onChange={(event) => setGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} /></label>
         </div>
       </section>
       <section className="form-section">
-        <h3>Recurring schedule</h3>
+        <h3>{t('groups.recurringSchedule')}</h3>
         <div className="schedule-block-list">
           {groupForm.scheduleBlocks.map((block, index) => (
             <div className="three-col" key={`${index}-${block.day}`}>
-              <label>Schedule day<select value={block.day} onChange={(event) => setGroupForm((current) => ({
+              <label>{t('groups.scheduleDay')}<select value={block.day} onChange={(event) => setGroupForm((current) => ({
                 ...current,
                 scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
               }))}>
-                <option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option>
+                <option value="mon">{t('groups.dayMon')}</option><option value="tue">{t('groups.dayTue')}</option><option value="wed">{t('groups.dayWed')}</option><option value="thu">{t('groups.dayThu')}</option><option value="fri">{t('groups.dayFri')}</option><option value="sat">{t('groups.daySat')}</option><option value="sun">{t('groups.daySun')}</option>
               </select></label>
-              <label>Starts<input type="time" value={block.startTime} onChange={(event) => setGroupForm((current) => ({
+              <label>{t('groups.starts')}<input type="time" value={block.startTime} onChange={(event) => setGroupForm((current) => ({
                 ...current,
                 scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
               }))} /></label>
-              <label>Ends<input type="time" value={block.endTime} onChange={(event) => setGroupForm((current) => ({
+              <label>{t('groups.ends')}<input type="time" value={block.endTime} onChange={(event) => setGroupForm((current) => ({
                 ...current,
                 scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
               }))} /></label>
@@ -502,64 +532,64 @@ export function GroupsPage() {
                 <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
                   ...current,
                   scheduleBlocks: current.scheduleBlocks.filter((_, itemIndex) => itemIndex !== index),
-                }))}>Remove block</button>
+                }))}>{t('groups.removeBlock')}</button>
               ) : null}
             </div>
           ))}
           <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
             ...current,
             scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
-          }))}>Add schedule block</button>
+          }))}>{t('groups.addScheduleBlock')}</button>
         </div>
-        <label>Schedule note<textarea value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} /></label>
+        <label>{t('groups.scheduleNote')}<textarea value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} /></label>
       </section>
     </>
   );
 
   return (
     <>
-      <PageHeader title="Groups" eyebrow={activeTenant?.name} />
+      <PageHeader title={t('navigation.groups')} eyebrow={activeTenant?.name} />
       <div className="workspace-grid">
         <section className="content-section">
           <div className="section-heading-row">
-            <div><h2>Courses</h2><span>Select a tenant course, then manage its groups.</span></div>
-            <button type="button" className="primary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> Create group</button>
+            <div><h2>{t('navigation.courses')}</h2><span>{t('groups.courseSelectionHint')}</span></div>
+            <button type="button" className="primary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> {t('groups.createGroup')}</button>
           </div>
           {ineligibleCourseCount > 0 ? (
-            <p className="panel-note">{ineligibleCourseCount} course{ineligibleCourseCount === 1 ? '' : 's'} shown but locked because groups require approved, published offline or live courses.</p>
+            <p className="panel-note">{t('groups.ineligibleCourses', { count: ineligibleCourseCount })}</p>
           ) : null}
-          <input value={courseQuery} onChange={(event) => setCourseQuery(event.target.value)} placeholder="Search courses" />
-          {loading ? <LoadingState label="Loading courses" /> : null}
+          <input value={courseQuery} onChange={(event) => setCourseQuery(event.target.value)} placeholder={t('groups.searchCourses')} />
+          {loading ? <LoadingState label={t('courses.loading')} /> : null}
           <div className="stack-list">
             {filteredCourses.map((course) => (
               <button key={course.id} type="button" className={`stack-list-item ${course.id === courseId ? 'active' : ''}`} onClick={() => setCourseId(course.id)}>
-                <div><strong>{course.title}</strong><span>{formatCourseType(course.courseType)} · {readable(course.status ?? 'draft')}</span></div>
-                <strong className="muted-count">{course.id === courseId ? isCourseWorkflowReady(course) ? `${groups.length} groups` : 'Locked' : 'Select'}</strong>
+                <div><strong>{course.title}</strong><span>{courseTypeLabel(course.courseType)} · {statusLabel(course.status)}</span></div>
+                <strong className="muted-count">{course.id === courseId ? isCourseWorkflowReady(course) ? t('groups.groupCount', { count: groups.length }) : t('groups.locked') : t('groups.select')}</strong>
               </button>
             ))}
-            {!filteredCourses.length ? <EmptyState title="No matching courses" detail="Clear the search or open Courses to create a tenant course." action={<Link className="secondary-link-button" to="/courses">Open courses</Link>} /> : null}
+            {!filteredCourses.length ? <EmptyState title={t('courses.noMatchesTitle')} detail={t('groups.noMatchingCoursesDetail')} action={<Link className="secondary-link-button" to="/courses">{t('overview.openCourses')}</Link>} /> : null}
           </div>
         </section>
 
         <aside className="settings-panel workflow-context-panel">
           <div className="section-heading-row compact">
-            <div><h2>Course groups</h2><span>{selectedCourse?.title ?? 'Choose a course'}</span></div>
+            <div><h2>{t('groups.courseGroups')}</h2><span>{selectedCourse?.title ?? t('groups.chooseCourse')}</span></div>
           </div>
-          {detailLoading ? <LoadingState label="Loading groups" /> : null}
+          {detailLoading ? <LoadingState label={t('groups.loadingGroups')} /> : null}
           <div className="stack-list">
             {groups.map((group) => (
               <button key={group.id} type="button" className={`stack-list-item ${group.id === groupId ? 'active' : ''}`} onClick={() => setGroupId(group.id)}>
-                <div><strong>{group.name}</strong><span>{group.code ?? '-'} · {readable(group.status ?? 'planned')}</span></div>
-                <span className={`status-badge ${group.status ?? 'planned'}`}>{readable(group.status ?? 'planned')}</span>
+                <div><strong>{group.name}</strong><span>{group.code ?? '-'} · {statusLabel(group.status)}</span></div>
+                <span className={`status-badge ${group.status ?? 'planned'}`}>{statusLabel(group.status)}</span>
               </button>
             ))}
             {!groups.length ? (
               <EmptyState
-                title="No groups for this course"
-                detail={selectedCourseReady ? 'Create a group when this course is ready for a cohort, roster, and generated sessions.' : selectedCourseBlocker}
+                title={t('groups.emptyGroupsTitle')}
+                detail={selectedCourseReady ? t('groups.emptyGroupsDetail') : selectedCourseBlocker}
                 action={selectedCourseReady ? (
                   <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }}>
-                    Create group
+                    {t('groups.createGroup')}
                   </button>
                 ) : null}
               />
@@ -571,62 +601,62 @@ export function GroupsPage() {
       {selectedGroup ? (
         <section className="workflow-section workflow-context-panel">
           <div className="section-heading-row">
-            <div><h2>{selectedGroup.name}</h2><span>{selectedCourse?.title ?? 'Selected course'}</span></div>
+            <div><h2>{selectedGroup.name}</h2><span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span></div>
             <div className="page-actions">
-              <span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{readable(selectedGroup.status ?? 'planned')}</span>
-              <button type="button" className="secondary-button" onClick={() => { setGroupForm(groupToForm(selectedGroup)); setIsEditOpen(true); }}><FiEdit2 /> Edit group</button>
-              <Link className="secondary-link-button" to={nextSessionLink}><FiCalendar /> Sessions</Link>
-              <Link className="secondary-link-button" to={attendanceLink}><FiCheckSquare /> Attendance</Link>
-              <Link className="secondary-link-button" to={homeworkLink}><FiClipboard /> Homework</Link>
+              <span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{statusLabel(selectedGroup.status)}</span>
+              <button type="button" className="secondary-button" onClick={() => { setGroupForm(groupToForm(selectedGroup)); setIsEditOpen(true); }}><FiEdit2 /> {t('groups.editGroup')}</button>
+              <Link className="secondary-link-button" to={nextSessionLink}><FiCalendar /> {t('navigation.sessions')}</Link>
+              <Link className="secondary-link-button" to={attendanceLink}><FiCheckSquare /> {t('navigation.attendance')}</Link>
+              <Link className="secondary-link-button" to={homeworkLink}><FiClipboard /> {t('navigation.homework')}</Link>
             </div>
           </div>
           <div className="group-summary-grid">
             <section>
-              <span>Dates</span>
-              <strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : 'Not scheduled'}</strong>
+              <span>{t('groups.dates')}</span>
+              <strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : t('groups.notScheduled')}</strong>
             </section>
             <section>
-              <span>Schedule</span>
+              <span>{t('groups.schedule')}</span>
               <strong>
                 {scheduleBlocksReady
-                  ? `${selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0} block${(selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0) === 1 ? '' : 's'}`
-                  : 'Needs setup'}
+                  ? t('groups.scheduleBlockCount', { count: selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0 })
+                  : t('groups.needsSetup')}
               </strong>
             </section>
             <section>
-              <span>Location</span>
-              <strong>{selectedGroup.location || selectedGroup.meetingProvider || 'Not set'}</strong>
+              <span>{t('groups.location')}</span>
+              <strong>{selectedGroup.location || selectedGroup.meetingProvider || t('states.notSet')}</strong>
             </section>
           </div>
           <div className="stat-grid compact">
-            <section className="stat-tile"><span>Students</span><strong>{students.length}</strong></section>
-            <section className="stat-tile"><span>Sessions</span><strong>{sessions.length}</strong></section>
-            <section className="stat-tile"><span>Capacity</span><strong>{selectedGroup.seatLimit ?? 'Open'}</strong></section>
-            <section className="stat-tile"><span>Timezone</span><strong>{selectedGroup.timezone ?? '-'}</strong></section>
+            <section className="stat-tile"><span>{t('courses.students')}</span><strong>{students.length}</strong></section>
+            <section className="stat-tile"><span>{t('courses.sessions')}</span><strong>{sessions.length}</strong></section>
+            <section className="stat-tile"><span>{t('groups.capacity')}</span><strong>{selectedGroup.seatLimit ?? t('groups.capacityOpen')}</strong></section>
+            <section className="stat-tile"><span>{t('groups.timezone')}</span><strong>{selectedGroup.timezone ?? '-'}</strong></section>
           </div>
           <div className="settings-panel session-generation-panel workflow-context-panel compact">
-            <div className="section-heading-row compact"><div><h3>Generate sessions</h3><span>Uses the saved recurring schedule.</span></div></div>
+            <div className="section-heading-row compact"><div><h3>{t('groups.generateSessions')}</h3><span>{t('groups.generateSessionsHint')}</span></div></div>
             <p className={`panel-note ${generationReady ? 'success' : ''}`}>
-              {generationReady ? 'Schedule and dates are ready for preview.' : 'Add at least one complete schedule block and choose generation dates before previewing sessions.'}
+              {generationReady ? t('groups.generationReady') : t('groups.generationNeedsSetup')}
             </p>
             <div className="three-col">
-              <label>From<input type="date" value={generationRange.fromDate} onChange={(event) => setGenerationRange((current) => ({ ...current, fromDate: event.target.value }))} /></label>
-              <label>To<input type="date" value={generationRange.toDate} onChange={(event) => setGenerationRange((current) => ({ ...current, toDate: event.target.value }))} /></label>
+              <label>{t('groups.from')}<input type="date" value={generationRange.fromDate} onChange={(event) => setGenerationRange((current) => ({ ...current, fromDate: event.target.value }))} /></label>
+              <label>{t('groups.to')}<input type="date" value={generationRange.toDate} onChange={(event) => setGenerationRange((current) => ({ ...current, toDate: event.target.value }))} /></label>
               <div className="generation-actions">
-                <button type="button" className="secondary-button" onClick={() => void previewGeneration()} disabled={generationLoading || !generationReady}>Preview</button>
-                <button type="button" onClick={() => void generateSessions()} disabled={generationLoading || !generationPreview?.newCount}>Generate</button>
+                <button type="button" className="secondary-button" onClick={() => void previewGeneration()} disabled={generationLoading || !generationReady}>{t('groups.preview')}</button>
+                <button type="button" onClick={() => void generateSessions()} disabled={generationLoading || !generationPreview?.newCount}>{t('groups.generate')}</button>
               </div>
             </div>
             {generationPreview ? (
               <div className="generation-preview">
-                <span>Total <strong>{generationPreview.total}</strong></span>
-                <span>New <strong>{generationPreview.newCount}</strong></span>
-                <span>Existing <strong>{generationPreview.existingCount}</strong></span>
+                <span>{t('groups.total')} <strong>{generationPreview.total}</strong></span>
+                <span>{t('groups.new')} <strong>{generationPreview.newCount}</strong></span>
+                <span>{t('groups.existing')} <strong>{generationPreview.existingCount}</strong></span>
                 <div className="stack-list">
                   {generationPreview.items.slice(0, 6).map((item) => (
                     <article key={`${item.kind}-${item.sessionIndex}-${item.startsAt}`} className="stack-list-item">
                       <div><strong>{item.title}</strong><span>{item.day} · {formatDate(item.startsAt)}</span></div>
-                      <span className={`status-badge ${item.kind === 'new' ? 'pending' : 'scheduled'}`}>{readable(item.kind)}</span>
+                      <span className={`status-badge ${item.kind === 'new' ? 'pending' : 'scheduled'}`}>{statusLabel(item.kind)}</span>
                     </article>
                   ))}
                 </div>
@@ -636,60 +666,60 @@ export function GroupsPage() {
           <div className="workspace-grid">
             <section className="content-section">
               <div className="section-heading-row">
-                <div><h2>Roster</h2><span>{students.length} active learner{students.length === 1 ? '' : 's'}</span></div>
+                <div><h2>{t('groups.roster')}</h2><span>{t('groups.activeLearnerCount', { count: students.length })}</span></div>
               </div>
-              <div className="segmented-control enrollment-tabs" role="tablist" aria-label="Enrollment mode">
-                <button type="button" className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => setEnrollmentMode('existing')}>Existing student</button>
-                <button type="button" className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => setEnrollmentMode('new')}>New student</button>
+              <div className="segmented-control enrollment-tabs" role="tablist" aria-label={t('groups.enrollmentMode')}>
+                <button type="button" className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => setEnrollmentMode('existing')}>{t('groups.existingStudent')}</button>
+                <button type="button" className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => setEnrollmentMode('new')}>{t('groups.newStudent')}</button>
               </div>
               {enrollmentMode === 'existing' ? (
                 <form className="student-search-row" onSubmit={submitEnrollment}>
-                  <label>Search student<input value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} placeholder="Name or email" /></label>
-                  <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>Search</button>
+                  <label>{t('groups.searchStudent')}<input value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} placeholder={t('groups.nameOrEmail')} /></label>
+                  <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>{t('groups.search')}</button>
                   <select value={selectedStudentId ?? ''} onChange={(event) => setSelectedStudentId(Number(event.target.value) || undefined)} disabled={!studentResults.length}>
-                    <option value="">Select student</option>
+                    <option value="">{t('groups.selectStudent')}</option>
                     {studentResults.map((student) => <option key={student.id} value={student.id}>{student.fullName || student.email} ({student.email})</option>)}
                   </select>
-                  <button type="submit" className="primary-button" disabled={!selectedStudentId || enrolling}>Enroll</button>
+                  <button type="submit" className="primary-button" disabled={!selectedStudentId || enrolling}>{t('groups.enroll')}</button>
                 </form>
               ) : (
                 <form className="student-search-row" onSubmit={submitInviteAndEnroll}>
-                  <label>New student<input value={studentInviteForm.fullName} onChange={(event) => setStudentInviteForm((current) => ({ ...current, fullName: event.target.value }))} placeholder="Full name" /></label>
-                  <label>Email<input type="email" value={studentInviteForm.email} onChange={(event) => setStudentInviteForm((current) => ({ ...current, email: event.target.value }))} placeholder="student@example.com" /></label>
-                  <label className="inline-check"><input type="checkbox" checked={studentInviteForm.sendEmail} onChange={(event) => setStudentInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))} /> Send setup email</label>
-                  <button type="submit" className="primary-button" disabled={enrolling}>Create and enroll</button>
+                  <label>{t('groups.newStudent')}<input value={studentInviteForm.fullName} onChange={(event) => setStudentInviteForm((current) => ({ ...current, fullName: event.target.value }))} placeholder={t('groups.fullName')} /></label>
+                  <label>{t('groups.email')}<input type="email" value={studentInviteForm.email} onChange={(event) => setStudentInviteForm((current) => ({ ...current, email: event.target.value }))} placeholder="student@example.com" /></label>
+                  <label className="inline-check"><input type="checkbox" checked={studentInviteForm.sendEmail} onChange={(event) => setStudentInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))} /> {t('groups.sendSetupEmail')}</label>
+                  <button type="submit" className="primary-button" disabled={enrolling}>{t('groups.createAndEnroll')}</button>
                 </form>
               )}
               <div className="stack-list">
                 {students.map((student) => (
                   <article key={student.userId} className="stack-list-item">
-                    <div><strong>{student.fullName || student.email || `Student #${student.userId}`}</strong><span>{student.email || 'No email'} · progress {Math.round(student.progressPercent ?? 0)}%</span></div>
+                    <div><strong>{student.fullName || student.email || t('courses.studentFallback', { id: student.userId })}</strong><span>{student.email || t('groups.noEmail')} · {t('groups.progressPercent', { percent: Math.round(student.progressPercent ?? 0) })}</span></div>
                     <button type="button" className="link-button danger" onClick={() => setStudentToRemove(student)} disabled={removingStudentId === student.userId}>
-                      {removingStudentId === student.userId ? 'Removing...' : 'Remove'}
+                      {removingStudentId === student.userId ? t('groups.removing') : t('groups.remove')}
                     </button>
                   </article>
                 ))}
                 {!students.length ? (
                   <EmptyState
-                    title="No students enrolled yet"
-                    detail="Search an existing student or create a tenant student above to enroll them in this group."
+                    title={t('groups.noStudentsTitle')}
+                    detail={t('groups.noStudentsDetail')}
                   />
                 ) : null}
               </div>
             </section>
             <aside className="settings-panel workflow-context-panel">
-              <div className="section-heading-row compact"><div><h2>Upcoming sessions</h2><span>{selectedGroup.name}</span></div></div>
+              <div className="section-heading-row compact"><div><h2>{t('groups.upcomingSessions')}</h2><span>{selectedGroup.name}</span></div></div>
               <div className="stack-list">
                 {sessions.slice(0, 8).map((session) => (
                   <article key={session.id} className="stack-list-item">
                     <div><strong>{session.title}</strong><span>{formatDate(session.startsAt)}</span></div>
-                    <span className={`status-badge ${session.status ?? 'scheduled'}`}>{readable(session.status ?? 'scheduled')}</span>
+                    <span className={`status-badge ${session.status ?? 'scheduled'}`}>{statusLabel(session.status)}</span>
                   </article>
                 ))}
                 {!sessions.length ? (
                   <EmptyState
-                    title="No sessions scheduled yet"
-                    detail="Use the saved group schedule to preview and generate sessions."
+                    title={t('groups.noSessionsTitle')}
+                    detail={t('groups.noSessionsDetail')}
                   />
                 ) : null}
               </div>
@@ -701,13 +731,13 @@ export function GroupsPage() {
       {isEditOpen && selectedGroup ? (
         <FormModal labelledBy="edit-group-title" onClose={() => setIsEditOpen(false)} onSubmit={submitUpdateGroup}>
           <div className="modal-header-block">
-            <span>{selectedCourse?.title ?? 'Selected course'}</span>
-            <h2 id="edit-group-title">Edit group</h2>
+            <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
+            <h2 id="edit-group-title">{t('groups.editGroup')}</h2>
           </div>
           {renderGroupForm()}
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setIsEditOpen(false)} disabled={savingGroup}>Cancel</button>
-            <button type="submit" className="primary-button" disabled={savingGroup}>{savingGroup ? 'Saving...' : 'Save group'}</button>
+            <button type="button" className="secondary-button" onClick={() => setIsEditOpen(false)} disabled={savingGroup}>{t('courses.cancel')}</button>
+            <button type="submit" className="primary-button" disabled={savingGroup}>{savingGroup ? t('courses.saving') : t('groups.saveGroup')}</button>
           </div>
         </FormModal>
       ) : null}
@@ -715,29 +745,29 @@ export function GroupsPage() {
       {isCreateOpen ? (
         <FormModal labelledBy="create-group-title" onClose={() => setIsCreateOpen(false)} onSubmit={submitCreateGroup}>
           <div className="modal-header-block">
-            <span>{selectedCourse?.title ?? 'Course required'}</span>
-            <h2 id="create-group-title">Create group</h2>
+            <span>{selectedCourse?.title ?? t('groups.courseRequired')}</span>
+            <h2 id="create-group-title">{t('groups.createGroup')}</h2>
           </div>
           {renderGroupForm()}
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setIsCreateOpen(false)} disabled={savingGroup}>Cancel</button>
-            <button type="submit" className="primary-button" disabled={savingGroup}>{savingGroup ? 'Saving...' : 'Create group'}</button>
+            <button type="button" className="secondary-button" onClick={() => setIsCreateOpen(false)} disabled={savingGroup}>{t('courses.cancel')}</button>
+            <button type="submit" className="primary-button" disabled={savingGroup}>{savingGroup ? t('courses.saving') : t('groups.createGroup')}</button>
           </div>
         </FormModal>
       ) : null}
       {studentToRemove ? (
         <Modal labelledBy="remove-student-title" onClose={() => setStudentToRemove(null)}>
           <div className="modal-header-block">
-            <span>Remove enrollment</span>
-            <h2 id="remove-student-title">Remove student from group?</h2>
+            <span>{t('groups.removeEnrollment')}</span>
+            <h2 id="remove-student-title">{t('groups.removeStudentTitle')}</h2>
           </div>
           <p className="muted-text">
-            {studentToRemove.fullName || studentToRemove.email || `Student #${studentToRemove.userId}`} will be removed from this group roster.
+            {t('groups.removeStudentDetail', { name: studentToRemove.fullName || studentToRemove.email || t('courses.studentFallback', { id: studentToRemove.userId }) })}
           </p>
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setStudentToRemove(null)} disabled={removingStudentId === studentToRemove.userId}>Cancel</button>
+            <button type="button" className="secondary-button" onClick={() => setStudentToRemove(null)} disabled={removingStudentId === studentToRemove.userId}>{t('courses.cancel')}</button>
             <button type="button" className="danger-button" onClick={() => void removeStudent(studentToRemove)} disabled={removingStudentId === studentToRemove.userId}>
-              {removingStudentId === studentToRemove.userId ? 'Removing...' : 'Remove student'}
+              {removingStudentId === studentToRemove.userId ? t('groups.removing') : t('groups.removeStudent')}
             </button>
           </div>
         </Modal>

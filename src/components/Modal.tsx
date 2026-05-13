@@ -1,5 +1,6 @@
 import { useEffect, useRef, type FormEvent, type ReactNode } from 'react';
 import { FiX } from 'react-icons/fi';
+import { useTranslation } from 'react-i18next';
 
 type BaseModalProps = {
   labelledBy: string;
@@ -98,6 +99,7 @@ function useModalLifecycle<T extends HTMLElement>(onClose: () => void) {
 
 function ModalShell({ labelledBy, children, className = 'decision-modal', onClose }: BaseModalProps) {
   const modalRef = useModalLifecycle<HTMLElement>(onClose);
+  const { t } = useTranslation();
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -110,7 +112,7 @@ function ModalShell({ labelledBy, children, className = 'decision-modal', onClos
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
-        <button type="button" className="modal-close-button" aria-label="Close modal" onClick={onClose}>
+        <button type="button" className="modal-close-button" aria-label={t('states.closeModal')} onClick={onClose}>
           <FiX />
         </button>
         {children}
@@ -131,6 +133,7 @@ export function FormModal({
   onSubmit,
 }: BaseModalProps & { onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   const modalRef = useModalLifecycle<HTMLFormElement>(onClose);
+  const { t } = useTranslation();
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -144,7 +147,7 @@ export function FormModal({
         onClick={(event) => event.stopPropagation()}
         onSubmit={onSubmit}
       >
-        <button type="button" className="modal-close-button" aria-label="Close modal" onClick={onClose}>
+        <button type="button" className="modal-close-button" aria-label={t('states.closeModal')} onClick={onClose}>
           <FiX />
         </button>
         {children}

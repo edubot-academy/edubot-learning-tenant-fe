@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import '../i18n/config';
 import { Modal } from './Modal';
 
 afterEach(() => {
@@ -23,7 +24,7 @@ describe('Modal', () => {
       </Modal>,
     );
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /close modal/i })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: /терезени жабуу/i })).toHaveFocus());
     expect(document.body.style.overflow).toBe('hidden');
 
     unmount();
@@ -60,7 +61,7 @@ describe('Modal', () => {
       </Modal>,
     );
 
-    const closeButton = await screen.findByRole('button', { name: /close modal/i });
+    const closeButton = await screen.findByRole('button', { name: /терезени жабуу/i });
     const secondButton = screen.getByRole('button', { name: 'Second' });
 
     secondButton.focus();
@@ -80,7 +81,7 @@ describe('Modal', () => {
       </Modal>,
     );
 
-    const closeButton = await screen.findByRole('button', { name: /close modal/i });
+    const closeButton = await screen.findByRole('button', { name: /терезени жабуу/i });
     const visibleButton = screen.getByRole('button', { name: 'Visible action' });
 
     visibleButton.focus();

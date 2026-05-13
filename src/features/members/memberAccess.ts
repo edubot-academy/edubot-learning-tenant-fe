@@ -7,7 +7,7 @@ export function memberName(member: CompanyMember) {
 }
 
 export function memberEmail(member: CompanyMember) {
-  return member.user?.email || member.email || 'Not set';
+  return member.user?.email || member.email || '';
 }
 
 export function getRolesByUser(members: CompanyMember[]) {

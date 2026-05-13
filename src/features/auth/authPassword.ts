@@ -1,5 +1,19 @@
-export function getPasswordSetupError(password: string, confirmPassword: string) {
-  if (password.length < 8) return 'Password must be at least 8 characters.';
-  if (password !== confirmPassword) return 'Passwords do not match.';
+type PasswordSetupErrorMessages = {
+  minLength: string;
+  mismatch: string;
+};
+
+const defaultMessages: PasswordSetupErrorMessages = {
+  minLength: 'Password must be at least 8 characters.',
+  mismatch: 'Passwords do not match.',
+};
+
+export function getPasswordSetupError(
+  password: string,
+  confirmPassword: string,
+  messages: PasswordSetupErrorMessages = defaultMessages,
+) {
+  if (password.length < 8) return messages.minLength;
+  if (password !== confirmPassword) return messages.mismatch;
   return '';
 }

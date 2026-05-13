@@ -1,5 +1,6 @@
 import type { CourseCertificate, CourseCertificateSettings, GroupStudent } from '../../types/domain';
 import { readable } from '../../lib/format';
+import i18n from '../../i18n/config';
 
 export type CertificateTab = 'branding' | 'rules' | 'registry';
 export type CertificateLanguageValue = 'en' | 'ru' | 'ky';
@@ -13,20 +14,23 @@ export const certificateTabs: Array<{ key: CertificateTab; label: string; descri
 ];
 
 export const eligibilityReasonLabels: Record<string, string> = {
-  sessions_missing: 'No delivery sessions exist yet',
-  sessions_incomplete: 'Sessions are not completed',
-  attendance_below_threshold: 'Attendance is below requirement',
-  homework_below_threshold: 'Homework is below requirement',
-  activities_below_threshold: 'Activities are below requirement',
-  lesson_progress_incomplete: 'Lesson progress is incomplete',
+  sessions_missing: 'certificates.reasonSessionsMissing',
+  sessions_incomplete: 'certificates.reasonSessionsIncomplete',
+  attendance_below_threshold: 'certificates.reasonAttendanceBelow',
+  homework_below_threshold: 'certificates.reasonHomeworkBelow',
+  activities_below_threshold: 'certificates.reasonActivitiesBelow',
+  lesson_progress_incomplete: 'certificates.reasonLessonProgressIncomplete',
 };
 
 export function describeEligibility(student?: GroupStudent | null) {
   const eligibility = student?.certificateEligibility;
-  if (!eligibility) return student?.certificateEligible ? 'Eligible' : 'Eligibility unavailable';
-  if (eligibility.eligible) return 'Eligible';
+  if (!eligibility) return student?.certificateEligible ? i18n.t('certificates.eligible') : i18n.t('certificates.eligibilityUnavailable');
+  if (eligibility.eligible) return i18n.t('certificates.eligible');
   const reasons = eligibility.reasons ?? [];
-  return reasons.map((reason) => eligibilityReasonLabels[reason] ?? readable(reason)).join(', ') || 'Requirements not met';
+  return reasons.map((reason) => {
+    const labelKey = eligibilityReasonLabels[reason];
+    return labelKey ? i18n.t(labelKey) : readable(reason);
+  }).join(', ') || i18n.t('certificates.requirementsNotMet');
 }
 
 export function isStudentEligibleForCertificate(student?: GroupStudent | null) {
@@ -82,7 +86,7 @@ export function validateHexColors(values: Record<string, string | null | undefin
   const hexColorPattern = /^#?[0-9a-fA-F]{6}$/;
   return Object.entries(values).reduce<Record<string, string>>((errors, [key, value]) => {
     if (value && !hexColorPattern.test(value)) {
-      errors[key] = 'Use a 6-digit hex color, for example #122144.';
+      errors[key] = i18n.t('certificates.errorHexColor');
     }
     return errors;
   }, {});
@@ -96,20 +100,22 @@ export function validateCourseCertificateSettings(courseSettings: CourseCertific
   const attendancePercent = courseSettings.eligibilityAttendancePercent ?? 80;
   const homeworkPercent = courseSettings.eligibilityHomeworkPercent ?? 100;
   const activitiesPercent = courseSettings.eligibilityActivitiesPercent ?? 100;
-  if (attendancePercent < 0 || attendancePercent > 100) errors.attendance = 'Attendance must be between 0 and 100.';
-  if (homeworkPercent < 0 || homeworkPercent > 100) errors.homework = 'Homework must be between 0 and 100.';
-  if (activitiesPercent < 0 || activitiesPercent > 100) errors.activities = 'Activities must be between 0 and 100.';
+  if (attendancePercent < 0 || attendancePercent > 100) errors.attendance = i18n.t('certificates.errorAttendanceRange');
+  if (homeworkPercent < 0 || homeworkPercent > 100) errors.homework = i18n.t('certificates.errorHomeworkRange');
+  if (activitiesPercent < 0 || activitiesPercent > 100) errors.activities = i18n.t('certificates.errorActivitiesRange');
   return errors;
 }
 
 export function getCertificateDecisionBlocker(action: CertificateDecisionAction, reason: string) {
   if ((action === 'reject' || action === 'revoke') && !reason.trim()) {
-    return 'Reason is required.';
+    return i18n.t('certificates.reasonRequired');
   }
   return '';
 }
 
 export function formatApprovalMode(value?: CourseCertificateSettings['approvalMode'] | null) {
-  if (value === 'admin') return 'Owner / company admin';
-  return readable(value ?? 'none');
+  if (value === 'admin') return i18n.t('certificates.ownerCompanyAdmin');
+  if (value === 'instructor') return i18n.t('members.roleInstructor');
+  if (!value || value === 'none') return i18n.t('certificates.none');
+  return readable(value);
 }

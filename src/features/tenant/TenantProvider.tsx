@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { listMyTenants, resolveTenantByHost, tenantStore } from '../../services/api';
 import type { Tenant } from '../../types/domain';
 import { useAuth } from '../auth/AuthProvider';
@@ -22,7 +23,7 @@ const neutralHostnames = new Set([
   'localhost',
   '127.0.0.1',
   '::1',
-  'learning.edubot.it.com',
+  'lms.edubot.it.com',
   'edubot-learning-tenant-fe.vercel.app',
   ...(import.meta.env.VITE_TENANT_NEUTRAL_HOSTS || '')
     .split(',')
@@ -51,7 +52,7 @@ function getNeutralTenantQueryOverride() {
 
 function getQueryTenantHost(tenantSlug: string | null) {
   if (!tenantSlug) return null;
-  const baseDomain = (import.meta.env.VITE_TENANT_QUERY_BASE_DOMAIN || 'learning.edubot.it.com')
+  const baseDomain = (import.meta.env.VITE_TENANT_QUERY_BASE_DOMAIN || 'lms.edubot.it.com')
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, '')
@@ -60,7 +61,18 @@ function getQueryTenantHost(tenantSlug: string | null) {
   return `${tenantSlug}.${baseDomain}`;
 }
 
+function tenantId(value: Tenant | null | undefined) {
+  const id = Number(value?.id);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function findTenantById(rows: Tenant[], id: number | null) {
+  if (!id) return null;
+  return rows.find((tenant) => tenantId(tenant) === id) ?? null;
+}
+
 export function TenantProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const lookupHost = useMemo(() => getTenantLookupHost(), []);
   const queryOverride = useMemo(() => getNeutralTenantQueryOverride(), []);
@@ -105,7 +117,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         setResolvedTenant(null);
         setHostnameLocked(true);
-        setResolutionError('This tenant domain is not configured yet.');
+        setResolutionError(t('errors.tenantDomainDetail'));
         tenantStore.clear();
         setActiveTenantIdState(null);
       })
@@ -116,7 +128,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [queryOverride.tenantId, resolvedLookupHost]);
+  }, [queryOverride.tenantId, resolvedLookupHost, t]);
 
   const reloadTenants = useCallback(async () => {
     const sequence = reloadSequence.current + 1;
@@ -125,6 +137,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setTenants([]);
       if (!resolvedTenant) setActiveTenantIdState(null);
       setError(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -134,11 +147,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       if (reloadSequence.current !== sequence) return;
       setTenants(rows);
       const saved = tenantStore.get();
-      const nextTenantId = resolvedTenant
-        ? rows.some((tenant) => tenant.id === resolvedTenant.id) ? resolvedTenant.id : null
+      const resolvedTenantId = tenantId(resolvedTenant);
+      const nextTenantId = resolvedTenantId
+        ? findTenantById(rows, resolvedTenantId)?.id ?? null
         : queryOverride.tenantId
-          ? rows.some((tenant) => tenant.id === queryOverride.tenantId) ? queryOverride.tenantId : null
-        : rows.some((tenant) => tenant.id === saved) ? saved : rows[0]?.id ?? null;
+          ? findTenantById(rows, queryOverride.tenantId)?.id ?? null
+        : findTenantById(rows, saved)?.id ?? rows[0]?.id ?? null;
       if (nextTenantId) {
         tenantStore.set(nextTenantId);
         setActiveTenantIdState(nextTenantId);
@@ -147,19 +161,19 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         if (!resolvedTenant) tenantStore.clear();
         setActiveTenantIdState(null);
         setError(resolvedTenant || queryOverride.tenantId
-          ? 'You do not have access to this tenant.'
+          ? t('errors.noAccessToRequestedTenant')
           : null);
       }
     } catch (reason) {
       if (reloadSequence.current !== sequence) return;
       setTenants([]);
       setActiveTenantIdState(null);
-      setError(reason instanceof Error ? reason.message : 'Could not load tenant access');
+      setError(t('errors.tenantAccessLoadDetail'));
       throw reason;
     } finally {
       if (reloadSequence.current === sequence) setLoading(false);
     }
-  }, [queryOverride.tenantId, resolvedTenant, user]);
+  }, [queryOverride.tenantId, resolvedTenant, t, user]);
 
   useEffect(() => {
     void reloadTenants().catch(() => undefined);
@@ -167,7 +181,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<TenantContextValue>(() => ({
     tenants,
-    activeTenant: tenants.find((tenant) => tenant.id === activeTenantId) ?? resolvedTenant,
+    activeTenant: findTenantById(tenants, activeTenantId) ?? resolvedTenant,
     resolvedTenant,
     hostnameLocked,
     loading,

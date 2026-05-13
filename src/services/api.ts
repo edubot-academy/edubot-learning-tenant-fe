@@ -28,6 +28,7 @@ import type {
   TenantOverview,
   UserSummary,
 } from '../types/domain';
+import { getCurrentLocale } from '../i18n/locale';
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -77,6 +78,7 @@ api.interceptors.request.use((config) => {
   } else if (tenantId) {
     config.headers['X-Company-Id'] = String(tenantId);
   }
+  config.headers['Accept-Language'] = getCurrentLocale();
   return config;
 });
 

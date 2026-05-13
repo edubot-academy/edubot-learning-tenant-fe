@@ -1,4 +1,5 @@
 import type { AttendanceStatus, CourseSession, GroupStudent } from '../../types/domain';
+import i18n from '../../i18n/config';
 
 export const attendanceStatuses: AttendanceStatus[] = ['present', 'late', 'absent', 'excused'];
 
@@ -78,9 +79,9 @@ export function getAttendanceSaveBlocker({
   markedCount: number;
   changedCount: number;
 }) {
-  if (!sessionReady) return 'Attendance can only be saved for scheduled or completed sessions.';
-  if (!studentCount) return 'No students are enrolled in this group.';
-  if (!markedCount) return 'Mark at least one student before saving.';
-  if (!changedCount) return 'No unsaved attendance changes.';
+  if (!sessionReady) return i18n.t('attendance.saveBlockerSessionReady');
+  if (!studentCount) return i18n.t('attendance.saveBlockerNoStudents');
+  if (!markedCount) return i18n.t('attendance.saveBlockerNoMarked');
+  if (!changedCount) return i18n.t('attendance.saveBlockerNoChanges');
   return '';
 }

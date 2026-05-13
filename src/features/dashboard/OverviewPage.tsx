@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import {
   FiActivity,
   FiAlertTriangle,
@@ -32,11 +34,50 @@ function statNumber(value: unknown) {
   return Number.isFinite(nextValue) ? nextValue : 0;
 }
 
-function displayText(value?: string | number | null, fallback = 'Not set') {
-  return value === null || value === undefined || value === '' ? fallback : readable(value);
+type SetupItem = TenantOverview['setup']['items'][number];
+
+const readinessItemKeys: Record<string, string> = {
+  courses: 'courses',
+  groups: 'groups',
+  locale: 'locale',
+  certificates: 'certificates',
+};
+
+function normalizeReadinessText(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function translateReadinessValue(value: string, itemKey: string | undefined, t: TFunction) {
+  const normalizedValue = normalizeReadinessText(value);
+  const linkedMatch = normalizedValue.match(/^(\d+)\s+linked$/);
+
+  if (itemKey === 'courses' && linkedMatch) {
+    return t('overview.readiness.courses.linkedCount', { count: Number(linkedMatch[1]) });
+  }
+
+  if (itemKey === 'groups' && normalizedValue === 'no groups') {
+    return t('overview.readiness.groups.noGroups');
+  }
+
+  if (itemKey === 'certificates' && normalizedValue === 'needs setup') {
+    return t('overview.readiness.certificates.needsSetup');
+  }
+
+  return readable(value);
+}
+
+function getReadinessItemCopy(item: SetupItem, t: TFunction) {
+  const itemKey = readinessItemKeys[normalizeReadinessText(item.label)];
+
+  return {
+    label: itemKey ? t(`overview.readiness.${itemKey}.label`) : readable(item.label),
+    hint: itemKey ? t(`overview.readiness.${itemKey}.hint`) : readable(item.hint),
+    value: translateReadinessValue(item.value, itemKey, t),
+  };
 }
 
 export function OverviewPage() {
+  const { t } = useTranslation();
   const { activeTenant } = useTenant();
   const activeTenantId = activeTenant?.id;
   const [overview, setOverview] = useState<TenantOverview | null>(null);
@@ -52,7 +93,7 @@ export function OverviewPage() {
         if (!cancelled) setOverview(nextOverview);
       })
       .catch(() => {
-        if (!cancelled) toast.error('Could not load tenant overview');
+        if (!cancelled) toast.error(t('overview.overviewUnavailableTitle'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -60,7 +101,7 @@ export function OverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, t]);
 
   const canManageMembers = Boolean(overview?.permissions.canManageMembers);
   const canManageCertificates = Boolean(overview?.permissions.canManageCertificates);
@@ -74,20 +115,20 @@ export function OverviewPage() {
     if (!overview) return [];
     if (!canManageMembers) {
       return [
-        { label: isAssistant ? 'Courses' : 'My courses', value: statValue(overview.stats.courses), hint: 'Tenant courses in scope' },
-        { label: 'Upcoming sessions', value: statValue(overview.stats.upcomingSessions), hint: 'Scheduled classes' },
-        ...(homeworkEnabled ? [{ label: 'Needs review', value: statValue(overview.stats.homeworkNeedsReview), hint: 'Homework queue' }] : []),
-        ...(certificatesEnabled ? [{ label: 'Certificates', value: statValue(overview.stats.certificatesPending), hint: 'Pending approvals' }] : []),
+        { label: isAssistant ? t('navigation.courses') : t('student.myCourses'), value: statValue(overview.stats.courses), hint: t('overview.coursesScopeHint') },
+        { label: t('student.upcomingSessions'), value: statValue(overview.stats.upcomingSessions), hint: t('overview.scheduledClasses') },
+        ...(homeworkEnabled ? [{ label: t('overview.needsReview'), value: statValue(overview.stats.homeworkNeedsReview), hint: t('overview.homeworkQueueHint') }] : []),
+        ...(certificatesEnabled ? [{ label: t('navigation.certificates'), value: statValue(overview.stats.certificatesPending), hint: t('overview.certificatesHint') }] : []),
       ];
     }
     return [
-      { label: 'Courses', value: statValue(overview.stats.courses), hint: 'Tenant-private catalog' },
-      { label: 'Live/offline', value: statValue(overview.stats.deliveryCourses), hint: 'Delivery courses' },
-      { label: 'Students', value: statValue(overview.stats.students), hint: 'Active learners' },
-      { label: 'Today', value: statValue(overview.stats.todaySessions), hint: 'Scheduled sessions' },
-      ...(homeworkEnabled ? [{ label: 'Needs review', value: statValue(overview.stats.homeworkNeedsReview), hint: 'Homework submissions' }] : []),
+      { label: t('navigation.courses'), value: statValue(overview.stats.courses), hint: t('overview.tenantCatalog') },
+      { label: t('overview.liveOffline'), value: statValue(overview.stats.deliveryCourses), hint: t('overview.deliveryCourses') },
+      { label: t('overview.students'), value: statValue(overview.stats.students), hint: t('overview.studentsHint') },
+      { label: t('overview.today'), value: statValue(overview.stats.todaySessions), hint: t('overview.scheduledSessions') },
+      ...(homeworkEnabled ? [{ label: t('overview.needsReview'), value: statValue(overview.stats.homeworkNeedsReview), hint: t('navigation.homework') }] : []),
     ];
-  }, [canManageMembers, certificatesEnabled, homeworkEnabled, isAssistant, overview]);
+  }, [canManageMembers, certificatesEnabled, homeworkEnabled, isAssistant, overview, t]);
 
   const actionCards = useMemo(() => {
     if (!overview) return [];
@@ -95,46 +136,46 @@ export function OverviewPage() {
       ...(canCreateCourses ? [{
         to: '/courses',
         icon: FiPlusCircle,
-        title: 'Create or manage courses',
-        detail: 'Draft, submit, and manage tenant courses.',
-        metric: `${overview.stats.draftCourses ?? 0} draft`,
+        title: t('overview.createManageCourses'),
+        detail: t('overview.createManageCoursesDetail'),
+        metric: t('overview.draftMetric', { count: overview.stats.draftCourses ?? 0 }),
       }] : []),
       {
         to: '/groups',
         icon: FiCalendar,
-        title: 'Groups and sessions',
-        detail: 'Plan cohorts, schedules, and sessions.',
-        metric: `${overview.stats.activeGroups ?? 0} active groups`,
+        title: t('overview.groupsSessions'),
+        detail: t('overview.groupsSessionsDetail'),
+        metric: t('overview.activeGroups', { count: overview.stats.activeGroups ?? 0 }),
       },
       {
         to: '/attendance',
         icon: FiCheckSquare,
-        title: 'Attendance',
-        detail: 'Mark live and offline classes.',
-        metric: `${overview.stats.unmarkedAttendance ?? 0} unmarked`,
+        title: t('navigation.attendance'),
+        detail: t('overview.markClasses'),
+        metric: t('overview.unmarkedMetric', { count: overview.stats.unmarkedAttendance ?? 0 }),
         disabled: !attendanceEnabled,
-        disabledReason: 'Attendance is disabled for this tenant.',
+        disabledReason: t('overview.attendanceDisabled'),
       },
       {
         to: '/homework',
         icon: FiBookOpen,
-        title: 'Homework review',
-        detail: 'Review submissions and revisions.',
-        metric: `${overview.stats.homeworkNeedsReview ?? 0} need review`,
+        title: t('overview.homeworkReview'),
+        detail: t('overview.homeworkReviewDetail'),
+        metric: t('overview.submissionsNeedReview', { count: overview.stats.homeworkNeedsReview ?? 0 }),
         disabled: !homeworkEnabled,
-        disabledReason: 'Homework is disabled for this tenant.',
+        disabledReason: t('overview.homeworkDisabled'),
       },
       ...(canManageCertificates ? [{
         to: '/certificates',
         icon: FiAward,
-        title: 'Certificates',
-        detail: 'Issue certificates and approvals.',
-        metric: `${overview.certificates.pending} pending`,
+        title: t('navigation.certificates'),
+        detail: t('overview.certificatesWorkload'),
+        metric: t('overview.certificateApprovalsDetail', { count: overview.certificates.pending }),
         disabled: !certificatesEnabled,
-        disabledReason: 'Certificates are disabled for this tenant.',
+        disabledReason: t('errors.featureDisabledDetail'),
       }] : []),
     ];
-  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, overview]);
+  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, overview, t]);
 
   const priorityItems = useMemo(() => {
     if (!overview) return [];
@@ -146,67 +187,110 @@ export function OverviewPage() {
       ...(canCreateCourses && draftCourses > 0 ? [{
         to: '/courses',
         icon: FiPlusCircle,
-        title: 'Draft courses',
-        detail: `${draftCourses} course${draftCourses === 1 ? '' : 's'} waiting to be finished.`,
+        title: t('overview.draftCourses'),
+        detail: t('overview.draftCoursesDetail', { count: draftCourses }),
         tone: 'warning' as const,
       }] : []),
       ...(canCreateCourses && pendingCourses > 0 ? [{
         to: '/courses',
         icon: FiAlertTriangle,
-        title: 'Pending approvals',
-        detail: `${pendingCourses} course${pendingCourses === 1 ? '' : 's'} waiting for approval.`,
+        title: t('overview.pendingApprovals'),
+        detail: t('overview.pendingApprovalsDetail', { count: pendingCourses }),
         tone: 'warning' as const,
       }] : []),
       ...(attendanceEnabled && unmarkedAttendance > 0 ? [{
         to: '/attendance',
         icon: FiCheckSquare,
-        title: 'Attendance not marked',
-        detail: `${unmarkedAttendance} session${unmarkedAttendance === 1 ? '' : 's'} need attendance records.`,
+        title: t('overview.unmarked'),
+        detail: t('overview.unmarkedMetric', { count: unmarkedAttendance }),
         tone: 'warning' as const,
       }] : []),
       ...(homeworkEnabled && homeworkNeedsReview > 0 ? [{
         to: '/homework',
         icon: FiBookOpen,
-        title: 'Homework review',
-        detail: `${homeworkNeedsReview} submission${homeworkNeedsReview === 1 ? '' : 's'} need review.`,
+        title: t('overview.homeworkReview'),
+        detail: t('overview.submissionsNeedReview', { count: homeworkNeedsReview }),
         tone: 'info' as const,
       }] : []),
       ...(certificatesEnabled && canManageCertificates && overview.certificates.pending > 0 ? [{
         to: '/certificates',
         icon: FiAward,
-        title: 'Certificate approvals',
-        detail: `${overview.certificates.pending} certificate${overview.certificates.pending === 1 ? '' : 's'} pending approval.`,
+        title: t('overview.certificateApprovals'),
+        detail: t('overview.certificateApprovalsDetail', { count: overview.certificates.pending }),
         tone: 'info' as const,
       }] : []),
       ...(certificatesEnabled && canManageCertificates && overview.certificates.coursesWithoutConfig > 0 ? [{
         to: '/certificates',
         icon: FiAlertTriangle,
-        title: 'Certificate setup',
-        detail: `${overview.certificates.coursesWithoutConfig} course${overview.certificates.coursesWithoutConfig === 1 ? '' : 's'} need certificate configuration.`,
+        title: t('overview.certificateSetup'),
+        detail: t('overview.certificateSetupDetail', { count: overview.certificates.coursesWithoutConfig }),
         tone: 'warning' as const,
       }] : []),
     ];
-  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, overview]);
+  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, overview, t]);
 
   const operationStats = useMemo(() => {
     if (!overview) return [];
     return [
       ...(attendanceEnabled ? [
-        { label: 'Attendance rate', value: overview.stats.attendanceRate === null ? '-' : `${overview.stats.attendanceRate}%` },
-        { label: 'Unmarked', value: overview.sessions.unmarkedAttendance },
-        { label: 'Cancelled', value: overview.sessions.cancelled },
+        { label: t('overview.attendanceRate'), value: overview.stats.attendanceRate === null ? '-' : `${overview.stats.attendanceRate}%` },
+        { label: t('overview.unmarked'), value: overview.sessions.unmarkedAttendance },
+        { label: t('overview.cancelled'), value: overview.sessions.cancelled },
       ] : [
-        { label: 'Attendance', value: 'Disabled' },
+        { label: t('navigation.attendance'), value: t('overview.disabled') },
       ]),
-      ...(canCreateCourses ? [{ label: 'Pending courses', value: overview.stats.pendingCourses ?? 0 }] : []),
+      ...(canCreateCourses ? [{ label: t('overview.pendingCourses'), value: overview.stats.pendingCourses ?? 0 }] : []),
     ];
-  }, [attendanceEnabled, canCreateCourses, overview]);
+  }, [attendanceEnabled, canCreateCourses, overview, t]);
+  const overviewCourseTypeLabel = (value?: string | null) => {
+    const labels: Record<string, string> = {
+      offline: t('courses.typeOffline'),
+      online_live: t('courses.typeOnlineLive'),
+      video: t('courses.typeVideo'),
+    };
+    return labels[value || ''] ?? t('overview.courseTypeDefault');
+  };
+  const overviewStatusLabel = (value?: string | null) => {
+    const status = String(value || 'draft').toLowerCase();
+    const labels: Record<string, string> = {
+      approved: t('courses.statusApproved'),
+      cancelled: t('groups.statusCancelled'),
+      completed: t('courses.completed'),
+      draft: t('courses.statusDraft'),
+      missing: t('homework.reviewMissing'),
+      needs_review: t('homework.reviewNeedsReview'),
+      needs_revision: t('homework.reviewNeedsRevision'),
+      overdue: t('homework.overdue'),
+      pending: t('courses.statusPending'),
+      rejected: t('courses.statusRejected'),
+      scheduled: t('overview.scheduledSessions'),
+      submitted: t('student.submitted'),
+      total: t('groups.total'),
+    };
+    return labels[status] ?? readable(value);
+  };
+  const activityActionLabel = (value?: string | null) => {
+    const key = String(value || '').toLowerCase();
+    const labels: Record<string, string> = {
+      create: t('actions.create'),
+      delete: t('actions.delete'),
+      update: t('actions.update'),
+      updated: t('actions.update'),
+      certificate: t('navigation.certificates'),
+      course: t('navigation.courses'),
+      group: t('navigation.groups'),
+      member: t('navigation.members'),
+      session: t('navigation.sessions'),
+      tenant: t('overview.tenantTarget'),
+    };
+    return labels[key] ?? readable(value);
+  };
 
-  if (!activeTenant) return <EmptyState title="No tenant assigned" detail="Ask a platform admin to add your user to a tenant." />;
-  if (loading) return <LoadingState label="Loading tenant overview" />;
-  if (!overview) return <EmptyState title="Overview unavailable" detail="Refresh the workspace and try again." />;
+  if (!activeTenant) return <EmptyState title={t('overview.noTenantAssignedTitle')} detail={t('overview.noTenantAssignedDetail')} />;
+  if (loading) return <LoadingState label={t('overview.loading')} />;
+  if (!overview) return <EmptyState title={t('overview.overviewUnavailableTitle')} detail={t('overview.overviewUnavailableDetail')} />;
 
-  const heading = canManageMembers ? 'Tenant overview' : isAssistant ? 'Assistant overview' : 'Instructor overview';
+  const heading = canManageMembers ? t('overview.tenantOverview') : isAssistant ? t('overview.assistantOverview') : t('overview.instructorOverview');
 
   return (
     <>
@@ -215,19 +299,19 @@ export function OverviewPage() {
         eyebrow={heading}
         actions={(
           <>
-            {canManageMembers ? <Link className="secondary-link-button" to="/members"><FiUsers /> Members</Link> : null}
-            <Link className="secondary-link-button" to="/settings"><FiSettings /> Settings</Link>
+            {canManageMembers ? <Link className="secondary-link-button" to="/members"><FiUsers /> {t('overview.members')}</Link> : null}
+            <Link className="secondary-link-button" to="/settings"><FiSettings /> {t('overview.settings')}</Link>
           </>
         )}
       />
       <StatGrid items={stats} />
 
-      <section className={`overview-priority-strip ${priorityItems.length ? '' : 'all-clear'}`} aria-label="Needs attention">
+      <section className={`overview-priority-strip ${priorityItems.length ? '' : 'all-clear'}`} aria-label={t('overview.needsAttention')}>
         {priorityItems.length ? (
           <>
           <div className="overview-priority-heading">
-            <span className="ui-kicker">Needs attention</span>
-            <strong>{priorityItems.length} active item{priorityItems.length === 1 ? '' : 's'}</strong>
+            <span className="ui-kicker">{t('overview.needsAttention')}</span>
+            <strong>{t('overview.activeItemCount', { count: priorityItems.length })}</strong>
           </div>
           <div className="overview-priority-list">
             {priorityItems.slice(0, 4).map((item) => {
@@ -247,15 +331,15 @@ export function OverviewPage() {
         ) : (
           <>
             <div className="overview-priority-heading">
-              <span className="ui-kicker">Needs attention</span>
-              <strong>No active blockers</strong>
+              <span className="ui-kicker">{t('overview.needsAttention')}</span>
+              <strong>{t('overview.noActiveBlockers')}</strong>
             </div>
             <div className="overview-priority-list">
               <article className="overview-priority-card info static">
                 <FiCheckSquare />
                 <span>
-                  <strong>Workspace is clear</strong>
-                  <small>Drafts, attendance, homework, and certificate queues will appear here when they need attention.</small>
+                  <strong>{t('overview.workspaceClear')}</strong>
+                  <small>{t('overview.allClearDetail')}</small>
                 </span>
               </article>
             </div>
@@ -263,7 +347,7 @@ export function OverviewPage() {
         )}
       </section>
 
-      <section className="overview-action-grid" aria-label="Primary tenant actions">
+      <section className="overview-action-grid" aria-label={t('overview.primaryActions')}>
         {actionCards.map((action) => {
           const Icon = action.icon;
           const content = (
@@ -288,19 +372,19 @@ export function OverviewPage() {
         <section className="content-section">
           <div className="section-heading-row">
             <div>
-              <h2>{canManageMembers ? 'Recent courses' : 'Courses in scope'}</h2>
-              <span>Tenant-private course workspace</span>
+              <h2>{canManageMembers ? t('overview.recentCourses') : t('overview.coursesInScope')}</h2>
+              <span>{t('overview.tenantCourseWorkspace')}</span>
             </div>
-            <Link className="link-button" to="/courses">View all</Link>
+            <Link className="link-button" to="/courses">{t('overview.viewAll')}</Link>
           </div>
           <div className="table-wrap overview-course-table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Course</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Students</th>
+                  <th>{t('overview.course')}</th>
+                  <th>{t('overview.type')}</th>
+                  <th>{t('overview.status')}</th>
+                  <th>{t('overview.students')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -310,8 +394,8 @@ export function OverviewPage() {
                       <Link className="table-primary-link" to={`/courses?courseId=${course.id}`}>{course.title}</Link>
                       {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
                     </td>
-                    <td><span className="status-badge">{displayText(course.courseType, 'Video')}</span></td>
-                    <td><span className={`status-badge ${course.status || 'draft'}`}>{displayText(course.status, 'Draft')}</span></td>
+                    <td><span className="status-badge">{overviewCourseTypeLabel(course.courseType)}</span></td>
+                    <td><span className={`status-badge ${course.status || 'draft'}`}>{overviewStatusLabel(course.status)}</span></td>
                     <td>{course.enrolledStudents ?? 0}</td>
                   </tr>
                 ))}
@@ -320,9 +404,9 @@ export function OverviewPage() {
           </div>
           {!overview.courses.length ? (
             <EmptyState
-              title="No tenant courses yet"
-              detail={canCreateCourses ? 'Open courses to create the first tenant course.' : 'Ask a tenant admin to assign courses or groups to your account.'}
-              action={canCreateCourses ? <Link className="secondary-link-button" to="/courses">Open courses</Link> : undefined}
+              title={t('overview.tenantCoursesEmptyTitle')}
+              detail={canCreateCourses ? t('overview.tenantCoursesEmptyDetail') : t('overview.courseNoAccessDetail')}
+              action={canCreateCourses ? <Link className="secondary-link-button" to="/courses">{t('overview.openCourses')}</Link> : undefined}
             />
           ) : null}
         </section>
@@ -330,8 +414,8 @@ export function OverviewPage() {
         <aside className="settings-panel workflow-context-panel overview-upcoming-panel">
           <div className="section-heading-row compact">
             <div>
-              <h2>Upcoming sessions</h2>
-              <span>{overview.sessions.today} scheduled today</span>
+              <h2>{t('student.upcomingSessions')}</h2>
+              <span>{t('overview.scheduledToday', { count: overview.sessions.today })}</span>
             </div>
           </div>
           <div className="stack-list">
@@ -341,20 +425,20 @@ export function OverviewPage() {
                   <strong>{session.title}</strong>
                   <span className="overview-session-meta">
                     <span>{formatDate(session.startsAt)}</span>
-                    <span className={`status-badge ${session.status || 'scheduled'}`}>{displayText(session.status, 'Scheduled')}</span>
+                    <span className={`status-badge ${session.status || 'scheduled'}`}>{overviewStatusLabel(session.status)}</span>
                   </span>
                   {session.groupName || session.courseTitle ? (
-                    <span className="overview-session-context">{session.courseTitle ?? 'Course not set'} · {session.groupName ?? 'Group not set'}</span>
+                    <span className="overview-session-context">{session.courseTitle ?? t('student.courseNotSet')} · {session.groupName ?? t('student.groupNotSet')}</span>
                   ) : null}
                 </div>
-                <Link className="link-button" to="/sessions">Open</Link>
+                <Link className="link-button" to="/sessions">{t('student.open')}</Link>
               </article>
             ))}
             {!overview.sessions.upcoming.length ? (
               <EmptyState
-                title="No upcoming sessions"
-                detail="Scheduled group sessions will appear here."
-                action={<Link className="secondary-link-button" to="/sessions">Open sessions</Link>}
+                title={t('student.sessionsEmptyTitle')}
+                detail={t('student.sessionsEmptyDetail')}
+                action={<Link className="secondary-link-button" to="/sessions">{t('overview.openSessions')}</Link>}
               />
             ) : null}
           </div>
@@ -365,8 +449,8 @@ export function OverviewPage() {
         <section className="settings-panel">
           <div className="section-heading-row">
             <div>
-              <h2>Operations</h2>
-              <span>Live/offline course signals</span>
+              <h2>{t('overview.operations')}</h2>
+              <span>{t('overview.liveOfflineSignals')}</span>
             </div>
             <FiBarChart2 />
           </div>
@@ -384,15 +468,15 @@ export function OverviewPage() {
           <section className="settings-panel">
             <div className="section-heading-row">
               <div>
-                <h2>Homework queue</h2>
-                <span>Assignments that need attention</span>
+                <h2>{t('overview.homeworkQueue')}</h2>
+                <span>{t('overview.needsAttention')}</span>
               </div>
-              <Link className="link-button" to="/homework">Open queue</Link>
+              <Link className="link-button" to="/homework">{t('overview.openQueue')}</Link>
             </div>
             <div className="stat-grid compact session-stat-grid">
               {['total', 'needsReview', 'missing', 'overdue'].map((key) => (
                 <section className="stat-tile" key={key}>
-                  <span>{readable(key)}</span>
+                  <span>{overviewStatusLabel(key)}</span>
                   <strong>{overview.homework.summary[key] ?? 0}</strong>
                 </section>
               ))}
@@ -403,14 +487,14 @@ export function OverviewPage() {
                   <div>
                     <strong>{item.title}</strong>
                     <span>
-                      <span className={`status-badge ${item.isPublished ? 'published' : 'draft'}`}>{item.isPublished ? 'Published' : 'Draft'}</span>
-                      {' '}{item.courseTitle ?? 'Course not set'} · {item.groupName ?? 'Group not set'} · {formatDate(item.deadline ?? item.dueAt)}
+                      <span className={`status-badge ${item.isPublished ? 'published' : 'draft'}`}>{item.isPublished ? t('overview.published') : t('overview.draft')}</span>
+                      {' '}{item.courseTitle ?? t('student.courseNotSet')} · {item.groupName ?? t('student.groupNotSet')} · {formatDate(item.deadline ?? item.dueAt)}
                     </span>
                   </div>
-                  <span className={`status-badge ${(item.queue?.needsReview ?? 0) > 0 ? 'pending_approval' : 'approved'}`}>{item.queue?.needsReview ?? 0} review</span>
+                  <span className={`status-badge ${(item.queue?.needsReview ?? 0) > 0 ? 'pending_approval' : 'approved'}`}>{t('overview.submissionsNeedReview', { count: item.queue?.needsReview ?? 0 })}</span>
                 </article>
               ))}
-              {!overview.homework.queue.length ? <EmptyState title="No homework in the current queue" detail="Assignments that need review will appear here." /> : null}
+              {!overview.homework.queue.length ? <EmptyState title={t('overview.homeworkQueueEmptyTitle')} detail={t('overview.homeworkQueueEmptyDetail')} /> : null}
             </div>
           </section>
         ) : null}
@@ -419,16 +503,16 @@ export function OverviewPage() {
           <section className="settings-panel">
             <div className="section-heading-row">
               <div>
-                <h2>Certificates</h2>
-                <span>Manual issue and approval workload</span>
+                <h2>{t('navigation.certificates')}</h2>
+                <span>{t('overview.certificatesWorkload')}</span>
               </div>
-              <Link className="link-button" to="/certificates">Open</Link>
+              <Link className="link-button" to="/certificates">{t('student.open')}</Link>
             </div>
             <div className="stat-grid compact session-stat-grid">
-              <section className="stat-tile"><span>Pending</span><strong>{overview.certificates.pending}</strong></section>
-              <section className="stat-tile"><span>Not issued</span><strong>{overview.certificates.waiting ?? overview.certificates.eligibleWaiting}</strong></section>
-              <section className="stat-tile"><span>Issued</span><strong>{overview.certificates.issued}</strong></section>
-              <section className="stat-tile"><span>Needs config</span><strong>{overview.certificates.coursesWithoutConfig}</strong></section>
+              <section className="stat-tile"><span>{t('overview.pending')}</span><strong>{overview.certificates.pending}</strong></section>
+              <section className="stat-tile"><span>{t('overview.notIssued')}</span><strong>{overview.certificates.waiting ?? overview.certificates.eligibleWaiting}</strong></section>
+              <section className="stat-tile"><span>{t('overview.issued')}</span><strong>{overview.certificates.issued}</strong></section>
+              <section className="stat-tile"><span>{t('overview.needsConfig')}</span><strong>{overview.certificates.coursesWithoutConfig}</strong></section>
             </div>
           </section>
         ) : null}
@@ -436,8 +520,8 @@ export function OverviewPage() {
         <section className="settings-panel">
           <div className="section-heading-row">
             <div>
-              <h2>Workspace readiness</h2>
-              <span>{overview.setup.progress}% configured</span>
+              <h2>{t('overview.workspaceReadiness')}</h2>
+              <span>{t('overview.configured', { percent: overview.setup.progress })}</span>
             </div>
           </div>
           <div className="progress-cell overview-progress">
@@ -445,15 +529,18 @@ export function OverviewPage() {
             <strong>{overview.setup.progress}%</strong>
           </div>
           <div className="stack-list">
-            {overview.setup.items.map((item) => (
-              <article className="stack-list-item" key={item.label}>
-                <div>
-                  <strong>{item.label}</strong>
-                  <span>{item.hint}</span>
-                </div>
-                <strong>{readable(item.value)}</strong>
-              </article>
-            ))}
+            {overview.setup.items.map((item) => {
+              const itemCopy = getReadinessItemCopy(item, t);
+              return (
+                <article className="stack-list-item" key={item.label}>
+                  <div>
+                    <strong>{itemCopy.label}</strong>
+                    <span>{itemCopy.hint}</span>
+                  </div>
+                  <strong>{itemCopy.value}</strong>
+                </article>
+              );
+            })}
           </div>
         </section>
 
@@ -461,8 +548,8 @@ export function OverviewPage() {
           <section className="settings-panel">
             <div className="section-heading-row">
               <div>
-                <h2>Workspace tools</h2>
-                <span>Default and platform-managed features</span>
+                <h2>{t('overview.tools')}</h2>
+                <span>{t('overview.toolsHint')}</span>
               </div>
               <FiActivity />
             </div>
@@ -470,7 +557,7 @@ export function OverviewPage() {
               {overview.features.map((feature) => (
                 <div className="flag-row" key={feature.key}>
                   <span>{feature.key}</span>
-                  <strong className={`status-badge ${feature.enabled ? 'published' : 'destructive'}`}>{feature.enabled ? 'Enabled' : 'Disabled'}</strong>
+                  <strong className={`status-badge ${feature.enabled ? 'published' : 'destructive'}`}>{feature.enabled ? t('overview.enabled') : t('overview.disabled')}</strong>
                 </div>
               ))}
             </div>
@@ -480,18 +567,18 @@ export function OverviewPage() {
 
       {overview.permissions.canViewActivity ? (
         <section className="settings-panel full overview-activity-panel">
-          <h2>Recent activity</h2>
+          <h2>{t('overview.recentActivity')}</h2>
           <div className="stack-list activity-timeline">
             {overview.activity.map((item) => (
               <article className="stack-list-item" key={item.id}>
                 <div>
-                  <strong>{readable(item.action)}</strong>
-                  <span>{item.actorFullName || item.actorEmail || 'System'} · {formatDate(item.createdAt)}</span>
+                  <strong>{activityActionLabel(item.action)}</strong>
+                  <span>{item.actorFullName || item.actorEmail || t('overview.system')} · {formatDate(item.createdAt)}</span>
                 </div>
-                <strong>{readable(item.targetType || item.targetId || 'tenant')}</strong>
+                <strong>{activityActionLabel(item.targetType || item.targetId || t('overview.tenantTarget'))}</strong>
               </article>
             ))}
-            {!overview.activity.length ? <EmptyState title="No tenant activity recorded yet" detail="Backend activity events will appear here when tenant changes are recorded." /> : null}
+            {!overview.activity.length ? <EmptyState title={t('overview.activityEmptyTitle')} detail={t('overview.activityEmptyDetail')} /> : null}
           </div>
         </section>
       ) : null}

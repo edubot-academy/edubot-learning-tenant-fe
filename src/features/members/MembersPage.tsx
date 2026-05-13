@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { FiShield, FiUserCheck, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
@@ -29,13 +30,6 @@ import {
 } from './memberAccess';
 
 const tenantRoles = ['all', 'owner', 'company_admin', 'instructor', 'assistant', 'student'];
-const roleDescriptions: Record<string, string> = {
-  owner: 'Platform-managed tenant owner with highest access.',
-  company_admin: 'Can manage tenant operations, members, and settings.',
-  instructor: 'Can run sessions, attendance, homework, and certificates.',
-  assistant: 'Can support daily operations and learner administration.',
-  student: 'Learner access to courses, sessions, homework, and certificates.',
-};
 
 const emptyInviteForm = {
   email: '',
@@ -57,6 +51,7 @@ function isOwnerRole(member: CompanyMember) {
 }
 
 export function MembersPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const { activeTenant } = useTenant();
   const activeTenantId = activeTenant?.id;
@@ -87,11 +82,11 @@ export function MembersPage() {
     if (!activeTenantId) return;
     setLoading(true);
     reloadMembers()
-      .catch(() => toast.error('Could not load members'))
+      .catch(() => toast.error(t('members.loadFailed')))
       .finally(() => setLoading(false));
     // reloadMembers is intentionally scoped to activeTenantId for this initial load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTenantId]);
+  }, [activeTenantId, t]);
 
   const filteredMembers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -117,12 +112,38 @@ export function MembersPage() {
   const stats = useMemo(() => {
     const countRole = (targetRole: string) => members.filter((member) => member.role === targetRole).length;
     return [
-      { label: 'Members', value: members.length, hint: 'All tenant assignments' },
-      { label: 'Admins', value: countRole('owner') + countRole('company_admin'), hint: 'Owner and tenant admin roles' },
-      { label: 'Instructors', value: countRole('instructor'), hint: 'Teaching users' },
-      { label: 'Students', value: countRole('student'), hint: 'Learner users' },
+      { label: t('members.members'), value: members.length, hint: t('members.allAssignments') },
+      { label: t('members.admins'), value: countRole('owner') + countRole('company_admin'), hint: t('members.adminHint') },
+      { label: t('members.instructors'), value: countRole('instructor'), hint: t('members.instructorHint') },
+      { label: t('members.students'), value: countRole('student'), hint: t('members.studentHint') },
     ];
-  }, [members]);
+  }, [members, t]);
+  const roleLabel = (value: string) => {
+    const labels: Record<string, string> = {
+      all: t('members.all'),
+      assistant: t('members.roleAssistant'),
+      company_admin: t('members.roleCompanyAdmin'),
+      instructor: t('members.roleInstructor'),
+      owner: t('members.roleOwner'),
+      student: t('members.roleStudent'),
+    };
+    return labels[value] ?? readable(value);
+  };
+  const roleDescription = (value: string) => {
+    const descriptions: Record<string, string> = {
+      assistant: t('members.roleAssistantDetail'),
+      company_admin: t('members.roleCompanyAdminDetail'),
+      instructor: t('members.roleInstructorDetail'),
+      owner: t('members.roleOwnerDetail'),
+      student: t('members.roleStudentDetail'),
+    };
+    return descriptions[value] ?? '';
+  };
+  const memberNameDisplay = (member: CompanyMember) => memberName(member).replace(/^User (\d+)$/, (_, id) => t('courses.userFallback', { id }));
+  const memberEmailDisplay = (member: CompanyMember) => {
+    const email = memberEmail(member);
+    return email || t('states.notSet');
+  };
 
   const selectedUserExistingRoles = selectedUserId ? rolesByUser[selectedUserId] ?? [] : [];
   const selectedUserHasRole = hasDuplicateTenantRole(rolesByUser, selectedUserId, addRole);
@@ -140,7 +161,7 @@ export function MembersPage() {
       setUserResults(results);
       setSelectedUserId(results[0]?.id);
     } catch {
-      toast.error('Could not search users');
+      toast.error(t('members.searchFailed'));
     } finally {
       setWorking(false);
     }
@@ -150,11 +171,11 @@ export function MembersPage() {
     event.preventDefault();
     if (!canManageMembers) return;
     if (!activeTenantId || !selectedUserId) {
-      toast.error('Select a user first');
+      toast.error(t('members.selectUserFirst'));
       return;
     }
     if (selectedUserHasRole) {
-      toast.error('This user already has that tenant role');
+      toast.error(t('members.duplicateRole'));
       return;
     }
     setWorking(true);
@@ -166,9 +187,9 @@ export function MembersPage() {
       setUserResults([]);
       setUserSearchRan(false);
       setSelectedUserId(undefined);
-      toast.success('Member added');
+      toast.success(t('members.added'));
     } catch {
-      toast.error('Could not add member');
+      toast.error(t('members.addFailed'));
     } finally {
       setWorking(false);
     }
@@ -179,11 +200,11 @@ export function MembersPage() {
     if (!canManageMembers) return;
     if (!activeTenantId) return;
     if (!inviteForm.email.trim() || !inviteForm.fullName.trim()) {
-      toast.error('Email and full name are required');
+      toast.error(t('members.nameEmailRequired'));
       return;
     }
     if (inviteExistingMember) {
-      toast.error('This email already has that tenant role');
+      toast.error(t('members.emailDuplicateRole'));
       return;
     }
     setWorking(true);
@@ -198,9 +219,9 @@ export function MembersPage() {
       setInviteResult(result);
       await reloadMembers();
       setInviteForm(emptyInviteForm);
-      toast.success('Member invited');
+      toast.success(t('members.invited'));
     } catch {
-      toast.error('Could not invite member');
+      toast.error(t('members.inviteFailed'));
     } finally {
       setWorking(false);
     }
@@ -211,9 +232,9 @@ export function MembersPage() {
     if (!link) return;
     try {
       await navigator.clipboard.writeText(link);
-      toast.success('Invite link copied');
+      toast.success(t('members.inviteLinkCopied'));
     } catch {
-      toast.error('Could not copy invite link');
+      toast.error(t('members.inviteLinkCopyFailed'));
     }
   };
 
@@ -226,9 +247,9 @@ export function MembersPage() {
       const result = await resendTenantInvitation(activeTenantId, member.userId, { sendEmail: true });
       setInviteResult(result);
       setInviteLinkModalOpen(true);
-      toast.success(result?.onboarding?.emailSent ? 'Invite resent' : 'Invite link regenerated');
+      toast.success(result?.onboarding?.emailSent ? t('members.inviteResent') : t('members.inviteLinkRegenerated'));
     } catch {
-      toast.error('Could not resend invite');
+      toast.error(t('members.inviteResendFailed'));
     } finally {
       setWorking(false);
     }
@@ -238,7 +259,7 @@ export function MembersPage() {
     if (!canManageMembers) return;
     if (!activeTenantId || nextRole === member.role) return;
     if (!canChangeMemberRole(rolesByUser, member, nextRole)) {
-      toast.error('This user already has that tenant role');
+      toast.error(t('members.duplicateRole'));
       return;
     }
     setWorking(true);
@@ -249,9 +270,9 @@ export function MembersPage() {
         fromRole: member.role,
       });
       await reloadMembers();
-      toast.success('Role updated');
+      toast.success(t('members.roleUpdated'));
     } catch {
-      toast.error('Could not update role');
+      toast.error(t('members.roleUpdateFailed'));
     } finally {
       setWorking(false);
     }
@@ -264,26 +285,26 @@ export function MembersPage() {
     try {
       await removeTenantMember(activeTenantId, member.userId, member.role);
       await reloadMembers();
-      toast.success('Member role removed');
+      toast.success(t('members.roleRemoved'));
       setMemberPendingRemoval(null);
     } catch {
-      toast.error('Could not remove member role');
+      toast.error(t('members.roleRemoveFailed'));
     } finally {
       setWorking(false);
     }
   };
 
-  if (loading) return <LoadingState label="Loading members" />;
+  if (loading) return <LoadingState label={t('members.loading')} />;
 
   return (
     <>
       <PageHeader
-        title="Members"
+        title={t('members.members')}
         eyebrow={activeTenant?.name}
         actions={canManageMembers ? (
           <>
-            <button type="button" className="secondary-button" onClick={() => setMemberModal('existing')} disabled={working}>Add existing</button>
-            <button type="button" onClick={() => setMemberModal('invite')} disabled={working}>Invite member</button>
+            <button type="button" className="secondary-button" onClick={() => setMemberModal('existing')} disabled={working}>{t('members.addExisting')}</button>
+            <button type="button" onClick={() => setMemberModal('invite')} disabled={working}>{t('members.inviteMember')}</button>
           </>
         ) : undefined}
       />
@@ -292,22 +313,22 @@ export function MembersPage() {
         <article>
           <FiShield />
           <div>
-            <strong>Tenant access</strong>
-            <span>Roles here apply only inside this tenant workspace.</span>
+            <strong>{t('members.tenantAccess')}</strong>
+            <span>{t('members.tenantAccessDetail')}</span>
           </div>
         </article>
         <article>
           <FiUserCheck />
           <div>
-            <strong>Platform-managed owners</strong>
-            <span>Owner role changes stay in platform management.</span>
+            <strong>{t('members.platformOwners')}</strong>
+            <span>{t('members.platformOwnersDetail')}</span>
           </div>
         </article>
         <article>
           <FiUsers />
           <div>
-            <strong>Operational roles</strong>
-            <span>Tenant admins, instructors, assistants, and students can be managed here.</span>
+            <strong>{t('members.operationalRoles')}</strong>
+            <span>{t('members.operationalRolesDetail')}</span>
           </div>
         </article>
       </section>
@@ -319,7 +340,7 @@ export function MembersPage() {
             className={role === item ? 'active' : ''}
             onClick={() => setRole(item)}
           >
-            {item === 'all' ? 'All' : readable(item)}
+            {roleLabel(item)}
             <strong>{roleCounts[item] ?? 0}</strong>
           </button>
         ))}
@@ -328,57 +349,57 @@ export function MembersPage() {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search name, email, or role"
+          placeholder={t('members.searchPlaceholder')}
         />
         <select value={role} onChange={(event) => setRole(event.target.value)}>
           {tenantRoles.map((option) => (
-            <option key={option} value={option}>{option === 'all' ? 'All roles' : readable(option)}</option>
+            <option key={option} value={option}>{option === 'all' ? t('members.allRoles') : roleLabel(option)}</option>
           ))}
         </select>
       </div>
       {!members.length ? (
         <EmptyState
-          title="No members"
+          title={t('members.emptyTitle')}
           detail={canManageMembers
-            ? 'Invite a user or add an existing platform user to grant tenant access.'
-            : 'No tenant access assignments are available for this workspace.'}
+            ? t('members.emptyManageDetail')
+            : t('members.emptyReadOnlyDetail')}
         />
       ) : !filteredMembers.length ? (
-        <EmptyState title="No matching members" detail="Adjust the search or role filter." />
+        <EmptyState title={t('members.noMatchesTitle')} detail={t('members.noMatchesDetail')} />
       ) : (
         <div className="workspace-grid">
           <section className="content-section">
-            <h2>Tenant roster</h2>
+            <h2>{t('members.tenantRoster')}</h2>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Added</th>
-                    <th>Actions</th>
+                    <th>{t('groups.name')}</th>
+                    <th>{t('groups.email')}</th>
+                    <th>{t('members.role')}</th>
+                    <th>{t('members.addedColumn')}</th>
+                    <th>{t('members.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredMembers.map((member) => (
                     <tr key={`${member.userId}-${member.role}`}>
-                      <td data-label="Name">
-                        <strong>{memberName(member)}</strong>
-                        <small>User {member.userId}</small>
+                      <td data-label={t('groups.name')}>
+                        <strong>{memberNameDisplay(member)}</strong>
+                        <small>{t('members.userId', { id: member.userId })}</small>
                         <div className="member-role-stack">
                           {(rolesByUser[member.userId] ?? []).map((item) => (
-                            <span key={item}>{readable(item)}</span>
+                            <span key={item}>{roleLabel(item)}</span>
                           ))}
                         </div>
                       </td>
-                      <td data-label="Email">{memberEmail(member)}</td>
-                      <td data-label="Role">
+                      <td data-label={t('groups.email')}>{memberEmailDisplay(member)}</td>
+                      <td data-label={t('members.role')}>
                         {isOwnerRole(member) || !canManageMembers ? (
-                          <span className={`status-badge role-${member.role}`}>{readable(member.role)}</span>
+                          <span className={`status-badge role-${member.role}`}>{roleLabel(member.role)}</span>
                         ) : (
                           <label className="member-role-select-label">
-                            <span className={`status-badge role-${member.role}`}>{readable(member.role)}</span>
+                            <span className={`status-badge role-${member.role}`}>{roleLabel(member.role)}</span>
                             <select
                               value={member.role}
                               onChange={(event) => void changeMemberRole(member, event.target.value)}
@@ -386,24 +407,24 @@ export function MembersPage() {
                             >
                               {manageableTenantRoles.map((option) => (
                                 <option key={option} value={option} disabled={option !== member.role && hasDuplicateTenantRole(rolesByUser, member.userId, option)}>
-                                  {readable(option)}
+                                  {roleLabel(option)}
                                 </option>
                               ))}
                             </select>
                           </label>
                         )}
                       </td>
-                      <td data-label="Added">{formatDate(member.createdAt)}</td>
-                      <td data-label="Actions">
+                      <td data-label={t('members.addedColumn')}>{formatDate(member.createdAt)}</td>
+                      <td data-label={t('members.actions')}>
                         {isOwnerRole(member) || !canManageMembers ? (
-                          <span className="muted-text">{isOwnerRole(member) ? 'Platform managed' : 'Read only'}</span>
+                          <span className="muted-text">{isOwnerRole(member) ? t('members.platformManaged') : t('members.readOnly')}</span>
                         ) : (
                           <div className="member-row-actions">
                             <button type="button" className="secondary-button" disabled={working} onClick={() => void resendInvite(member)}>
-                              Resend invite
+                              {t('members.resendInvite')}
                             </button>
                             <button type="button" className="secondary-button" disabled={working} onClick={() => setMemberPendingRemoval(member)}>
-                              Remove
+                              {t('groups.remove')}
                             </button>
                           </div>
                         )}
@@ -413,39 +434,39 @@ export function MembersPage() {
                 </tbody>
               </table>
             </div>
-            <div className="member-card-list" aria-label="Tenant roster cards">
+            <div className="member-card-list" aria-label={t('members.tenantRosterCards')}>
               {filteredMembers.map((member) => (
                 <article className="member-card" key={`card-${member.userId}-${member.role}`}>
                   <div className="member-card-header">
                     <div>
-                      <strong>{memberName(member)}</strong>
-                      <span>{memberEmail(member)}</span>
+                      <strong>{memberNameDisplay(member)}</strong>
+                      <span>{memberEmailDisplay(member)}</span>
                     </div>
-                    <span className={`status-badge role-${member.role}`}>{readable(member.role)}</span>
+                    <span className={`status-badge role-${member.role}`}>{roleLabel(member.role)}</span>
                   </div>
                   <dl className="member-card-meta">
                     <div>
-                      <dt>User</dt>
+                      <dt>{t('members.user')}</dt>
                       <dd>{member.userId}</dd>
                     </div>
                     <div>
-                      <dt>Added</dt>
+                      <dt>{t('members.addedColumn')}</dt>
                       <dd>{formatDate(member.createdAt)}</dd>
                     </div>
                   </dl>
                   {(rolesByUser[member.userId] ?? []).length > 1 ? (
                     <div className="member-role-stack">
                       {(rolesByUser[member.userId] ?? []).map((item) => (
-                        <span key={item}>{readable(item)}</span>
+                        <span key={item}>{roleLabel(item)}</span>
                       ))}
                     </div>
                   ) : null}
                   {isOwnerRole(member) || !canManageMembers ? (
-                    <span className="muted-text">{isOwnerRole(member) ? 'Platform managed' : 'Read only'}</span>
+                    <span className="muted-text">{isOwnerRole(member) ? t('members.platformManaged') : t('members.readOnly')}</span>
                   ) : (
                     <div className="member-card-actions">
                       <label>
-                        Role
+                        {t('members.role')}
                         <select
                           value={member.role}
                           onChange={(event) => void changeMemberRole(member, event.target.value)}
@@ -453,17 +474,17 @@ export function MembersPage() {
                         >
                           {manageableTenantRoles.map((option) => (
                             <option key={option} value={option} disabled={option !== member.role && hasDuplicateTenantRole(rolesByUser, member.userId, option)}>
-                              {readable(option)}
+                              {roleLabel(option)}
                             </option>
                           ))}
                         </select>
                       </label>
                       <div className="member-row-actions">
                         <button type="button" className="secondary-button" disabled={working} onClick={() => void resendInvite(member)}>
-                          Resend invite
+                          {t('members.resendInvite')}
                         </button>
                         <button type="button" className="secondary-button" disabled={working} onClick={() => setMemberPendingRemoval(member)}>
-                          Remove
+                          {t('groups.remove')}
                         </button>
                       </div>
                     </div>
@@ -474,7 +495,7 @@ export function MembersPage() {
           </section>
 
           <aside className="settings-panel">
-            <h2>Role groups</h2>
+            <h2>{t('members.roleGroups')}</h2>
             <div className="stack-list">
               {tenantRoles.filter((item) => item !== 'all').map((item) => {
                 const count = roleCounts[item] ?? 0;
@@ -486,8 +507,8 @@ export function MembersPage() {
                     onClick={() => setRole(item)}
                   >
                     <div>
-                      <strong>{readable(item)}</strong>
-                      <span>{roleDescriptions[item]}</span>
+                      <strong>{roleLabel(item)}</strong>
+                      <span>{roleDescription(item)}</span>
                     </div>
                     <span className={`status-badge role-${item}`}>{count}</span>
                   </button>
@@ -507,43 +528,43 @@ export function MembersPage() {
           onSubmit={submitAddExisting}
         >
             <div className="modal-header-block">
-              <span>Existing user</span>
-              <h2 id="add-existing-member-title">Add existing user</h2>
-              <p>Search platform users and assign a tenant role.</p>
+              <span>{t('members.existingUser')}</span>
+              <h2 id="add-existing-member-title">{t('members.addExistingUser')}</h2>
+              <p>{t('members.addExistingDetail')}</p>
             </div>
             <div className="student-search-row">
               <label>
-                Search
-                <input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Name or email" autoFocus />
+                {t('groups.search')}
+                <input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder={t('groups.nameOrEmail')} autoFocus />
               </label>
               <button type="button" className="secondary-button" disabled={working} onClick={() => void runUserSearch()}>
-                Search
+                {t('groups.search')}
               </button>
             </div>
             <div className="two-col">
               <label>
-                User
+                {t('members.user')}
                 <select value={selectedUserId ?? ''} onChange={(event) => setSelectedUserId(Number(event.target.value) || undefined)} disabled={!userResults.length}>
-                  <option value="">Select user</option>
+                  <option value="">{t('members.selectUser')}</option>
                   {userResults.map((user) => (
                     <option key={user.id} value={user.id}>{user.fullName || user.email} ({user.email})</option>
                   ))}
                 </select>
               </label>
               <label>
-                Role
+                {t('members.role')}
                 <select value={addRole} onChange={(event) => setAddRole(event.target.value)}>
-                  {manageableTenantRoles.map((option) => <option key={option} value={option}>{readable(option)}</option>)}
+                  {manageableTenantRoles.map((option) => <option key={option} value={option}>{roleLabel(option)}</option>)}
                 </select>
-                <span className="field-help">{roleDescriptions[addRole]}</span>
+                <span className="field-help">{roleDescription(addRole)}</span>
               </label>
             </div>
             {userSearchRan && userSearch.trim() && !working && !userResults.length ? (
-              <p className="panel-note">No platform users matched this search.</p>
+              <p className="panel-note">{t('members.noPlatformUsers')}</p>
             ) : null}
             {selectedUserExistingRoles.length ? (
               <p className="panel-note">
-                Existing tenant roles for this user: {selectedUserExistingRoles.map(readable).join(', ')}.
+                {t('members.existingRolesForUser', { roles: selectedUserExistingRoles.map(roleLabel).join(', ') })}
               </p>
             ) : null}
             <div className="modal-actions">
@@ -556,10 +577,10 @@ export function MembersPage() {
                 }}
                 disabled={working}
               >
-                Cancel
+                {t('courses.cancel')}
               </button>
               <button type="submit" disabled={!selectedUserId || selectedUserHasRole || working}>
-                {working ? 'Adding...' : selectedUserHasRole ? 'Role already assigned' : 'Add member'}
+                {working ? t('members.adding') : selectedUserHasRole ? t('members.roleAlreadyAssigned') : t('members.addMember')}
               </button>
             </div>
         </FormModal>
@@ -567,13 +588,13 @@ export function MembersPage() {
       {canManageMembers && memberModal === 'invite' ? (
         <FormModal labelledBy="invite-member-title" onClose={() => { setMemberModal(null); setInviteResult(null); }} onSubmit={submitInvite}>
             <div className="modal-header-block">
-              <span>Invite</span>
-              <h2 id="invite-member-title">Invite or create user</h2>
-              <p>Create tenant access for a new user profile.</p>
+              <span>{t('members.invite')}</span>
+              <h2 id="invite-member-title">{t('members.inviteOrCreateUser')}</h2>
+              <p>{t('members.inviteDetail')}</p>
             </div>
             <div className="two-col">
               <label>
-                Full name
+                {t('groups.fullName')}
                 <input
                   value={inviteForm.fullName}
                   onChange={(event) => setInviteForm((current) => ({ ...current, fullName: event.target.value }))}
@@ -583,7 +604,7 @@ export function MembersPage() {
                 />
               </label>
               <label>
-                Email
+                {t('groups.email')}
                 <input
                   type="email"
                   value={inviteForm.email}
@@ -595,78 +616,78 @@ export function MembersPage() {
             </div>
             <div className="two-col">
               <label>
-                Role
+                {t('members.role')}
                 <select value={inviteForm.role} onChange={(event) => setInviteForm((current) => ({ ...current, role: event.target.value }))}>
-                  {manageableTenantRoles.map((option) => <option key={option} value={option}>{readable(option)}</option>)}
+                  {manageableTenantRoles.map((option) => <option key={option} value={option}>{roleLabel(option)}</option>)}
                 </select>
-                <span className="field-help">{roleDescriptions[inviteForm.role]}</span>
+                <span className="field-help">{roleDescription(inviteForm.role)}</span>
               </label>
               <label className="checkbox-row member-send-email">
                 <input type="checkbox" checked={inviteForm.sendEmail} onChange={(event) => setInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))} />
-                Send setup email
+                {t('groups.sendSetupEmail')}
               </label>
             </div>
             {inviteResult?.onboarding?.setupLink ? (
               <div className="invite-link-panel">
-                <strong>Setup link</strong>
+                <strong>{t('members.setupLink')}</strong>
                 <span>{inviteResult.onboarding.setupLink}</span>
                 <button type="button" className="secondary-button" onClick={() => void copyInviteLink()}>
-                  Copy link
+                  {t('members.copyLink')}
                 </button>
                 <small>
-                  {inviteResult.onboarding.emailSent ? 'Email sent. ' : ''}
-                  Expires {inviteResult.onboarding.expiresAt ? formatDate(inviteResult.onboarding.expiresAt) : 'soon'}.
+                  {inviteResult.onboarding.emailSent ? `${t('members.emailSent')} ` : ''}
+                  {t('members.expires', { date: inviteResult.onboarding.expiresAt ? formatDate(inviteResult.onboarding.expiresAt) : t('members.soon') })}
                 </small>
               </div>
             ) : null}
             {inviteExistingMember ? (
-              <p className="panel-note">This email already has the {readable(inviteForm.role)} role in this tenant.</p>
+              <p className="panel-note">{t('members.emailAlreadyHasRole', { role: roleLabel(inviteForm.role) })}</p>
             ) : null}
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => { setMemberModal(null); setInviteResult(null); }} disabled={working}>Cancel</button>
-              <button type="submit" disabled={working || Boolean(inviteExistingMember)}>{working ? 'Inviting...' : inviteExistingMember ? 'Role already assigned' : 'Invite member'}</button>
+              <button type="button" className="secondary-button" onClick={() => { setMemberModal(null); setInviteResult(null); }} disabled={working}>{t('courses.cancel')}</button>
+              <button type="submit" disabled={working || Boolean(inviteExistingMember)}>{working ? t('members.inviting') : inviteExistingMember ? t('members.roleAlreadyAssigned') : t('members.inviteMember')}</button>
             </div>
         </FormModal>
       ) : null}
       {canManageMembers && inviteLinkModalOpen ? (
         <Modal labelledBy="invite-link-title" onClose={() => setInviteLinkModalOpen(false)}>
             <div className="modal-header-block">
-              <span>Invite link</span>
-              <h2 id="invite-link-title">Setup link regenerated</h2>
-              <p>Copy and share this link if the user did not receive the setup email.</p>
+              <span>{t('members.inviteLink')}</span>
+              <h2 id="invite-link-title">{t('members.setupLinkRegenerated')}</h2>
+              <p>{t('members.setupLinkRegeneratedDetail')}</p>
             </div>
             {inviteResult?.onboarding?.setupLink ? (
               <div className="invite-link-panel">
-                <strong>Setup link</strong>
+                <strong>{t('members.setupLink')}</strong>
                 <span>{inviteResult.onboarding.setupLink}</span>
                 <button type="button" className="secondary-button" onClick={() => void copyInviteLink()}>
-                  Copy link
+                  {t('members.copyLink')}
                 </button>
                 <small>
-                  {inviteResult.onboarding.emailSent ? 'Email sent. ' : ''}
-                  Expires {inviteResult.onboarding.expiresAt ? formatDate(inviteResult.onboarding.expiresAt) : 'soon'}.
+                  {inviteResult.onboarding.emailSent ? `${t('members.emailSent')} ` : ''}
+                  {t('members.expires', { date: inviteResult.onboarding.expiresAt ? formatDate(inviteResult.onboarding.expiresAt) : t('members.soon') })}
                 </small>
               </div>
             ) : (
-              <p className="panel-note">No setup link is available for this member. The account may already be active.</p>
+              <p className="panel-note">{t('members.noSetupLink')}</p>
             )}
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setInviteLinkModalOpen(false)}>Close</button>
+              <button type="button" className="secondary-button" onClick={() => setInviteLinkModalOpen(false)}>{t('states.closeModal')}</button>
             </div>
         </Modal>
       ) : null}
       {canManageMembers && memberPendingRemoval ? (
         <Modal labelledBy="remove-member-title" onClose={() => setMemberPendingRemoval(null)}>
             <div className="modal-header-block">
-              <span>Remove role</span>
-              <h2 id="remove-member-title">Remove tenant access</h2>
-              <p>{memberName(memberPendingRemoval)} · {readable(memberPendingRemoval.role)}</p>
+              <span>{t('members.removeRole')}</span>
+              <h2 id="remove-member-title">{t('members.removeTenantAccess')}</h2>
+              <p>{memberNameDisplay(memberPendingRemoval)} · {roleLabel(memberPendingRemoval.role)}</p>
             </div>
-            <p className="panel-note">This removes only this tenant role. It does not delete the platform user account.</p>
+            <p className="panel-note">{t('members.removeRoleDetail')}</p>
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setMemberPendingRemoval(null)} disabled={working}>Cancel</button>
+              <button type="button" className="secondary-button" onClick={() => setMemberPendingRemoval(null)} disabled={working}>{t('courses.cancel')}</button>
               <button type="button" className="danger-button" onClick={() => void removeMemberRole(memberPendingRemoval)} disabled={working}>
-                {working ? 'Removing...' : 'Remove access'}
+                {working ? t('groups.removing') : t('members.removeAccess')}
               </button>
             </div>
         </Modal>

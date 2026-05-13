@@ -2,11 +2,12 @@ import { FormEvent, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiCheckCircle, FiLock } from 'react-icons/fi';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { getPasswordSetupError } from './authPassword';
 
-function getSetupErrorMessage(error: unknown) {
+function getSetupErrorMessage(error: unknown, fallback: string) {
   if (
     error &&
     typeof error === 'object' &&
@@ -15,12 +16,11 @@ function getSetupErrorMessage(error: unknown) {
   ) {
     return (error as { response: { data: { message: string } } }).response.data.message;
   }
-  return error instanceof Error
-    ? error.message
-    : 'This setup link is invalid or expired. Ask for a new invite link.';
+  return error instanceof Error ? error.message : fallback;
 }
 
 export function SetupAccountPage() {
+  const { t } = useTranslation();
   const { completeSetup } = useAuth();
   const { resolvedTenant, resolvingTenant, resolutionError } = useTenant();
   const navigate = useNavigate();
@@ -40,10 +40,13 @@ export function SetupAccountPage() {
       return;
     }
     if (!token) {
-      setError('Setup token is missing. Ask your organization administrator for a new invite link.');
+      setError(t('auth.setupMissing'));
       return;
     }
-    const passwordError = getPasswordSetupError(password, confirmPassword);
+    const passwordError = getPasswordSetupError(password, confirmPassword, {
+      minLength: t('auth.passwordMinError'),
+      mismatch: t('auth.passwordMismatch'),
+    });
     if (passwordError) {
       setError(passwordError);
       return;
@@ -52,10 +55,10 @@ export function SetupAccountPage() {
     setSubmitting(true);
     try {
       await completeSetup(token, password);
-      toast.success('Account setup complete');
+      toast.success(t('auth.accountSetupComplete'));
       navigate('/', { replace: true });
     } catch (setupError) {
-      setError(getSetupErrorMessage(setupError));
+      setError(getSetupErrorMessage(setupError, t('auth.setupInvalid')));
     } finally {
       setSubmitting(false);
     }
@@ -63,44 +66,44 @@ export function SetupAccountPage() {
 
   return (
     <main className="login-page landing-page">
-      <section className="landing-hero" aria-label="Learning workspace account setup">
+      <section className="landing-hero" aria-label={t('auth.accountSetupTitle')}>
         <div className="landing-brand-row">
           <div className={`landing-logo-mark ${resolvedTenant?.logoUrl ? 'has-logo' : ''}`}>
             {resolvedTenant?.logoUrl ? <img src={resolvedTenant.logoUrl} alt="" /> : 'L'}
           </div>
-          <span>{resolvedTenant?.name ?? 'Learning workspace'}</span>
+          <span>{resolvedTenant?.name ?? t('app.defaultTenant')}</span>
         </div>
         <div className="landing-copy">
           <span className="eyebrow">
-            {resolvingTenant ? 'Preparing workspace' : resolvedTenant ? 'Private learning portal' : 'Learning portal'}
+            {resolvingTenant ? t('app.preparingWorkspace') : resolvedTenant ? t('auth.privatePortal') : t('auth.learningPortal')}
           </span>
-          <h1>Set up your account</h1>
-          <p>Create a password for your organization workspace. You will use this email and password for future sign-ins.</p>
+          <h1>{t('auth.accountSetupTitle')}</h1>
+          <p>{t('auth.choosePassword')}</p>
           {resolutionError ? <p className="field-error auth-error-banner">{resolutionError}</p> : null}
-          {!token ? <p className="field-error auth-error-banner">Setup token is missing. Ask your organization administrator for a new invite link.</p> : null}
+          {!token ? <p className="field-error auth-error-banner">{t('auth.setupMissing')}</p> : null}
         </div>
         <div className="landing-proof-grid">
           <article>
             <FiLock />
-            <strong>Secure access</strong>
-            <span>Your invite link can only be used once.</span>
+            <strong>{t('auth.secureAccess')}</strong>
+            <span>{t('auth.secureAccessDetail')}</span>
           </article>
           <article>
             <FiCheckCircle />
-            <strong>Tenant ready</strong>
-            <span>After setup, you will enter your assigned workspace.</span>
+            <strong>{t('auth.tenantReady')}</strong>
+            <span>{t('auth.tenantReadyDetail')}</span>
           </article>
         </div>
       </section>
 
       <form className="login-panel" onSubmit={onSubmit}>
         <div className="login-heading">
-          <span>Account setup</span>
-          <h2>{resolvedTenant ? `Join ${resolvedTenant.name}` : 'Join your workspace'}</h2>
-          <p>Choose a password to activate your tenant account.</p>
+          <span>{t('auth.accountSetupEyebrow')}</span>
+          <h2>{resolvedTenant ? t('auth.joinTenant', { name: resolvedTenant.name }) : t('auth.joinWorkspace')}</h2>
+          <p>{t('auth.choosePassword')}</p>
         </div>
         <label>
-          New password
+          {t('auth.newPassword')}
           <input
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -111,10 +114,10 @@ export function SetupAccountPage() {
             disabled={submitting || resolvingTenant || Boolean(resolutionError) || !token}
             required
           />
-          <span className="field-help">Use at least 8 characters.</span>
+          <span className="field-help">{t('auth.passwordMinHelp')}</span>
         </label>
         <label>
-          Confirm password
+          {t('auth.confirmPassword')}
           <input
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
@@ -128,10 +131,10 @@ export function SetupAccountPage() {
         </label>
         {error ? <p className="field-error">{error}</p> : null}
         <button type="submit" disabled={submitting || resolvingTenant || Boolean(resolutionError) || !token}>
-          {submitting ? 'Setting up...' : resolvingTenant ? 'Preparing workspace...' : 'Set up account'}
+          {submitting ? t('auth.settingUp') : resolvingTenant ? t('app.preparingWorkspace') : t('auth.setupSubmit')}
         </button>
         <p className="login-support-note">
-          Already finished setup? <Link to="/login">Sign in</Link>
+          {t('auth.alreadyFinished')} <Link to="/login">{t('titles.signIn')}</Link>
         </p>
       </form>
     </main>

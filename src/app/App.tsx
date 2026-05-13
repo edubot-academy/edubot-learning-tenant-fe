@@ -1,5 +1,7 @@
 import { Component, lazy, Suspense, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n/config';
 import { AppLayout } from '../components/AppLayout';
 import { useAuth } from '../features/auth/AuthProvider';
 import { useTenant } from '../features/tenant/TenantProvider';
@@ -29,18 +31,18 @@ const SettingsPage = lazyNamed(() => import('../features/settings/SettingsPage')
 const StudentDashboardPage = lazyNamed(() => import('../features/student/StudentDashboardPage'), 'StudentDashboardPage');
 
 const routeTitles: Record<string, string> = {
-  '/': 'Overview',
-  '/forgot-password': 'Password reset',
-  '/setup-account': 'Account setup',
-  '/student': 'My learning',
-  '/courses': 'Courses',
-  '/groups': 'Groups',
-  '/sessions': 'Sessions',
-  '/attendance': 'Attendance',
-  '/homework': 'Homework',
-  '/certificates': 'Certificates',
-  '/members': 'Members',
-  '/settings': 'Settings',
+  '/': 'navigation.overview',
+  '/forgot-password': 'titles.passwordReset',
+  '/setup-account': 'titles.accountSetup',
+  '/student': 'navigation.myLearning',
+  '/courses': 'navigation.courses',
+  '/groups': 'navigation.groups',
+  '/sessions': 'navigation.sessions',
+  '/attendance': 'navigation.attendance',
+  '/homework': 'navigation.homework',
+  '/certificates': 'navigation.certificates',
+  '/members': 'navigation.members',
+  '/settings': 'navigation.settings',
 };
 
 const defaultFaviconHref = '/edubot-icon.svg';
@@ -58,14 +60,15 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, RouteErrorBo
 
   render() {
     if (this.state.hasError) {
+      const t = i18n.t.bind(i18n);
       return (
         <main className="login-page">
           <section className="login-panel state-panel" role="alert">
-            <strong>Workspace view failed</strong>
-            <span>Refresh this view or return to another workspace section.</span>
+            <strong>{t('errors.workspaceViewFailedTitle')}</strong>
+            <span>{t('errors.workspaceViewFailedDetail')}</span>
             <div className="page-actions">
-              <button type="button" onClick={() => this.setState({ hasError: false })}>Try again</button>
-              <button type="button" className="secondary-button" onClick={() => window.location.assign('/')}>Go to overview</button>
+              <button type="button" onClick={() => this.setState({ hasError: false })}>{t('actions.tryAgain')}</button>
+              <button type="button" className="secondary-button" onClick={() => window.location.assign('/')}>{t('actions.goToOverview')}</button>
             </div>
           </section>
         </main>
@@ -89,23 +92,24 @@ function getManagedFaviconLink() {
 }
 
 function DocumentMetadata() {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const { activeTenant } = useTenant();
   const faviconHref = activeTenant?.logoUrl || defaultFaviconHref;
 
   const title = useMemo(() => {
-    if (pathname === '/login') return activeTenant?.name ? `Sign in | ${activeTenant.name}` : 'Sign in | Learning Workspace';
+    if (pathname === '/login') return activeTenant?.name ? `${t('titles.signIn')} | ${activeTenant.name}` : `${t('titles.signIn')} | ${t('app.defaultTenant')}`;
     if (pathname === '/forgot-password') {
-      return activeTenant?.name ? `Password reset | ${activeTenant.name}` : 'Password reset | Learning Workspace';
+      return activeTenant?.name ? `${t('titles.passwordReset')} | ${activeTenant.name}` : `${t('titles.passwordReset')} | ${t('app.defaultTenant')}`;
     }
     if (pathname === '/setup-account') {
-      return activeTenant?.name ? `Account setup | ${activeTenant.name}` : 'Account setup | Learning Workspace';
+      return activeTenant?.name ? `${t('titles.accountSetup')} | ${activeTenant.name}` : `${t('titles.accountSetup')} | ${t('app.defaultTenant')}`;
     }
 
-    const sectionTitle = routeTitles[pathname] ?? 'Tenant Workspace';
-    const tenantName = activeTenant?.name ?? 'Tenant Workspace';
+    const sectionTitle = t(routeTitles[pathname] ?? 'app.tenantWorkspace');
+    const tenantName = activeTenant?.name ?? t('app.tenantWorkspace');
     return `${sectionTitle} | ${tenantName}`;
-  }, [activeTenant?.name, pathname]);
+  }, [activeTenant?.name, pathname, t]);
 
   useEffect(() => {
     document.title = title;
@@ -155,13 +159,14 @@ function CertificateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function FeatureRoute({ feature, children }: { feature: TenantFeatureKey; children: React.ReactNode }) {
+  const { t } = useTranslation();
   const { activeTenant } = useTenant();
 
   if (!isTenantFeatureEnabled(activeTenant, feature)) {
     return (
       <EmptyState
-        title="Feature disabled"
-        detail="This tenant feature is currently disabled by the platform admin."
+        title={t('errors.featureDisabledTitle')}
+        detail={t('errors.featureDisabledDetail')}
       />
     );
   }
@@ -170,6 +175,7 @@ function FeatureRoute({ feature, children }: { feature: TenantFeatureKey; childr
 }
 
 function ProtectedRoutes() {
+  const { t } = useTranslation();
   const { user, loading, signOut } = useAuth();
   const {
     tenants,
@@ -181,16 +187,16 @@ function ProtectedRoutes() {
     reloadTenants,
   } = useTenant();
 
-  if (loading || tenantLoading || resolvingTenant) return <LoadingState label="Preparing workspace" />;
+  if (loading || tenantLoading || resolvingTenant) return <LoadingState label={t('app.preparingWorkspace')} />;
   if (!user) return <Navigate to="/login" replace />;
   if (isPlatformAdmin(user)) {
     return (
       <main className="login-page">
         <section className="login-panel state-panel">
-          <strong>Use platform admin</strong>
-          <span>Super admin accounts cannot access tenant workspaces.</span>
+          <strong>{t('errors.platformAdminTitle')}</strong>
+          <span>{t('errors.platformAdminDetail')}</span>
           <div className="page-actions">
-            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>{t('actions.signOut')}</button>
           </div>
         </section>
       </main>
@@ -200,10 +206,10 @@ function ProtectedRoutes() {
     return (
       <main className="login-page">
         <section className="login-panel state-panel">
-          <strong>Tenant domain unavailable</strong>
+          <strong>{t('errors.tenantDomainTitle')}</strong>
           <span>{resolutionError}</span>
           <div className="page-actions">
-            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>{t('actions.signOut')}</button>
           </div>
         </section>
       </main>
@@ -213,11 +219,11 @@ function ProtectedRoutes() {
     return (
       <main className="login-page">
         <section className="login-panel state-panel">
-          <strong>Could not load tenant access</strong>
+          <strong>{t('errors.tenantAccessLoadTitle')}</strong>
           <span>{tenantError}</span>
           <div className="page-actions">
-            <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>Retry</button>
-            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
+            <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>{t('actions.retry')}</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>{t('actions.signOut')}</button>
           </div>
         </section>
       </main>
@@ -227,13 +233,13 @@ function ProtectedRoutes() {
     return (
       <main className="login-page">
         <section className="login-panel state-panel">
-          <strong>No tenant access</strong>
-          <span>Your account is valid, but it is not assigned to a learning tenant yet.</span>
+          <strong>{t('errors.noTenantAccessTitle')}</strong>
+          <span>{t('errors.noTenantAccessDetail')}</span>
           <div className="page-actions">
-            <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>Refresh</button>
-            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
+            <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>{t('actions.refresh')}</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>{t('actions.signOut')}</button>
           </div>
-          {tenants.length ? <span>{tenants.length} tenants loaded, but none is active.</span> : null}
+          {tenants.length ? <span>{t('errors.noTenantAccessLoaded', { count: tenants.length })}</span> : null}
         </section>
       </main>
     );
@@ -242,11 +248,11 @@ function ProtectedRoutes() {
     return (
       <main className="login-page">
         <section className="login-panel state-panel">
-          <strong>No workspace role</strong>
-          <span>Your account is assigned to this tenant, but it does not have a tenant workspace role yet.</span>
+          <strong>{t('errors.noWorkspaceRoleTitle')}</strong>
+          <span>{t('errors.noWorkspaceRoleDetail')}</span>
           <div className="page-actions">
-            <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>Refresh</button>
-            <button type="button" className="secondary-button" onClick={() => void signOut()}>Sign out</button>
+            <button type="button" onClick={() => void reloadTenants().catch(() => undefined)}>{t('actions.refresh')}</button>
+            <button type="button" className="secondary-button" onClick={() => void signOut()}>{t('actions.signOut')}</button>
           </div>
         </section>
       </main>
@@ -257,11 +263,12 @@ function ProtectedRoutes() {
 }
 
 function AppRoutes() {
+  const { t } = useTranslation();
   const location = useLocation();
 
   return (
     <RouteErrorBoundary key={location.pathname}>
-      <Suspense fallback={<LoadingState label="Loading workspace view" />}>
+      <Suspense fallback={<LoadingState label={t('app.loadingView')} />}>
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<PasswordResetPage />} />

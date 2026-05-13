@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiAward, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiFileText, FiPlayCircle } from 'react-icons/fi';
+import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal } from '../../components/Modal';
@@ -118,16 +119,16 @@ function statusClass(value?: string | null) {
   return String(value || 'draft').toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
 }
 
-function displayDate(value?: string | null, fallback = 'Date not scheduled') {
+function displayDate(value: string | null | undefined, fallback: string) {
   return value ? formatDate(value) : fallback;
 }
 
-function displayText(value?: string | number | boolean | null, fallback = 'Not set') {
+function displayText(value: string | number | boolean | null | undefined, fallback: string) {
   return value === null || value === undefined || value === '' ? fallback : readable(value);
 }
 
-function dueLabel(value?: string | null) {
-  return value ? `Due ${formatDate(value)}` : 'No due date';
+function dueLabel(value: string | null | undefined, dueTemplate: (date: string) => string, noDueDate: string) {
+  return value ? dueTemplate(formatDate(value)) : noDueDate;
 }
 
 function taskContext(task?: StudentTask | StudentHomework | null) {
@@ -140,23 +141,14 @@ function taskDueDate(task?: StudentTask | StudentHomework | null) {
   return isActivityTask(task) ? task.dueAt : task.deadline ?? task.dueAt;
 }
 
-function progressLabel(value: number) {
-  if (value >= 100) return 'Completed';
-  if (value <= 0) return 'Not started';
-  return 'In progress';
-}
-
-function taskStatusLabel(value?: string | null) {
-  const status = String(value ?? '').trim();
-  return status ? readable(status) : 'Open';
-}
-
-function certificateStatusLabel(value?: string | null) {
-  const status = String(value ?? '').trim();
-  return status ? readable(status) : 'Pending';
+function progressLabel(value: number, labels: { completed: string; notStarted: string; inProgress: string }) {
+  if (value >= 100) return labels.completed;
+  if (value <= 0) return labels.notStarted;
+  return labels.inProgress;
 }
 
 export function StudentDashboardPage() {
+  const { t } = useTranslation();
   const { activeTenant } = useTenant();
   const [courses, setCourses] = useState<StudentCourse[]>([]);
   const [sessions, setSessions] = useState<StudentSession[]>([]);
@@ -197,9 +189,9 @@ export function StudentDashboardPage() {
         setResources(nextResources);
         setRecordings(nextRecordings);
       })
-      .catch(() => toast.error('Could not load student workspace'))
+      .catch(() => toast.error(t('student.couldNotLoad')))
       .finally(() => setLoading(false));
-  }, [activeTenant?.id, attendanceEnabled, certificatesEnabled, homeworkEnabled]);
+  }, [activeTenant?.id, attendanceEnabled, certificatesEnabled, homeworkEnabled, t]);
 
   const reloadStudentData = async () => {
     const [nextHomework, nextTasks] = await Promise.all([
@@ -228,9 +220,9 @@ export function StudentDashboardPage() {
         ? await uploadStudentActivityAttachment(selectedTask.sessionId, selectedTask.id, file)
         : await uploadStudentHomeworkAttachment(selectedTask.sessionId, selectedTask.id, file);
       setSubmitForm((current) => ({ ...current, attachmentUrl: uploaded.key || uploaded.url }));
-      toast.success('Attachment uploaded');
+      toast.success(t('student.attachmentUploaded'));
     } catch {
-      toast.error('Could not upload attachment');
+      toast.error(t('student.couldNotUpload'));
     } finally {
       setSubmitting(false);
     }
@@ -262,9 +254,9 @@ export function StudentDashboardPage() {
       await reloadStudentData();
       setSelectedTask(null);
       setSubmitForm(emptySubmitForm);
-      toast.success('Submitted');
+      toast.success(t('student.submitted'));
     } catch {
-      toast.error('Could not submit');
+      toast.error(t('student.couldNotSubmit'));
     } finally {
       setSubmitting(false);
     }
@@ -302,13 +294,13 @@ export function StudentDashboardPage() {
       return !['approved', 'submitted', 'completed'].includes(status);
     }).length;
     return [
-      { label: 'Courses', value: courses.length, icon: FiBookOpen },
-      { label: 'Upcoming sessions', value: sessions.length, icon: FiCalendar },
-      ...(attendanceEnabled ? [{ label: 'Attendance', value: attendance.length ? `${attendanceRate}%` : 'N/A', icon: FiCheckCircle }] : []),
-      ...(homeworkEnabled ? [{ label: 'Open homework', value: pendingHomework, icon: FiFileText }] : []),
-      ...(certificatesEnabled ? [{ label: 'Certificates', value: certificates.length, icon: FiAward }] : []),
+      { label: t('navigation.courses'), value: courses.length, icon: FiBookOpen },
+      { label: t('student.upcomingSessions'), value: sessions.length, icon: FiCalendar },
+      ...(attendanceEnabled ? [{ label: t('navigation.attendance'), value: attendance.length ? `${attendanceRate}%` : t('states.notSet'), icon: FiCheckCircle }] : []),
+      ...(homeworkEnabled ? [{ label: t('student.openHomework'), value: pendingHomework, icon: FiFileText }] : []),
+      ...(certificatesEnabled ? [{ label: t('navigation.certificates'), value: certificates.length, icon: FiAward }] : []),
     ];
-  }, [attendance.length, attendanceEnabled, attendanceRate, certificates.length, certificatesEnabled, courses.length, homework, homeworkEnabled, sessions.length]);
+  }, [attendance.length, attendanceEnabled, attendanceRate, certificates.length, certificatesEnabled, courses.length, homework, homeworkEnabled, sessions.length, t]);
 
   const nextSession = useMemo(() => sessions[0] ?? null, [sessions]);
 
@@ -328,27 +320,72 @@ export function StudentDashboardPage() {
 
   const featuredTask = openTasks[0] ?? tasks[0] ?? null;
   const primaryTask = featuredTask ?? nextHomework;
+  const dateText = (value?: string | null, fallback = t('student.dateNotScheduled')) => displayDate(value, fallback);
+  const dueText = (value?: string | null) => dueLabel(value, (date) => t('student.due', { date }), t('student.noDueDate'));
+  const statusLabel = (value: string | null | undefined, fallback: string) => {
+    const status = String(value ?? '').trim();
+    const key = status.toLowerCase();
+    const labels: Record<string, string> = {
+      absent: t('attendance.statusAbsent'),
+      approved: t('homework.reviewApproved'),
+      completed: t('student.completed'),
+      draft: t('courses.draft'),
+      excused: t('attendance.statusExcused'),
+      issued: t('certificates.statusIssued'),
+      late: t('attendance.statusLate'),
+      missing: t('homework.reviewMissing'),
+      needs_review: t('homework.reviewNeedsReview'),
+      needs_revision: t('homework.reviewNeedsRevision'),
+      passed: t('student.completed'),
+      pending: t('student.pending'),
+      pending_approval: t('overview.pendingApprovals'),
+      pending_submission: t('homework.reviewMissing'),
+      present: t('attendance.statusPresent'),
+      rejected: t('homework.reviewRejected'),
+      revoked: t('certificates.statusRevoked'),
+      submitted: t('student.submitted'),
+    };
+    return status ? labels[key] ?? readable(status) : fallback;
+  };
+  const activityTypeLabel = (value: string | number | boolean | null | undefined, fallback: string) => {
+    const key = String(value ?? '').trim().toLowerCase();
+    const labels: Record<string, string> = {
+      discussion: t('sessions.activityTypeDiscussion'),
+      exercise: t('sessions.activityTypeExercise'),
+      group_work: t('sessions.activityTypeGroupWork'),
+      homework: t('navigation.homework'),
+      quiz: t('sessions.activityTypeQuiz'),
+      resource: t('student.resource'),
+      submission: t('sessions.activityTypeSubmission'),
+    };
+    return key ? labels[key] ?? readable(value) : fallback;
+  };
+  const progressText = (value: number) => progressLabel(value, {
+    completed: t('student.completed'),
+    notStarted: t('student.notStarted'),
+    inProgress: t('student.inProgress'),
+  });
   const primaryAction = nextSession?.liveJoinUrl
     ? {
-      eyebrow: 'Continue learning',
-      title: nextSession.title ?? nextSession.sessionTitle ?? 'Join your next session',
-      detail: `${displayText(nextSession.courseTitle, 'Course not set')} · ${displayDate(nextSession.startsAt)}`,
-      action: <a className="primary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">Join session</a>,
+      eyebrow: t('student.continueLearning'),
+      title: nextSession.title ?? nextSession.sessionTitle ?? t('student.joinSession'),
+      detail: `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(nextSession.startsAt)}`,
+      action: <a className="primary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.joinSession')}</a>,
       icon: FiClock,
     }
     : primaryTask
       ? {
-        eyebrow: 'Continue learning',
-        title: primaryTask.title ?? 'Open your next task',
-        detail: `${displayText(taskContext(primaryTask), 'Course not set')} · ${dueLabel(taskDueDate(primaryTask))}`,
-        action: <button type="button" onClick={() => selectTask(primaryTask)}>Open task</button>,
+        eyebrow: t('student.continueLearning'),
+        title: primaryTask.title ?? t('student.openYourNextTask'),
+        detail: `${displayText(taskContext(primaryTask), t('student.courseNotSet'))} · ${dueText(taskDueDate(primaryTask))}`,
+        action: <button type="button" onClick={() => selectTask(primaryTask)}>{t('student.openTask')}</button>,
         icon: FiCheckCircle,
       }
       : {
-        eyebrow: 'Continue learning',
-        title: 'Nothing due right now',
-        detail: 'New sessions, homework, and activities will appear here when assigned.',
-        action: <span className="status-badge approved">Clear</span>,
+        eyebrow: t('student.continueLearning'),
+        title: t('student.nothingDueTitle'),
+        detail: t('student.nothingDueDetail'),
+        action: <span className="status-badge approved">{t('student.clear')}</span>,
         icon: FiCheckCircle,
       };
 
@@ -370,11 +407,11 @@ export function StudentDashboardPage() {
   const canSubmitSelectedTask = !selectedQuizTotal || selectedQuizAnswered === selectedQuizTotal;
   const PrimaryActionIcon = primaryAction.icon;
 
-  if (loading) return <LoadingState label="Loading student workspace" />;
+  if (loading) return <LoadingState label={t('student.loading')} />;
 
   return (
     <>
-      <PageHeader title="My learning" eyebrow={activeTenant?.name} />
+      <PageHeader title={t('student.myLearning')} eyebrow={activeTenant?.name} />
 
       <section className="student-focus-grid">
         <article className="student-focus-card primary">
@@ -390,23 +427,23 @@ export function StudentDashboardPage() {
         <article className="student-focus-card">
           <div className="student-focus-icon"><FiClock /></div>
           <div>
-            <span className="eyebrow">Next live session</span>
-            <h2>{nextSession?.title ?? nextSession?.sessionTitle ?? 'No upcoming session'}</h2>
-            <p>{nextSession ? `${displayText(nextSession.courseTitle, 'Course not set')} · ${displayDate(nextSession.startsAt)}` : 'You are clear for now. New sessions will appear here when scheduled.'}</p>
+            <span className="eyebrow">{t('student.nextLiveSession')}</span>
+            <h2>{nextSession?.title ?? nextSession?.sessionTitle ?? t('student.noUpcomingSession')}</h2>
+            <p>{nextSession ? `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(nextSession.startsAt)}` : t('student.nothingDueDetail')}</p>
           </div>
           {nextSession?.liveJoinUrl ? (
-            <a className="secondary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">Join</a>
+            <a className="secondary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.join')}</a>
           ) : (
-            <span className="status-badge draft">{nextSession ? readable(nextSession.groupName) : 'Clear'}</span>
+            <span className="status-badge draft">{nextSession ? readable(nextSession.groupName) : t('student.clear')}</span>
           )}
         </article>
 
         <article className="student-focus-card">
           <div className="student-focus-icon"><FiPlayCircle /></div>
           <div>
-            <span className="eyebrow">Course progress</span>
-            <h2>{averageProgress}% average</h2>
-            <p>{courses.length ? `${courses.length} active course${courses.length === 1 ? '' : 's'} · ${progressLabel(averageProgress)}` : 'Enrollments will appear once your instructor adds you to a group.'}</p>
+            <span className="eyebrow">{t('student.courseProgress')}</span>
+            <h2>{averageProgress}% {t('student.averageProgress')}</h2>
+            <p>{courses.length ? `${courses.length} ${t(courses.length === 1 ? 'student.activeCourse' : 'student.activeCourses')} · ${progressText(averageProgress)}` : t('student.progressEnrollments')}</p>
           </div>
           <div className="progress-cell student-focus-progress">
             <span style={{ width: `${Math.max(0, Math.min(100, averageProgress))}%` }} />
@@ -431,22 +468,22 @@ export function StudentDashboardPage() {
       <section className="content-section student-task-section">
         <div className="section-heading-row">
           <div>
-            <h2>Tasks</h2>
-            <span>{openTasks.length} open task{openTasks.length === 1 ? '' : 's'} need attention</span>
+            <h2>{t('student.tasks')}</h2>
+            <span>{t('student.openTasksNeedAttention', { count: openTasks.length })}</span>
           </div>
         </div>
-        {!tasks.length ? <EmptyState title="No tasks right now" detail="Assigned homework and required learning actions will appear here when they are available." /> : (
+        {!tasks.length ? <EmptyState title={t('student.tasksEmptyTitle')} detail={t('student.tasksEmptyDetail')} /> : (
           <div className="student-task-list">
             {tasks.map((task, index) => (
               <article className="student-task-card" key={task.id ?? index}>
                 <div>
-                  <strong>{task.title ?? readable(task.type)}</strong>
-                  <span>{displayText(task.courseTitle, 'Course not set')} · {dueLabel(task.dueAt)}</span>
-                  <small>{displayText(task.type ?? task.taskType ?? task.activityType, 'Activity')}</small>
+                  <strong>{task.title ?? activityTypeLabel(task.type, t('student.activity'))}</strong>
+                  <span>{displayText(task.courseTitle, t('student.courseNotSet'))} · {dueText(task.dueAt)}</span>
+                  <small>{activityTypeLabel(task.type ?? task.taskType ?? task.activityType, t('student.activity'))}</small>
                 </div>
                 <div className="student-task-action">
-                  <span className={`status-badge ${statusClass(task.status)}`}>{taskStatusLabel(task.status)}</span>
-                  <button type="button" className="secondary-button" onClick={() => selectTask(task)}>Open</button>
+                  <span className={`status-badge ${statusClass(task.status)}`}>{statusLabel(task.status, t('student.open'))}</span>
+                  <button type="button" className="secondary-button" onClick={() => selectTask(task)}>{t('student.open')}</button>
                 </div>
               </article>
             ))}
@@ -458,19 +495,19 @@ export function StudentDashboardPage() {
         <section className="content-section">
           <div className="student-panel-heading">
             <FiBookOpen />
-            <h2>My courses</h2>
+            <h2>{t('student.myCourses')}</h2>
           </div>
-          {!courses.length ? <EmptyState title="No active courses" detail="Courses appear here after your account is enrolled in a tenant course or group." /> : (
+          {!courses.length ? <EmptyState title={t('student.coursesEmptyTitle')} detail={t('student.coursesEmptyDetail')} /> : (
             <div className="stack-list">
               {courses.slice(0, 6).map((course, index) => {
                 const progress = course.progressPercent ?? course.progress ?? 0;
                 return (
                   <article className="stack-list-item" key={course.id ?? course.courseId ?? index}>
                     <div>
-                      <strong>{course.title ?? course.courseTitle ?? `Course ${index + 1}`}</strong>
-                      <span>{displayText(course.groupName, 'Group not assigned')}</span>
-                      <span className={`status-badge ${statusClass(course.status)}`}>{displayText(course.status, 'Active')}</span>
-                      <span>{progressLabel(progress)}</span>
+                      <strong>{course.title ?? course.courseTitle ?? t('student.courseFallback', { number: index + 1 })}</strong>
+                      <span>{displayText(course.groupName, t('student.groupNotAssigned'))}</span>
+                      <span className={`status-badge ${statusClass(course.status)}`}>{statusLabel(course.status, t('student.activeStatus'))}</span>
+                      <span>{progressText(progress)}</span>
                     </div>
                     <div className="progress-cell">
                       <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
@@ -486,26 +523,26 @@ export function StudentDashboardPage() {
         <section className="content-section">
           <div className="student-panel-heading">
             <FiFileText />
-            <h2>Materials</h2>
+            <h2>{t('student.materials')}</h2>
           </div>
-          {!materialItems.length ? <EmptyState title="No materials yet" detail="Session resources and recordings will appear here when instructors publish them." /> : (
+          {!materialItems.length ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : (
             <div className="stack-list">
               {materialItems.map(({ kind, session, key }, index) => (
                 <article className="stack-list-item" key={key}>
                   <div>
-                    <strong>{session.sessionTitle ?? session.title ?? `${kind === 'recording' ? 'Recording' : 'Session'} ${index + 1}`}</strong>
-                    <span>{displayText(session.courseTitle, 'Course not set')} · {displayDate(session.startsAt)}</span>
-                    <span className="status-badge draft">{kind === 'recording' ? 'Recording' : 'Resource'}</span>
+                    <strong>{session.sessionTitle ?? session.title ?? (kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }))}</strong>
+                    <span>{displayText(session.courseTitle, t('student.courseNotSet'))} · {dateText(session.startsAt)}</span>
+                    <span className="status-badge draft">{kind === 'recording' ? t('student.recording') : t('student.resource')}</span>
                   </div>
                   <div className="student-material-actions">
                     {kind === 'resource' ? session.materials?.slice(0, 3).map((material, materialIndex) => (
                       material.url ? (
                         <a className="secondary-link-button" key={`${material.url}-${materialIndex}`} href={material.url} target="_blank" rel="noreferrer">
-                          {material.title ?? displayText(material.type, 'Open')}
+                          {material.title ?? displayText(material.type, t('student.open'))}
                         </a>
                       ) : null
                     )) : null}
-                    {kind === 'recording' && typeof session.url === 'string' ? <a className="secondary-link-button" href={session.url} target="_blank" rel="noreferrer">Open</a> : null}
+                    {kind === 'recording' && typeof session.url === 'string' ? <a className="secondary-link-button" href={session.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
                   </div>
                 </article>
               ))}
@@ -516,18 +553,18 @@ export function StudentDashboardPage() {
         <section className="content-section">
           <div className="student-panel-heading">
             <FiCalendar />
-            <h2>Upcoming sessions</h2>
+            <h2>{t('student.upcomingSessions')}</h2>
           </div>
-          {!sessions.length ? <EmptyState title="No upcoming sessions" detail="Scheduled live or offline classes will appear here once your groups have upcoming sessions." /> : (
+          {!sessions.length ? <EmptyState title={t('student.sessionsEmptyTitle')} detail={t('student.sessionsEmptyDetail')} /> : (
             <div className="stack-list">
               {sessions.map((session, index) => (
                 <article className="stack-list-item" key={session.id ?? index}>
                   <div>
-                    <strong>{session.title ?? `Session ${index + 1}`}</strong>
-                    <span>{displayText(session.courseTitle, 'Course not set')} · {displayDate(session.startsAt)}</span>
-                    <span className="status-badge draft">{displayText(session.groupName, 'Group not set')}</span>
+                    <strong>{session.title ?? t('student.sessionFallback', { number: index + 1 })}</strong>
+                    <span>{displayText(session.courseTitle, t('student.courseNotSet'))} · {dateText(session.startsAt)}</span>
+                    <span className="status-badge draft">{displayText(session.groupName, t('student.groupNotSet'))}</span>
                   </div>
-                  {session.liveJoinUrl ? <a href={session.liveJoinUrl} target="_blank" rel="noreferrer">Join</a> : null}
+                  {session.liveJoinUrl ? <a href={session.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.join')}</a> : null}
                 </article>
               ))}
             </div>
@@ -538,23 +575,23 @@ export function StudentDashboardPage() {
           <section className="content-section">
             <div className="student-panel-heading">
               <FiCheckCircle />
-              <h2>Attendance</h2>
+              <h2>{t('navigation.attendance')}</h2>
             </div>
-            {!attendance.length ? <EmptyState title="No attendance marked yet" detail="Attendance records will appear after instructors mark your session attendance." /> : (
+            {!attendance.length ? <EmptyState title={t('student.noAttendanceTitle')} detail={t('student.noAttendanceDetail')} /> : (
               <>
                 <div className="student-attendance-summary">
                   <strong>{attendanceRate}%</strong>
-                  <span>{missedAttendanceCount} absence or late mark{missedAttendanceCount === 1 ? '' : 's'} in recent sessions</span>
+                  <span>{missedAttendanceCount} {t('student.attendanceRecent')}</span>
                 </div>
                 <div className="stack-list">
                   {attendance.slice(0, 6).map((record, index) => (
                     <article className="stack-list-item" key={record.id ?? `${record.sessionId}-${index}`}>
                       <div>
-                        <strong>{displayDate(record.sessionDate)}</strong>
-                        <span>Session attendance</span>
+                        <strong>{dateText(record.sessionDate)}</strong>
+                        <span>{t('student.sessionAttendance')}</span>
                         {record.notes ? <span>{record.notes}</span> : null}
                       </div>
-                      <span className={`status-badge ${statusClass(record.status)}`}>{readable(record.status)}</span>
+                      <span className={`status-badge ${statusClass(record.status)}`}>{statusLabel(record.status, t('student.open'))}</span>
                     </article>
                   ))}
                 </div>
@@ -567,20 +604,20 @@ export function StudentDashboardPage() {
           <section className="content-section">
             <div className="student-panel-heading">
               <FiCheckCircle />
-              <h2>Homework</h2>
+              <h2>{t('navigation.homework')}</h2>
             </div>
-            {!homework.length ? <EmptyState title="No homework assigned" detail="Homework appears here when an instructor assigns work to your course, group, or session." /> : (
+            {!homework.length ? <EmptyState title={t('student.homeworkEmptyTitle')} detail={t('student.homeworkEmptyDetail')} /> : (
               <div className="stack-list">
                 {homework.slice(0, 8).map((item, index) => (
                   <article className="stack-list-item" key={item.id ?? index}>
                     <div>
-                      <strong>{item.title ?? `Homework ${index + 1}`}</strong>
-                      <span>{displayText(item.courseTitle ?? item.sessionTitle, 'Course not set')} · {dueLabel(item.deadline ?? item.dueAt)}</span>
-                      <span className={`status-badge ${statusClass(item.reviewState ?? item.status)}`}>{taskStatusLabel(item.reviewState ?? item.status)}</span>
+                      <strong>{item.title ?? t('student.homeworkFallback', { number: index + 1 })}</strong>
+                      <span>{displayText(item.courseTitle ?? item.sessionTitle, t('student.courseNotSet'))} · {dueText(item.deadline ?? item.dueAt)}</span>
+                      <span className={`status-badge ${statusClass(item.reviewState ?? item.status)}`}>{statusLabel(item.reviewState ?? item.status, t('student.open'))}</span>
                       {item.mySubmission?.reviewComment ? <span>{item.mySubmission.reviewComment}</span> : null}
                     </div>
                     <button type="button" className="secondary-button" onClick={() => selectTask(item)}>
-                      {item.mySubmission ? 'Update' : 'Submit'}
+                      {item.mySubmission ? t('student.update') : t('student.submit')}
                     </button>
                   </article>
                 ))}
@@ -593,24 +630,24 @@ export function StudentDashboardPage() {
           <section className="content-section">
             <div className="student-panel-heading">
               <FiAward />
-              <h2>Certificates</h2>
+              <h2>{t('navigation.certificates')}</h2>
             </div>
-            {!certificates.length ? <EmptyState title="No certificates yet" detail="Issued certificates will appear here when you become eligible and a certificate is released." /> : (
+            {!certificates.length ? <EmptyState title={t('student.certificatesEmptyTitle')} detail={t('student.certificatesEmptyDetail')} /> : (
               <div className="stack-list">
                 {certificates.slice(0, 6).map((certificate, index) => (
                   <article className="stack-list-item" key={certificate.id ?? certificate.publicId ?? index}>
                     <div>
-                      <strong>{certificate.courseTitle ?? certificate.publicId ?? `Certificate ${index + 1}`}</strong>
-                      <span>{displayDate(certificate.issuedAt, 'Not issued yet')}</span>
-                      <span className={`status-badge ${statusClass(certificate.status)}`}>{certificateStatusLabel(certificate.status)}</span>
+                      <strong>{certificate.courseTitle ?? certificate.publicId ?? t('student.certificateFallback', { number: index + 1 })}</strong>
+                      <span>{dateText(certificate.issuedAt, t('student.notIssuedYet'))}</span>
+                      <span className={`status-badge ${statusClass(certificate.status)}`}>{statusLabel(certificate.status, t('student.pending'))}</span>
                     </div>
                     <div className="student-certificate-actions">
                       {certificate.verificationUrl ? (
-                        <a className="secondary-link-button" href={certificate.verificationUrl} target="_blank" rel="noreferrer">Verify</a>
+                        <a className="secondary-link-button" href={certificate.verificationUrl} target="_blank" rel="noreferrer">{t('student.verify')}</a>
                       ) : null}
                       {certificate.downloadUrl ? (
-                        <button type="button" className="secondary-button" onClick={() => void downloadCertificatePdf(certificate.downloadUrl!, `certificate-${certificate.publicId ?? certificate.id ?? 'issued'}.pdf`).catch(() => toast.error('Could not download certificate'))}>
-                          Download
+                        <button type="button" className="secondary-button" onClick={() => void downloadCertificatePdf(certificate.downloadUrl!, `certificate-${certificate.publicId ?? certificate.id ?? 'issued'}.pdf`).catch(() => toast.error(t('student.certificateNoDownload')))}>
+                          {t('student.download')}
                         </button>
                       ) : null}
                     </div>
@@ -630,15 +667,15 @@ export function StudentDashboardPage() {
           onSubmit={submitSelectedTask}
         >
             <div className="modal-header-block">
-              <span>{readable(selectedTask.status)}</span>
-              <h2 id="student-submit-title">{selectedTask.title ?? 'Submit task'}</h2>
-              <p>{readable(taskContext(selectedTask))} · {dueLabel(taskDueDate(selectedTask))}</p>
+              <span>{statusLabel(selectedTask.status, t('student.open'))}</span>
+              <h2 id="student-submit-title">{selectedTask.title ?? t('student.submitTask')}</h2>
+              <p>{readable(taskContext(selectedTask))} · {dueText(taskDueDate(selectedTask))}</p>
             </div>
             {selectedTask.description ? <p className="panel-note">{selectedTask.description}</p> : null}
             {isActivityTask(selectedTask) && selectedTask.taskType === 'quiz' ? (
               <>
                 <p className={`panel-note ${canSubmitSelectedTask ? 'success' : ''}`}>
-                  {selectedQuizTotal ? `${selectedQuizAnswered} of ${selectedQuizTotal} question${selectedQuizTotal === 1 ? '' : 's'} answered` : 'No quiz questions are available yet.'}
+                  {selectedQuizTotal ? t('student.questionsAnswered', { answered: selectedQuizAnswered, total: selectedQuizTotal }) : t('student.noQuizQuestions')}
                 </p>
                 <div className="stack-list">
                   {selectedTask.questions?.map((question) => (
@@ -661,23 +698,23 @@ export function StudentDashboardPage() {
             ) : (
               <>
                 <label>
-                  Answer
+                  {t('student.answer')}
                   <textarea value={submitForm.answerText} onChange={(event) => setSubmitForm((current) => ({ ...current, answerText: event.target.value }))} />
                 </label>
                 <label>
-                  Attachment link
+                  {t('student.attachmentLink')}
                   <input value={submitForm.attachmentUrl} onChange={(event) => setSubmitForm((current) => ({ ...current, attachmentUrl: event.target.value }))} />
                 </label>
                 <label className="file-button">
-                  {submitting ? 'Uploading...' : 'Upload attachment'}
+                  {submitting ? t('student.uploading') : t('student.uploadAttachment')}
                   <input type="file" disabled={submitting} onChange={(event) => void uploadAttachment(event.target.files?.[0])} />
                 </label>
               </>
             )}
-            {selectedTask.mySubmission?.reviewComment ? <p className="panel-note">Review: {selectedTask.mySubmission.reviewComment}</p> : null}
+            {selectedTask.mySubmission?.reviewComment ? <p className="panel-note">{t('student.review')}: {selectedTask.mySubmission.reviewComment}</p> : null}
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setSelectedTask(null)} disabled={submitting}>Cancel</button>
-              <button type="submit" disabled={submitting || !canSubmitSelectedTask}>{submitting ? 'Submitting...' : 'Submit'}</button>
+              <button type="button" className="secondary-button" onClick={() => setSelectedTask(null)} disabled={submitting}>{t('student.cancel')}</button>
+              <button type="submit" disabled={submitting || !canSubmitSelectedTask}>{submitting ? t('student.submitting') : t('student.submit')}</button>
             </div>
         </FormModal>
       ) : null}

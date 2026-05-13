@@ -1,12 +1,14 @@
 import { FiAlertCircle, FiInbox, FiLoader } from 'react-icons/fi';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
-export function LoadingState({ label = 'Loading' }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  const { t } = useTranslation();
   return (
     <div className="state-panel loading-state" role="status" aria-live="polite">
       <FiLoader aria-hidden="true" />
-      <strong>{label}</strong>
-      <span>Preparing the latest workspace data.</span>
+      <strong>{label ?? t('states.loading')}</strong>
+      <span>{t('states.loadingDetail')}</span>
     </div>
   );
 }
@@ -31,10 +33,11 @@ export function EmptyState({
 }
 
 export function ErrorState({ message }: { message: string }) {
+  const { t } = useTranslation();
   return (
     <div className="state-panel error-state" role="alert">
       <FiAlertCircle aria-hidden="true" />
-      <strong>Something went wrong</strong>
+      <strong>{t('states.somethingWentWrong')}</strong>
       <span>{message}</span>
     </div>
   );

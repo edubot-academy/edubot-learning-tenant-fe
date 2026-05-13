@@ -21,6 +21,69 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - No unreleased changes yet.
 
+## 1.1.0 - 2026-05-13
+
+### Added
+
+- Tenant frontend localization for Kyrgyz, Russian, and English with Kyrgyz as the default fallback language.
+- i18n runtime setup with semantic locale files, language resolution, document language sync, and translation key parity tests.
+- Compact sidebar language menu with `KG`, `RU`, and `US` options.
+- `Accept-Language` header support in tenant frontend API requests.
+- Localized date/readable formatting helpers using the active runtime language.
+- Localization implementation plan covering tenant frontend, shared backend, main frontend, and cross-app language contracts.
+- API client coverage for tenant-header opt-out requests that still send the active language.
+- Additional release documentation for the main-platform and backend localization follow-up plan.
+- Settings form hydration helpers for tenant profile, branding, and policy state.
+
+### Changed
+
+- Refined the app-shell brand area by moving language selection into an icon-only globe menu beside the tenant name.
+- Tightened the language menu dropdown width and centered compact language labels for a cleaner sidebar layout.
+- Updated app navigation metadata to use translation keys while preserving role-aware and feature-aware navigation visibility.
+- Improved tenant settings feature visibility display so platform-managed feature rows use stable user-facing labels while keeping technical keys secondary.
+- Updated shared workflow and validation helpers so their messages are sourced consistently from the runtime copy system.
+- Replaced broad hardcoded tenant UI copy across auth, navigation, overview, courses, groups, sessions, attendance, homework, certificates, members, settings, and student dashboard flows.
+- Reworked tenant settings locale editing to use supported language options instead of free-text locale entry.
+- Updated tenant readiness, feature visibility, workflow blocker, validation, status, empty-state, and toast copy to use locale keys.
+- Polished Kyrgyz product copy for tenant-facing localization and avoided user-facing technical English where practical.
+- Updated tenant neutral host defaults and query-host construction from `learning.edubot.it.com` to `lms.edubot.it.com`.
+- Hardened tenant selection in `TenantProvider` by normalizing tenant IDs before matching stored, resolved, or query-selected tenants.
+- Localized `TenantProvider` domain resolution, tenant access, and tenant load fallback messages.
+- Reworked Settings tabs so the Activity tab is only shown to tenant admins and redirects back to Profile if access changes.
+- Reworked Settings platform-managed, access, profile, branding, policies, features, and activity sections to use localized labels, notes, statuses, buttons, validation, and empty/loading copy.
+- Reworked Settings tenant locale editing to normalize existing locale values and save a supported locale, defaulting to `ky`.
+- Reworked Settings activity rows to use localized action/target labels and locale-aware timestamps.
+- Reworked Settings branding preview and policy read-only summaries to use localized fallbacks and status labels.
+- Package version updated to `1.1.0`.
+
+### Fixed
+
+- Fixed runtime language mismatch between visible UI, API `Accept-Language`, and date formatting by centralizing the current locale.
+- Fixed unknown platform-managed feature flag labels so raw feature keys are not used as primary visible labels.
+- Fixed remaining raw date formatting in tenant activity so activity timestamps follow the same locale-aware formatter as the rest of the app.
+- Fixed translated fallback labels for unset values in shared display helpers.
+- Fixed tenant loading state cleanup when a user signs out while tenant access is still loading.
+- Fixed tenant access load errors to use localized fallback copy instead of raw backend error messages.
+- Fixed Settings cancel actions so profile, branding, and policy edits discard unsaved form changes and clear validation errors.
+- Fixed Settings activity access so non-admin users cannot keep or load the Activity tab after permission state changes.
+- Fixed Settings form validation messages for tenant profile, branding, and policy saves to render localized field errors and toasts.
+- Fixed Settings platform-managed unknown feature rows so they show a stable platform-managed label while keeping the raw feature key as secondary detail.
+
+### Dependencies
+
+- Added `i18next` and `react-i18next`.
+
+### Tests
+
+- Added locale resolution, translation key parity, and API language header coverage.
+- `npm run lint` passes.
+- `npm test` passes with 14 test files and 49 tests.
+- `npm run build` passes with the existing Vite chunk-size warning.
+
+### Migration Notes
+
+- Backend localization work is not included in this release. The tenant frontend sends `Accept-Language`, but the shared backend still needs CORS/header support, locale validation, backend message localization, and generated-content locale handling.
+
 ## 1.0.0 - 2026-05-13
 
 ### Added

@@ -19,6 +19,33 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.7.0 - 2026-05-14
+
+### Added
+
+- Added assistant-specific overview behavior for operational support users, including support, groups, and sessions actions instead of instructor teaching queues.
+- Added a Student Support workspace with backend support queue integration, support note create/edit workflows, guardian record management, and support queue pagination.
+- Added frontend service bindings and domain types for assistant dashboard, assistant support queue, student support notes, and student guardian records.
+- Added regression coverage for assistant overview role resolution, support queue pagination, backend-success/fallback loading, support notes, guardian records, and support section filters.
+
+### Changed
+
+- Updated assistant support to rely on the backend paginated support queue by default and only use legacy course/group/roster fan-out as a failure fallback.
+- Changed Student Support filters so All, Students, and Groups show whole relevant sections instead of rendering hidden-section empty states.
+- Narrowed guardian create API typing to match the backend create DTO; consent and contact permission fields now remain response-only in the frontend contract.
+- Package version updated to `1.7.0`.
+
+### Fixed
+
+- Fixed tenant dashboard role resolution so `/companies/:tenantId/dashboard` responses with `workspace.role: "assistant"` render the assistant overview instead of falling back to instructor overview.
+- Fixed assistant support pagination so tenants with more than one support page can navigate beyond the first backend page.
+- Fixed the support page scale issue where successful backend support loading still triggered full course, group, and roster loading.
+
+### Tests
+
+- `npm test -- --run` passes with 24 test files and 107 tests.
+- `npm run build` passes with the existing Vite large chunk warning.
+
 ## 1.6.0 - 2026-05-14
 
 ### Added

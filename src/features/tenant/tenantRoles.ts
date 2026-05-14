@@ -4,6 +4,7 @@ export type TenantAccessLevel = 'platform' | 'tenant_admin' | 'instructor' | 'as
 
 const platformAdminRoles = new Set(['superadmin']);
 const tenantAdminRoles = new Set(['owner', 'company_admin']);
+const operationalSupportRoles = new Set(['assistant']);
 const teachingRoles = new Set(['instructor']);
 const tenantRolePriority = ['owner', 'company_admin', 'instructor', 'assistant', 'student'];
 
@@ -43,7 +44,7 @@ export function isTenantAdmin(user: AuthUser | null | undefined, tenant: Tenant 
 
 export function isTenantStaff(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
   const role = getEffectiveTenantRole(user, tenant);
-  return tenantAdminRoles.has(role) || teachingRoles.has(role);
+  return tenantAdminRoles.has(role) || teachingRoles.has(role) || operationalSupportRoles.has(role);
 }
 
 export function isTenantStudent(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
@@ -57,6 +58,16 @@ export function getTenantAccessLevel(user: AuthUser | null | undefined, tenant: 
   if (tenantAdminRoles.has(role)) return 'tenant_admin';
   if (role === 'instructor') return 'instructor';
   if (role === 'assistant') return 'assistant';
+  if (hasAnyExplicitPermission(tenant, [
+    'canSupportOperations',
+    'canViewOperationalCourses',
+    'canViewOperationalGroups',
+    'canViewOperationalSessions',
+    'canViewStudentSupportContext',
+    'canViewOperationalReports',
+    'canCoordinateGroups',
+    'canEnrollStudents',
+  ])) return 'assistant';
   if (hasAnyExplicitPermission(tenant, [
     'canTeachAssignedSessions',
     'canViewAssignedCourses',
@@ -142,6 +153,74 @@ export function canViewTenantReports(user: AuthUser | null | undefined, tenant: 
   const permission = explicitPermission(tenant, 'canViewReports');
   if (permission !== null) return permission;
   return isTenantAdmin(user, tenant);
+}
+
+export function canSupportTenantOperations(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canSupportOperations');
+  if (permission !== null) return permission;
+  const role = getEffectiveTenantRole(user, tenant);
+  return tenantAdminRoles.has(role) || operationalSupportRoles.has(role);
+}
+
+export function canViewOperationalLearning(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const coursePermission = explicitPermission(tenant, 'canViewOperationalCourses');
+  const groupPermission = explicitPermission(tenant, 'canViewOperationalGroups');
+  const sessionPermission = explicitPermission(tenant, 'canViewOperationalSessions');
+  const permissions = [coursePermission, groupPermission, sessionPermission];
+  if (permissions.some((permission) => permission === true)) return true;
+  if (permissions.every((permission) => permission === false)) return false;
+  return canSupportTenantOperations(user, tenant);
+}
+
+export function canViewStudentSupportContext(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canViewStudentSupportContext');
+  if (permission !== null) return permission;
+  return canSupportTenantOperations(user, tenant);
+}
+
+export function canViewOperationalReports(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canViewOperationalReports');
+  if (permission !== null) return permission;
+  return canViewTenantReports(user, tenant);
+}
+
+export function canEscalateOperationalIssues(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canEscalateOperationalIssues');
+  if (permission !== null) return permission;
+  return canSupportTenantOperations(user, tenant);
+}
+
+export function canManageStudentSupportNotes(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canManageStudentSupportNotes');
+  if (permission !== null) return permission;
+  return false;
+}
+
+export function canContactStudents(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canContactStudents');
+  if (permission !== null) return permission;
+  return false;
+}
+
+export function canViewGuardianContext(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canViewGuardianContext');
+  if (permission !== null) return permission;
+  return false;
+}
+
+export function canContactGuardians(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  if (isPlatformAdmin(user)) return false;
+  const permission = explicitPermission(tenant, 'canContactGuardians');
+  if (permission !== null) return permission;
+  return false;
 }
 
 export function canOperateTenantLearning(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {

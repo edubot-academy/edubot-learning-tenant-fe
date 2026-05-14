@@ -44,6 +44,17 @@ export type Tenant = {
     canManageAssignedMaterials?: boolean;
     canManageAssignedLiveMeetings?: boolean;
     canApproveAssignedCertificates?: boolean;
+    canSupportOperations?: boolean;
+    canViewOperationalCourses?: boolean;
+    canViewOperationalGroups?: boolean;
+    canViewOperationalSessions?: boolean;
+    canViewStudentSupportContext?: boolean;
+    canViewOperationalReports?: boolean;
+    canEscalateOperationalIssues?: boolean;
+    canManageStudentSupportNotes?: boolean;
+    canContactStudents?: boolean;
+    canViewGuardianContext?: boolean;
+    canContactGuardians?: boolean;
     canCoordinateGroups?: boolean;
     canEnrollStudents?: boolean;
     canApproveCourses?: boolean;
@@ -118,6 +129,17 @@ export type TenantOverviewPermissions = {
   canManageAssignedMaterials?: boolean;
   canManageAssignedLiveMeetings?: boolean;
   canApproveAssignedCertificates?: boolean;
+  canSupportOperations?: boolean;
+  canViewOperationalCourses?: boolean;
+  canViewOperationalGroups?: boolean;
+  canViewOperationalSessions?: boolean;
+  canViewStudentSupportContext?: boolean;
+  canViewOperationalReports?: boolean;
+  canEscalateOperationalIssues?: boolean;
+  canManageStudentSupportNotes?: boolean;
+  canContactStudents?: boolean;
+  canViewGuardianContext?: boolean;
+  canContactGuardians?: boolean;
   canCoordinateGroups?: boolean;
   canEnrollStudents?: boolean;
   canApproveCourses?: boolean;
@@ -249,6 +271,143 @@ export type InstructorDashboard = {
     studentCount: number;
   }>;
   upcomingSessions: InstructorDashboardSession[];
+};
+
+export type AssistantDashboardActionType =
+  | 'student_support'
+  | 'pending_invitation'
+  | 'missing_instructor'
+  | 'missing_schedule'
+  | 'missing_meeting'
+  | 'unmarked_attendance'
+  | 'missing_homework'
+  | 'admin_escalation'
+  | 'instructor_escalation'
+  | string;
+
+export type AssistantSupportStatus = 'all' | 'open' | 'in_progress' | 'resolved';
+
+export type AssistantSupportReason = {
+  code: 'low_progress' | 'missing_homework' | 'open_support_note' | string;
+  count?: number;
+  severity?: 'high' | 'medium' | 'low' | string;
+  route?: string | null;
+};
+
+export type AssistantSupportItem = {
+  studentId: number;
+  fullName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  groupId?: number | null;
+  groupName?: string | null;
+  courseId?: number | null;
+  courseTitle?: string | null;
+  instructorId?: number | null;
+  instructorName?: string | null;
+  reasons?: AssistantSupportReason[];
+  lastContactAt?: string | null;
+  nextAction?: string | null;
+  supportStatus?: Exclude<AssistantSupportStatus, 'all'> | null;
+  guardianSummary?: {
+    hasGuardian: boolean;
+    contactAllowed: boolean;
+    preferredChannel?: string | null;
+  };
+};
+
+export type AssistantSupportResponse = {
+  items: AssistantSupportItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  summary: {
+    studentsNeedingSupport: number;
+    pendingInvitations: number;
+    pendingEnrollments: number;
+    sessionsWithoutMeeting: number;
+  };
+};
+
+export type StudentSupportNote = {
+  id: number;
+  companyId: number;
+  studentId: number;
+  authorUserId?: number | null;
+  category: string;
+  priority: 'high' | 'medium' | 'low' | string;
+  status: 'open' | 'in_progress' | 'resolved' | string;
+  ownerRole: 'assistant' | 'admin' | 'instructor' | string;
+  note: string;
+  nextAction?: string | null;
+  dueAt?: string | null;
+  lastContactAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type StudentGuardian = {
+  id: number;
+  companyId: number;
+  studentId: number;
+  fullName: string;
+  relationship?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  preferredChannel?: string | null;
+  canReceiveProgressUpdates: boolean;
+  canReceiveAttendanceUpdates: boolean;
+  canReceiveHomeworkUpdates: boolean;
+  consentStatus: 'pending' | 'granted' | 'revoked' | string;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type AssistantDashboard = {
+  generatedAt?: string;
+  assistant: { id: number; fullName?: string | null; email?: string | null };
+  tenant: TenantOverview['tenant'];
+  permissions: TenantOverviewPermissions;
+  operations: {
+    activeGroups: number;
+    upcomingSessions: number;
+    pendingEnrollments: number;
+    studentsNeedingSupport: number;
+    groupsWithoutInstructor: number;
+    sessionsWithoutMeeting: number;
+    pendingInvitations: number;
+    blockedItems: number;
+  };
+  actionQueue: Array<{
+    id: string;
+    type: AssistantDashboardActionType;
+    priority: 'high' | 'medium' | 'low' | string;
+    title?: string;
+    detail?: string | null;
+    i18nKey?: string;
+    params?: Record<string, number | string | null>;
+    route?: string | null;
+    ownerRole?: 'assistant' | 'admin' | 'instructor' | 'student' | 'guardian' | string;
+    dueAt?: string | null;
+  }>;
+  groups: Array<{
+    id: number;
+    name: string;
+    code?: string | null;
+    status?: string | null;
+    courseId: number;
+    courseTitle?: string | null;
+    instructorId?: number | null;
+    instructorName?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    timezone?: string | null;
+    studentCount: number;
+    nextSessionAt?: string | null;
+  }>;
+  studentSupportQueue: AssistantSupportItem[];
 };
 
 export type TenantReportPoint = {

@@ -9,8 +9,14 @@ import {
   canManageTenantMembers,
   canManageTenantOwners,
   canManageTenantSettings,
+  canManageStudentSupportNotes,
   canOperateTenantLearning,
+  canSupportTenantOperations,
   canTeachAssignedSessions,
+  canContactStudents,
+  canViewGuardianContext,
+  canViewOperationalLearning,
+  canViewStudentSupportContext,
   canViewTenantReports,
   getEffectiveTenantRole,
   getTenantAccessLevel,
@@ -81,6 +87,40 @@ describe('tenant role access', () => {
     expect(canCoordinateTenantLearning(user('student'), tenant('instructor'))).toBe(false);
     expect(canEnrollTenantStudents(user('student'), tenant('instructor'))).toBe(false);
     expect(canCoordinateTenantLearning(user('student'), tenant('company_admin'))).toBe(true);
+  });
+
+  it('gives assistants operational support defaults without teaching mutation defaults', () => {
+    expect(getTenantAccessLevel(user('assistant'), tenant('assistant'))).toBe('assistant');
+    expect(canSupportTenantOperations(user('assistant'), tenant('assistant'))).toBe(true);
+    expect(canViewOperationalLearning(user('assistant'), tenant('assistant'))).toBe(true);
+    expect(canViewStudentSupportContext(user('assistant'), tenant('assistant'))).toBe(true);
+    expect(canCoordinateTenantLearning(user('assistant'), tenant('assistant'))).toBe(false);
+    expect(canEnrollTenantStudents(user('assistant'), tenant('assistant'))).toBe(false);
+    expect(canTeachAssignedSessions(user('assistant'), tenant('assistant'))).toBe(false);
+    expect(canOperateTenantLearning(user('assistant'), tenant('assistant'))).toBe(false);
+    expect(canContactStudents(user('assistant'), tenant('assistant'))).toBe(false);
+    expect(canManageStudentSupportNotes(user('assistant'), tenant('assistant'))).toBe(false);
+    expect(canViewGuardianContext(user('assistant'), tenant('assistant'))).toBe(false);
+  });
+
+  it('keeps operational view fallback unless every operational view surface is explicitly denied', () => {
+    expect(canViewOperationalLearning(user('assistant'), tenantWithPermissions({
+      canViewOperationalCourses: false,
+    }, 'assistant'))).toBe(true);
+    expect(canViewOperationalLearning(user('assistant'), tenantWithPermissions({
+      canViewOperationalCourses: false,
+      canViewOperationalGroups: false,
+      canViewOperationalSessions: false,
+    }, 'assistant'))).toBe(false);
+    expect(canViewOperationalLearning(user('assistant'), tenantWithPermissions({
+      canSupportOperations: false,
+      canViewOperationalGroups: true,
+    }, 'assistant'))).toBe(true);
+  });
+
+  it('requires explicit permission for student contact and support notes', () => {
+    expect(canContactStudents(user('assistant'), tenantWithPermissions({ canContactStudents: true }, 'assistant'))).toBe(true);
+    expect(canManageStudentSupportNotes(user('assistant'), tenantWithPermissions({ canManageStudentSupportNotes: true }, 'assistant'))).toBe(true);
   });
 
   it('prefers explicit tenant permissions over broad tenant admin role fallback', () => {

@@ -2291,6 +2291,28 @@ td small {
   min-height: 132px;
 }
 
+.support-detail-modal {
+  width: min(920px, 100%);
+}
+
+.support-form-grid {
+  margin-top: 14px;
+}
+
+.support-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.support-form-grid label > span {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
 .decision-modal > div:first-child {
   display: grid;
   gap: 8px;

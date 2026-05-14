@@ -60,14 +60,21 @@ describe('app navigation visibility', () => {
   });
 
   it('keeps plain assistants off the instructor teaching navigation surface', () => {
+    const routes = getVisibleNavItems(user('assistant'), tenant('assistant')).map((item) => item.to);
+
+    expect(routes).toEqual(['/', '/operations', '/groups', '/sessions', '/support', '/settings']);
+    expect(routes).not.toContain('/reports');
+    expect(routes).not.toContain('/attendance');
+    expect(routes).not.toContain('/homework');
+  });
+
+  it('shows optional assistant reports without teaching tools', () => {
     const routes = getVisibleNavItems(user('assistant'), tenant('assistant', {}, {
-      canViewReports: true,
+      canViewOperationalReports: true,
     })).map((item) => item.to);
 
-    expect(routes).toEqual(['/', '/settings']);
-    expect(routes).not.toContain('/reports');
-    expect(routes).not.toContain('/operations');
-    expect(routes).not.toContain('/sessions');
+    expect(routes).toContain('/reports');
+    expect(routes).toContain('/support');
     expect(routes).not.toContain('/attendance');
     expect(routes).not.toContain('/homework');
   });
@@ -100,7 +107,31 @@ describe('app navigation visibility', () => {
 
     expect(routes).toContain('/members');
     expect(routes).toContain('/operations');
-    expect(routes).not.toContain('/certificates');
+    expect(routes).toContain('/courses');
+    expect(routes).toContain('/certificates');
+  });
+
+  it('hides support when support context exists without operational learning access', () => {
+    const routes = getVisibleNavItems(user('assistant'), tenant('assistant', {}, {
+      canSupportOperations: false,
+      canViewStudentSupportContext: true,
+      canViewOperationalCourses: false,
+      canViewOperationalGroups: false,
+      canViewOperationalSessions: false,
+    })).map((item) => item.to);
+
+    expect(routes).not.toContain('/support');
+    expect(routes).not.toContain('/groups');
+    expect(routes).not.toContain('/sessions');
+  });
+
+  it('keeps assistant operations focused on coordination read surfaces', () => {
+    const routes = getVisibleOperationalNavItems(user('assistant'), tenant('assistant')).map((item) => item.to);
+
+    expect(routes).toEqual(['/groups', '/sessions']);
+    expect(routes).not.toContain('/courses');
+    expect(routes).not.toContain('/attendance');
+    expect(routes).not.toContain('/homework');
   });
 
   it('splits mobile navigation into admin primary items for tenant admins', () => {
@@ -129,6 +160,15 @@ describe('app navigation visibility', () => {
     expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/sessions', '/attendance', '/homework', '/']);
     expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/settings');
     expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/groups');
+  });
+
+  it('prioritizes support work on assistant mobile navigation', () => {
+    const visible = getVisibleNavItems(user('assistant'), tenant('assistant'));
+    const groups = getMobileNavGroups(visible, false, user('assistant'), tenant('assistant'));
+
+    expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/', '/support', '/groups', '/sessions']);
+    expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/operations');
+    expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/settings');
   });
 
   it('counts enabled staff tools from current feature flags', () => {

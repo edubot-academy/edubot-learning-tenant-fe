@@ -9,13 +9,20 @@ import { EmptyState, LoadingState } from '../components/DataState';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
 import {
   canManageTenantBranding,
+  canManageAssignedAttendance,
+  canManageAssignedHomework,
   canManageTenantCertificates,
+  canManageTenantCourses,
   canManageTenantProfile,
   canManageTenantSettings,
   canApproveAssignedCertificates,
   canCoordinateTenantLearning,
   canOperateTenantLearning,
+  canSupportTenantOperations,
   canViewAssignedLearning,
+  canViewOperationalLearning,
+  canViewOperationalReports,
+  canViewStudentSupportContext,
   getTenantAccessLevel,
   isPlatformAdmin,
   isTenantStudent,
@@ -44,6 +51,7 @@ const OperationsPage = lazyNamed(() => import('../features/operations/Operations
 const ReportsPage = lazyNamed(() => import('../features/reports/ReportsPage'), 'ReportsPage');
 const SettingsPage = lazyNamed(() => import('../features/settings/SettingsPage'), 'SettingsPage');
 const StudentDashboardPage = lazyNamed(() => import('../features/student/StudentDashboardPage'), 'StudentDashboardPage');
+const StudentSupportPage = lazyNamed(() => import('../features/support/StudentSupportPage'), 'StudentSupportPage');
 
 const routeTitles: Record<string, string> = {
   '/': 'navigation.overview',
@@ -59,6 +67,7 @@ const routeTitles: Record<string, string> = {
   '/members': 'navigation.members',
   '/operations': 'navigation.operations',
   '/reports': 'navigation.reports',
+  '/support': 'navigation.support',
   '/settings': 'navigation.settings',
 };
 
@@ -180,9 +189,25 @@ function AccessDeniedState({
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canViewAssignedLearning(user, activeTenant) || canOperateTenantLearning(user, activeTenant)
+  return canViewAssignedLearning(user, activeTenant) || canViewOperationalLearning(user, activeTenant) || canOperateTenantLearning(user, activeTenant)
     ? children
     : <AccessDeniedState detailKey="errors.staffOnlyDetail" to="/student" actionKey="navigation.myLearning" />;
+}
+
+function AttendanceManagementRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { activeTenant } = useTenant();
+  return canManageAssignedAttendance(user, activeTenant) || canManageTenantCourses(user, activeTenant)
+    ? children
+    : <AccessDeniedState detailKey="errors.attendanceManagerOnlyDetail" to="/" actionKey="actions.goToOverview" />;
+}
+
+function HomeworkManagementRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { activeTenant } = useTenant();
+  return canManageAssignedHomework(user, activeTenant) || canManageTenantCourses(user, activeTenant)
+    ? children
+    : <AccessDeniedState detailKey="errors.homeworkManagerOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
 
 function CourseAdminRoute({ children }: { children: React.ReactNode }) {
@@ -221,7 +246,10 @@ function CertificateRoute({ children }: { children: React.ReactNode }) {
 function OperationsRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canCoordinateTenantLearning(user, activeTenant) || canManageTenantCertificates(user, activeTenant)
+  return canSupportTenantOperations(user, activeTenant)
+    || canViewOperationalLearning(user, activeTenant)
+    || canCoordinateTenantLearning(user, activeTenant)
+    || canManageTenantCertificates(user, activeTenant)
     ? children
     : <AccessDeniedState detailKey="errors.staffOnlyDetail" to="/student" actionKey="navigation.myLearning" />;
 }
@@ -229,15 +257,25 @@ function OperationsRoute({ children }: { children: React.ReactNode }) {
 function ReportsRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canAccessTenantPermissionSurface('reports', user, activeTenant)
+  return canAccessTenantPermissionSurface('reports', user, activeTenant) || canViewOperationalReports(user, activeTenant)
     ? children
     : <AccessDeniedState detailKey="errors.tenantAdminOnlyDetail" to="/" actionKey="actions.goToOverview" />;
+}
+
+function SupportRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { activeTenant } = useTenant();
+  return canViewStudentSupportContext(user, activeTenant)
+    && (canViewOperationalLearning(user, activeTenant) || canOperateTenantLearning(user, activeTenant))
+    ? children
+    : <AccessDeniedState detailKey="errors.supportOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
 
 function SettingsRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
   return isTenantStudent(user, activeTenant)
+    || canSupportTenantOperations(user, activeTenant)
     || canOperateTenantLearning(user, activeTenant)
     || canManageTenantProfile(user, activeTenant)
     || canManageTenantBranding(user, activeTenant)
@@ -367,12 +405,13 @@ function AppRoutes() {
           <Route path="/courses" element={<CourseAdminRoute><CoursesPage /></CourseAdminRoute>} />
           <Route path="/groups" element={<StaffRoute><GroupsPage /></StaffRoute>} />
           <Route path="/sessions" element={<StaffRoute><SessionsPage /></StaffRoute>} />
-          <Route path="/attendance" element={<StaffRoute><FeatureRoute feature="attendance.enabled"><AttendancePage /></FeatureRoute></StaffRoute>} />
-          <Route path="/homework" element={<StaffRoute><FeatureRoute feature="homework.enabled"><HomeworkPage /></FeatureRoute></StaffRoute>} />
+          <Route path="/attendance" element={<AttendanceManagementRoute><FeatureRoute feature="attendance.enabled"><AttendancePage /></FeatureRoute></AttendanceManagementRoute>} />
+          <Route path="/homework" element={<HomeworkManagementRoute><FeatureRoute feature="homework.enabled"><HomeworkPage /></FeatureRoute></HomeworkManagementRoute>} />
           <Route path="/certificates" element={<CertificateRoute><FeatureRoute feature="certificates.enabled"><CertificatesPage /></FeatureRoute></CertificateRoute>} />
           <Route path="/members" element={<TenantAdminRoute><MembersPage /></TenantAdminRoute>} />
           <Route path="/operations" element={<OperationsRoute><OperationsPage /></OperationsRoute>} />
           <Route path="/reports" element={<ReportsRoute><ReportsPage /></ReportsRoute>} />
+          <Route path="/support" element={<SupportRoute><StudentSupportPage /></SupportRoute>} />
           <Route path="/settings" element={<SettingsRoute><SettingsPage /></SettingsRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

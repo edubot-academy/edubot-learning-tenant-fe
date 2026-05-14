@@ -12,6 +12,7 @@ import {
   FiCalendar,
   FiCheckSquare,
   FiGrid,
+  FiLifeBuoy,
   FiPlusCircle,
   FiSettings,
   FiUsers,
@@ -23,7 +24,7 @@ import { getActivityReviewQueue, getInstructorDashboard, getTenantDashboard, get
 import type { ActivityReviewQueue, InstructorDashboard, TenantOverview, TenantReportTimeSeries } from '../../types/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
-import { canTeachAssignedSessions } from '../tenant/tenantRoles';
+import { canTeachAssignedSessions, canViewStudentSupportContext } from '../tenant/tenantRoles';
 import { formatDate, readable } from '../../lib/format';
 import { activityActionLabelKeys, commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
@@ -161,10 +162,12 @@ export function OverviewPage() {
   const canManageCertificates = Boolean(overviewPermissions?.canManageCertificates);
   const canCreateCourses = Boolean(overviewPermissions?.canCreateCourses);
   const canViewActivity = Boolean(overviewPermissions?.canViewActivity);
-  const isAssistant = overview?.role === 'assistant';
+  const overviewRole = overview?.role ?? overview?.workspace?.role ?? activeTenant?.role;
+  const isAssistant = overviewRole === 'assistant';
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
   const certificatesEnabled = isTenantFeatureEnabled(activeTenant, 'certificates.enabled');
   const attendanceEnabled = isTenantFeatureEnabled(activeTenant, 'attendance.enabled');
+  const assistantSupportEnabled = isAssistant && canViewStudentSupportContext(user, activeTenant);
   const instructorQueues = instructorDashboard?.queues;
   const instructorTodaySessions = useMemo(() => instructorDashboard?.today.sessions ?? [], [instructorDashboard]);
   const instructorUpcomingSessions = useMemo(() => instructorDashboard?.upcomingSessions ?? [], [instructorDashboard]);
@@ -177,6 +180,14 @@ export function OverviewPage() {
   const stats = useMemo(() => {
     if (!overview) return [];
     if (!canManageMembers) {
+      if (isAssistant) {
+        return [
+          { label: t('navigation.courses'), value: statValue(overview.stats.courses), hint: t('overview.coursesScopeHint') },
+          { label: t('student.upcomingSessions'), value: statValue(overview.stats.upcomingSessions), hint: t('overview.scheduledClasses') },
+          { label: t('overview.activeGroupsLabel'), value: statValue(overview.stats.activeGroups), hint: t('overview.activeGroupsHint') },
+          { label: t('navigation.support'), value: assistantSupportEnabled ? t('overview.enabled') : '-', hint: t('overview.assistantSupportDetail') },
+        ];
+      }
       return [
         { label: isAssistant ? t('navigation.courses') : t('student.myCourses'), value: statValue(overview.stats.courses), hint: t('overview.coursesScopeHint') },
         { label: t('student.upcomingSessions'), value: statValue(overview.stats.upcomingSessions), hint: t('overview.scheduledClasses') },
@@ -190,10 +201,35 @@ export function OverviewPage() {
       { label: t('overview.activeGroupsLabel'), value: statValue(overview.stats.activeGroups), hint: t('overview.activeGroupsHint') },
       { label: t('overview.workspaceReadiness'), value: `${overview.setup.progress}%`, hint: t('overview.configured', { percent: overview.setup.progress }) },
     ];
-  }, [canManageMembers, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, isAssistant, overview, t]);
+  }, [assistantSupportEnabled, canManageMembers, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, isAssistant, overview, t]);
 
   const actionCards = useMemo(() => {
     if (!overview) return [];
+    if (isAssistant) {
+      return [
+        {
+          to: '/groups',
+          icon: FiCalendar,
+          title: t('overview.groupsSessions'),
+          detail: t('overview.groupsSessionsDetail'),
+          metric: t('overview.activeGroups', { count: overview.stats.activeGroups ?? 0 }),
+        },
+        {
+          to: '/sessions',
+          icon: FiCalendar,
+          title: t('navigation.sessions'),
+          detail: t('overview.assistantSessionsDetail'),
+          metric: t('overview.scheduledToday', { count: overview.sessions.today ?? 0 }),
+        },
+        ...(assistantSupportEnabled ? [{
+          to: '/support',
+          icon: FiLifeBuoy,
+          title: t('navigation.support'),
+          detail: t('overview.assistantSupportDetail'),
+          metric: t('overview.students', { count: overview.stats.students ?? 0 }),
+        }] : []),
+      ];
+    }
     return [
       ...(canCreateCourses ? [{
         to: '/courses',
@@ -237,7 +273,7 @@ export function OverviewPage() {
         disabledReason: t('errors.featureDisabledDetail'),
       }] : []),
     ];
-  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, overview, t, unmarkedAttendanceCount]);
+  }, [assistantSupportEnabled, attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, isAssistant, overview, t, unmarkedAttendanceCount]);
 
   const priorityItems = useMemo(() => {
     if (!overview) return [];
@@ -267,28 +303,28 @@ export function OverviewPage() {
         detail: t('overview.pendingApprovalsDetail', { count: pendingCourses }),
         tone: 'warning' as const,
       }] : []),
-      ...(attendanceEnabled && unmarkedAttendance > 0 ? [{
+      ...(!isAssistant && attendanceEnabled && unmarkedAttendance > 0 ? [{
         to: '/attendance',
         icon: FiCheckSquare,
         title: t('overview.unmarked'),
         detail: t('overview.unmarkedMetric', { count: unmarkedAttendance }),
         tone: 'warning' as const,
       }] : []),
-      ...(homeworkEnabled && homeworkNeedsReview > 0 ? [{
+      ...(!isAssistant && homeworkEnabled && homeworkNeedsReview > 0 ? [{
         to: '/homework',
         icon: FiBookOpen,
         title: t('overview.homeworkReview'),
         detail: t('overview.submissionsNeedReview', { count: homeworkNeedsReview }),
         tone: 'info' as const,
       }] : []),
-      ...(activityNeedsReviewCount > 0 ? [{
+      ...(!isAssistant && activityNeedsReviewCount > 0 ? [{
         to: '/sessions',
         icon: FiActivity,
         title: t('overview.activity'),
         detail: t('overview.activeItemCount', { count: activityNeedsReviewCount }),
         tone: 'info' as const,
       }] : []),
-      ...(upcomingWithoutMaterialsCount > 0 ? [{
+      ...(!isAssistant && upcomingWithoutMaterialsCount > 0 ? [{
         to: '/sessions',
         icon: FiAlertTriangle,
         title: t('sessions.materials'),
@@ -310,7 +346,7 @@ export function OverviewPage() {
         tone: 'warning' as const,
       }] : []),
     ].sort((left, right) => (left.tone === right.tone ? 0 : left.tone === 'warning' ? -1 : 1));
-  }, [activityNeedsReviewCount, attendanceEnabled, canCreateCourses, canManageCertificates, canManageMembers, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, overview, t, unmarkedAttendanceCount, upcomingWithoutMaterialsCount]);
+  }, [activityNeedsReviewCount, attendanceEnabled, canCreateCourses, canManageCertificates, canManageMembers, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, isAssistant, overview, t, unmarkedAttendanceCount, upcomingWithoutMaterialsCount]);
 
   const operationStats = useMemo(() => {
     if (!overview) return [];
@@ -347,6 +383,29 @@ export function OverviewPage() {
 
   const todayOperations = useMemo(() => {
     if (!overview) return [];
+    if (isAssistant) {
+      const firstSession = overview.sessions.upcoming[0];
+      return [
+        {
+          to: '/sessions',
+          label: t('overview.todaySessions'),
+          value: overview.sessions.today,
+          detail: firstSession
+            ? `${firstSession.title} · ${formatDate(firstSession.startsAt)}`
+            : t('overview.noSessionsToday'),
+          icon: FiCalendar,
+          enabled: true,
+        },
+        {
+          to: '/support',
+          label: t('navigation.support'),
+          value: assistantSupportEnabled ? t('overview.enabled') : '-',
+          detail: assistantSupportEnabled ? t('overview.assistantSupportDetail') : t('overview.assistantSupportDisabled'),
+          icon: FiLifeBuoy,
+          enabled: assistantSupportEnabled,
+        },
+      ];
+    }
     const visibleUpcomingSessions = instructorDashboard
       ? [...instructorTodaySessions, ...instructorUpcomingSessions]
       : overview.sessions.upcoming;
@@ -389,7 +448,7 @@ export function OverviewPage() {
         external: Boolean(nextLiveSession?.liveHostUrl || nextLiveSession?.liveJoinUrl),
       },
     ];
-  }, [attendanceEnabled, homeworkEnabled, homeworkNeedsReviewCount, instructorDashboard, instructorNextSession, instructorTodaySessions, instructorUpcomingSessions, overview, t, unmarkedAttendanceCount]);
+  }, [assistantSupportEnabled, attendanceEnabled, homeworkEnabled, homeworkNeedsReviewCount, instructorDashboard, instructorNextSession, instructorTodaySessions, instructorUpcomingSessions, isAssistant, overview, t, unmarkedAttendanceCount]);
 
   const overviewCourseTypeLabel = (value?: string | null) => {
     return value ? enumLabel(value, courseTypeLabelKeys, t) : t('overview.courseTypeDefault');

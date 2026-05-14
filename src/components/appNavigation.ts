@@ -1,16 +1,23 @@
-import { FiAward, FiBarChart2, FiBookOpen, FiCalendar, FiCheckSquare, FiClipboard, FiGrid, FiHome, FiSettings, FiUsers } from 'react-icons/fi';
+import { FiAward, FiBarChart2, FiBookOpen, FiCalendar, FiCheckSquare, FiClipboard, FiGrid, FiHome, FiLifeBuoy, FiSettings, FiUsers } from 'react-icons/fi';
 import type { AuthUser, Tenant } from '../types/domain';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
 import {
   canManageTenantCertificates,
+  canManageTenantCourses,
   canManageTenantMembers,
   canManageTenantProfile,
   canManageTenantSettings,
   canApproveAssignedCertificates,
   canCoordinateTenantLearning,
+  canManageAssignedAttendance,
+  canManageAssignedHomework,
   canOperateTenantLearning,
+  canSupportTenantOperations,
   canTeachAssignedSessions,
   canViewAssignedLearning,
+  canViewOperationalLearning,
+  canViewOperationalReports,
+  canViewStudentSupportContext,
   canViewTenantReports,
   getEffectiveTenantRole,
   isTenantStudent,
@@ -64,6 +71,14 @@ export const studentNavItems = [
 
 export const assistantNavItems = [
   { to: '/', labelKey: 'navigation.overview', icon: FiHome },
+  { to: '/operations', labelKey: 'navigation.operations', icon: FiGrid },
+  { to: '/courses', labelKey: 'navigation.courses', icon: FiBookOpen },
+  { to: '/groups', labelKey: 'navigation.groups', icon: FiUsers },
+  { to: '/sessions', labelKey: 'navigation.sessions', icon: FiCalendar },
+  { to: '/support', labelKey: 'navigation.support', icon: FiLifeBuoy },
+  { to: '/certificates', labelKey: 'navigation.certificates', icon: FiAward, feature: 'certificates.enabled' },
+  { to: '/reports', labelKey: 'navigation.reports', icon: FiBarChart2 },
+  { to: '/members', labelKey: 'navigation.members', icon: FiUsers },
   { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
 ] satisfies NavItem[];
 
@@ -71,7 +86,7 @@ export const primaryMobileRoutes = new Set(['/', '/courses', '/groups', '/sessio
 
 const mobileRoutePriorityByRole: Record<string, string[]> = {
   instructor: ['/sessions', '/attendance', '/homework', '/'],
-  assistant: ['/', '/settings'],
+  assistant: ['/', '/support', '/groups', '/sessions'],
   owner: ['/', '/operations', '/members', '/settings'],
   company_admin: ['/', '/operations', '/members', '/settings'],
 };
@@ -81,8 +96,11 @@ export function getVisibleOperationalNavItems(user: AuthUser | null | undefined,
     if (item.to === '/certificates') {
       return canManageTenantCertificates(user, tenant) && (!item.feature || isTenantFeatureEnabled(tenant, item.feature));
     }
-    if (['/courses', '/groups'].includes(item.to) && !canCoordinateTenantLearning(user, tenant)) return false;
-    if (!canOperateTenantLearning(user, tenant)) return false;
+    if (item.to === '/courses' && !canCoordinateTenantLearning(user, tenant)) return false;
+    if (['/groups', '/sessions'].includes(item.to) && !canViewOperationalLearning(user, tenant) && !canOperateTenantLearning(user, tenant)) return false;
+    if (item.to === '/attendance' && !canManageAssignedAttendance(user, tenant) && !canManageTenantCourses(user, tenant)) return false;
+    if (item.to === '/homework' && !canManageAssignedHomework(user, tenant) && !canManageTenantCourses(user, tenant)) return false;
+    if (!canViewOperationalLearning(user, tenant) && !canOperateTenantLearning(user, tenant)) return false;
     return !item.feature || isTenantFeatureEnabled(tenant, item.feature);
   });
 }
@@ -99,20 +117,36 @@ function shouldUseAdminNavigation(user: AuthUser | null | undefined, tenant: Ten
   return canManageTenantMembers(user, tenant)
     || canManageTenantProfile(user, tenant)
     || canManageTenantSettings(user, tenant)
-    || canViewTenantReports(user, tenant);
+    || canViewTenantReports(user, tenant)
+    || canViewOperationalReports(user, tenant);
 }
 
 export function getVisibleNavItems(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
   const learnerView = isTenantStudent(user, tenant);
   if (learnerView) return studentNavItems;
-  if (getEffectiveTenantRole(user, tenant) === 'assistant' && !canOperateTenantLearning(user, tenant)) {
-    return assistantNavItems;
+  if (getEffectiveTenantRole(user, tenant) === 'assistant') {
+    return assistantNavItems.filter((item) => {
+      if (item.to === '/operations') return getVisibleOperationalNavItems(user, tenant).length > 0;
+      if (item.to === '/courses') return canManageTenantCourses(user, tenant);
+      if (['/groups', '/sessions'].includes(item.to)) return canViewOperationalLearning(user, tenant) || canOperateTenantLearning(user, tenant);
+      if (item.to === '/support') return canViewStudentSupportContext(user, tenant) && (canViewOperationalLearning(user, tenant) || canOperateTenantLearning(user, tenant));
+      if (item.to === '/certificates') return canManageTenantCertificates(user, tenant) && (!item.feature || isTenantFeatureEnabled(tenant, item.feature));
+      if (item.to === '/reports') return canViewOperationalReports(user, tenant) || canViewTenantReports(user, tenant);
+      if (item.to === '/members') return canManageTenantMembers(user, tenant);
+      if (item.to === '/settings') {
+        return canSupportTenantOperations(user, tenant)
+          || canOperateTenantLearning(user, tenant)
+          || canManageTenantProfile(user, tenant)
+          || canManageTenantSettings(user, tenant);
+      }
+      return true;
+    });
   }
 
   if (shouldUseAdminNavigation(user, tenant)) {
     const visibleOperations = getVisibleOperationalNavItems(user, tenant);
     return adminNavItems.filter((item) => {
-      if (item.to === '/reports') return canViewTenantReports(user, tenant);
+      if (item.to === '/reports') return canViewTenantReports(user, tenant) || canViewOperationalReports(user, tenant);
       if (item.to === '/operations') return visibleOperations.length > 0;
       if (item.to === '/members') return canManageTenantMembers(user, tenant);
       if (item.to === '/settings') {

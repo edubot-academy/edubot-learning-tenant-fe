@@ -3,6 +3,9 @@ import type {
   AttendanceRecord,
   AttendanceStatus,
   ActivityReviewQueue,
+  AssistantDashboard,
+  AssistantSupportResponse,
+  AssistantSupportStatus,
   AuthUser,
   CertificateBranding,
   CourseCertificate,
@@ -26,6 +29,8 @@ import type {
   SessionGenerationResult,
   SessionInsights,
   SessionHomework,
+  StudentGuardian,
+  StudentSupportNote,
   Tenant,
   TenantActivityLog,
   TenantOverview,
@@ -325,6 +330,71 @@ export async function getTenantDashboard(tenantId: number) {
 
 export async function getInstructorDashboard(tenantId: number) {
   const { data } = await api.get<InstructorDashboard>(`/companies/${tenantId}/instructor-dashboard`);
+  return data;
+}
+
+export async function getAssistantDashboard(tenantId: number) {
+  const { data } = await api.get<AssistantDashboard>(`/companies/${tenantId}/assistant-dashboard`);
+  return data;
+}
+
+export async function getAssistantSupport(tenantId: number, params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  status?: AssistantSupportStatus;
+} = {}) {
+  const { data } = await api.get<AssistantSupportResponse>(`/companies/${tenantId}/student-support`, { params });
+  return data;
+}
+
+export async function listStudentSupportNotes(tenantId: number, studentId: number) {
+  const { data } = await api.get<StudentSupportNote[]>(`/companies/${tenantId}/student-support/${studentId}/notes`);
+  return data;
+}
+
+export async function createStudentSupportNote(tenantId: number, payload: {
+  studentId: number;
+  category?: string;
+  priority?: 'high' | 'medium' | 'low';
+  ownerRole?: 'assistant' | 'admin' | 'instructor';
+  note: string;
+  nextAction?: string | null;
+  dueAt?: string | null;
+  lastContactAt?: string | null;
+}) {
+  const { data } = await api.post<StudentSupportNote>(`/companies/${tenantId}/student-support/notes`, payload);
+  return data;
+}
+
+export async function updateStudentSupportNote(tenantId: number, noteId: number, payload: Partial<{
+  status: 'open' | 'in_progress' | 'resolved';
+  priority: 'high' | 'medium' | 'low';
+  ownerRole: 'assistant' | 'admin' | 'instructor';
+  note: string;
+  nextAction: string | null;
+  dueAt: string | null;
+  lastContactAt: string | null;
+}>) {
+  const { data } = await api.patch<StudentSupportNote>(`/companies/${tenantId}/student-support/notes/${noteId}`, payload);
+  return data;
+}
+
+export async function listStudentGuardians(tenantId: number, studentId: number) {
+  const { data } = await api.get<StudentGuardian[]>(`/companies/${tenantId}/students/${studentId}/guardians`);
+  return data;
+}
+
+export async function createStudentGuardian(tenantId: number, payload: {
+  studentId: number;
+  fullName: string;
+  relationship?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  preferredChannel?: string | null;
+  notes?: string | null;
+}) {
+  const { data } = await api.post<StudentGuardian>(`/companies/${tenantId}/students/guardians`, payload);
   return data;
 }
 

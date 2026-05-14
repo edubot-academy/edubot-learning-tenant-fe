@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { CompanyMember } from '../../types/domain';
-import { canChangeMemberRole, getRolesByUser, hasDuplicateTenantRole, memberEmail, memberName } from './memberAccess';
+import {
+  canChangeMemberRole,
+  canManageMemberRoleAssignment,
+  getAssignableTenantRoles,
+  getMemberInviteState,
+  getRolesByUser,
+  hasDuplicateTenantRole,
+  memberEmail,
+  memberName,
+} from './memberAccess';
 
 const members: CompanyMember[] = [
   { userId: 1, role: 'student', fullName: 'Local Name', email: 'local@example.com' },
@@ -34,5 +43,48 @@ describe('member access helpers', () => {
 
     expect(canChangeMemberRole(rolesByUser, members[1], 'student')).toBe(false);
     expect(canChangeMemberRole(rolesByUser, members[1], 'assistant')).toBe(true);
+  });
+
+  it('keeps owner role controls behind owner permission and protects the last owner', () => {
+    const owner: CompanyMember = { userId: 3, role: 'owner' };
+
+    expect(canManageMemberRoleAssignment(true, false, owner, 2)).toBe(false);
+    expect(canManageMemberRoleAssignment(true, true, owner, 1)).toBe(false);
+    expect(canManageMemberRoleAssignment(true, true, owner, 2)).toBe(true);
+    expect(canManageMemberRoleAssignment(false, true, members[0], 0)).toBe(false);
+    expect(canManageMemberRoleAssignment(true, false, members[0], 0)).toBe(true);
+  });
+
+  it('only exposes owner as an assignable role when owner management is allowed', () => {
+    expect(getAssignableTenantRoles(false)).not.toContain('owner');
+    expect(getAssignableTenantRoles(true)).toContain('owner');
+  });
+
+  it('derives pending and expired invite setup states when backend provides onboarding data', () => {
+    const now = new Date('2026-05-14T08:00:00.000Z');
+
+    expect(getMemberInviteState({
+      userId: 4,
+      role: 'student',
+      onboarding: { setupRequired: true, expiresAt: '2026-05-15T08:00:00.000Z', emailSent: true },
+    }, now)).toEqual({
+      status: 'pending',
+      setupLink: undefined,
+      expiresAt: '2026-05-15T08:00:00.000Z',
+      emailSent: true,
+    });
+
+    expect(getMemberInviteState({
+      userId: 5,
+      role: 'student',
+      invitation: { status: 'pending', expiresAt: '2026-05-13T08:00:00.000Z', setupLink: 'https://setup.test' },
+    }, now)).toEqual({
+      status: 'expired',
+      setupLink: 'https://setup.test',
+      expiresAt: '2026-05-13T08:00:00.000Z',
+      emailSent: undefined,
+    });
+
+    expect(getMemberInviteState({ userId: 6, role: 'student' }, now)).toBeNull();
   });
 });

@@ -50,6 +50,44 @@ Use this checklist for Release 0.1 design-system acceptance and future UI change
 - Student Dashboard: continue-learning priority, tasks, materials, attendance, homework, certificates, empty states.
 - Auth pages: login, password reset, account setup, tenant resolution errors.
 
+## Owner/Admin Scenarios
+
+Run these checks at desktop, tablet, mobile, and small mobile widths. Repeat the language pass in English, Russian, and Kyrgyz because owner/admin labels are longer and more likely to wrap.
+
+- Tenant owner with full permissions:
+  - Overview shows admin stats, attention queue, setup checklist, operations summary, certificate backlog, and expected primary actions.
+  - Navigation shows Overview, Reports, Operations, People, Settings, and the permitted operational routes.
+  - People & Access shows owner management actions, invite actions, pending setup state, multi-role summaries, and last-owner protection.
+  - Settings shows Organization Profile, Branding, Learning Policies, Platform & Billing, Features, Access & Roles, Personal Preferences, and Audit Log without tab clipping.
+- Company admin without owner permissions:
+  - Owner-only actions are hidden or read-only with clear copy.
+  - Member and course management actions remain available when the matching permissions are enabled.
+  - Access & Roles explains owner boundaries without implying the admin can remove or demote owners.
+- Admin with reports permission disabled:
+  - Reports navigation is hidden.
+  - Direct report route access is denied with a usable fallback.
+  - Overview keeps operational content useful without chart-only dependencies.
+- Admin with certificates disabled:
+  - Certificate navigation and certificate-related actions are hidden.
+  - Overview and Operations do not show dead certificate actions.
+  - Empty states avoid telling the admin to configure unavailable certificate features.
+- Admin with multiple tenants:
+  - Tenant switcher remains readable and reachable.
+  - Active tenant context is clear in sidebar, mobile navigation, overview, and settings.
+  - Switching tenants does not leave stale selected course, group, or member context visible.
+- Mobile owner/admin navigation:
+  - Top-level owner/admin routes fit the mobile tab bar without overlap.
+  - Operations routes remain discoverable without crowding the primary navigation.
+  - Modals and page actions remain reachable above the mobile tab bar.
+- Empty new tenant:
+  - Overview setup checklist gives the next useful action.
+  - People, Courses, Groups, Sessions, Certificates, Reports, and Settings empty states are role-appropriate.
+  - Disabled feature copy distinguishes unavailable features from missing data.
+- Established tenant with many members/courses:
+  - Filters, tables, metadata rows, and action menus remain scannable.
+  - Reduced badge usage keeps dense admin pages readable.
+  - Long names, emails, course titles, group names, and localized labels wrap without pushing actions off screen.
+
 ## Acceptance Checks
 
 - No overlapping text or controls at listed viewports.

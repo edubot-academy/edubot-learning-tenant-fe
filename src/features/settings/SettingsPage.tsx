@@ -10,20 +10,29 @@ import { activityActionLabelKeys, enumLabel, roleLabelKeys } from '../../lib/enu
 import { useTenant } from '../tenant/TenantProvider';
 import { useTheme } from '../theme/themeContext';
 import { useAuth } from '../auth/AuthProvider';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { listTenantActivity, updateTenant, updateTenantBranding, updateTenantSettings, uploadTenantLogo } from '../../services/api';
-import { canManageTenantProfile, getEffectiveTenantRole, isTenantAdmin } from '../tenant/tenantRoles';
+import {
+  canManageTenantBranding,
+  canManageTenantOwners,
+  canManageTenantProfile,
+  canManageTenantSettings,
+  canViewTenantReports,
+  getEffectiveTenantRole,
+  isTenantAdmin,
+} from '../tenant/tenantRoles';
 import type { Tenant, TenantActivityLog } from '../../types/domain';
 import { normalizeLocale, SUPPORTED_LOCALES, type SupportedLocale } from '../../i18n/locale';
 
 const knownFeatures = [
-  { key: 'courses.video.enabled', labelKey: 'settings.featureVideoCourses' },
-  { key: 'courses.offline.enabled', labelKey: 'settings.featureOfflineCourses' },
-  { key: 'courses.onlineLive.enabled', labelKey: 'settings.featureOnlineLiveCourses' },
-  { key: 'attendance.enabled', labelKey: 'navigation.attendance' },
-  { key: 'homework.enabled', labelKey: 'navigation.homework' },
-  { key: 'certificates.enabled', labelKey: 'navigation.certificates' },
-  { key: 'crmSync.enabled', labelKey: 'settings.featureCrmSync' },
-  { key: 'aiAssistant.enabled', labelKey: 'settings.featureAiAssistant' },
+  { key: 'courses.video.enabled', labelKey: 'settings.featureVideoCourses', detailKey: 'settings.featureVideoCoursesDetail' },
+  { key: 'courses.offline.enabled', labelKey: 'settings.featureOfflineCourses', detailKey: 'settings.featureOfflineCoursesDetail' },
+  { key: 'courses.onlineLive.enabled', labelKey: 'settings.featureOnlineLiveCourses', detailKey: 'settings.featureOnlineLiveCoursesDetail' },
+  { key: 'attendance.enabled', labelKey: 'navigation.attendance', detailKey: 'settings.featureAttendanceDetail' },
+  { key: 'homework.enabled', labelKey: 'navigation.homework', detailKey: 'settings.featureHomeworkDetail' },
+  { key: 'certificates.enabled', labelKey: 'navigation.certificates', detailKey: 'settings.featureCertificatesDetail' },
+  { key: 'crmSync.enabled', labelKey: 'settings.featureCrmSync', detailKey: 'settings.featureCrmSyncDetail' },
+  { key: 'aiAssistant.enabled', labelKey: 'settings.featureAiAssistant', detailKey: 'settings.featureAiAssistantDetail' },
 ];
 
 const emptyProfileForm = {
@@ -140,13 +149,14 @@ function activityDetail(row: TenantActivityLog, fallback: string, detailLabel: (
   return fallback;
 }
 
-type SettingsTab = 'profile' | 'branding' | 'policies' | 'access' | 'platform' | 'features' | 'activity';
+type SettingsTab = 'profile' | 'branding' | 'policies' | 'platform' | 'features' | 'access' | 'personal' | 'activity';
 
 export function SettingsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { tenants, activeTenant, reloadTenants } = useTenant();
   const { preference, resolvedTheme, setPreference } = useTheme();
+  const { locale, setLocale } = useLocale();
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
   const [brandingForm, setBrandingForm] = useState(emptyBrandingForm);
   const [tenantSettingsForm, setTenantSettingsForm] = useState(emptyTenantSettingsForm);
@@ -166,12 +176,16 @@ export function SettingsPage() {
   const flags = useMemo(() => activeTenant?.featureFlags ?? {}, [activeTenant?.featureFlags]);
   const tenantRole = getEffectiveTenantRole(user, activeTenant);
   const canEditTenantProfile = canManageTenantProfile(user, activeTenant);
-  const canViewTenantActivity = isTenantAdmin(user, activeTenant);
+  const canEditTenantBranding = canManageTenantBranding(user, activeTenant);
+  const canEditTenantSettings = canManageTenantSettings(user, activeTenant);
+  const canManageOwners = canManageTenantOwners(user, activeTenant);
+  const canViewTenantActivity = canViewTenantReports(user, activeTenant) || isTenantAdmin(user, activeTenant);
 
   const featureRows = useMemo(() => {
-    const rows: Array<{ key: string; label: string; explicit: boolean; enabled: boolean }> = knownFeatures.map((feature) => ({
+    const rows: Array<{ key: string; label: string; detail: string; explicit: boolean; enabled: boolean }> = knownFeatures.map((feature) => ({
       ...feature,
       label: t(feature.labelKey),
+      detail: t(feature.detailKey),
       explicit: Object.prototype.hasOwnProperty.call(flags, feature.key),
       enabled: flags[feature.key] !== false,
     }));
@@ -181,6 +195,7 @@ export function SettingsPage() {
         rows.push({
           key,
           label: t('settings.featurePlatformManaged'),
+          detail: t('settings.featurePlatformManagedDetail'),
           explicit: true,
           enabled: value !== false,
         });
@@ -193,9 +208,10 @@ export function SettingsPage() {
     { key: 'profile', label: t('settings.tabProfile'), description: t('settings.tabProfileDetail') },
     { key: 'branding', label: t('settings.tabBranding'), description: t('settings.tabBrandingDetail') },
     { key: 'policies', label: t('settings.tabPolicies'), description: t('settings.tabPoliciesDetail') },
-    { key: 'access', label: t('settings.tabAccess'), description: t('settings.tabAccessDetail') },
     { key: 'platform', label: t('settings.tabPlatform'), description: t('settings.tabPlatformDetail') },
     { key: 'features', label: t('settings.tabFeatures'), description: t('settings.tabFeaturesDetail') },
+    { key: 'access', label: t('settings.tabAccess'), description: t('settings.tabAccessDetail') },
+    { key: 'personal', label: t('settings.tabPersonal'), description: t('settings.tabPersonalDetail') },
     ...(canViewTenantActivity ? [{ key: 'activity' as const, label: t('settings.tabActivity'), description: t('settings.tabActivityDetail') }] : []),
   ], [canViewTenantActivity, t]);
 
@@ -278,10 +294,43 @@ export function SettingsPage() {
     return messages[message] ?? message;
   };
 
+  const platformContactEmail = useMemo(() => (
+    recordText(activeTenant?.settings, 'supportEmail')
+    || activeTenant?.contactEmail
+    || activeTenant?.email
+    || ''
+  ), [activeTenant]);
+  const platformRequestHref = platformContactEmail
+    ? `mailto:${platformContactEmail}?subject=${encodeURIComponent(t('settings.platformRequestSubject', { tenant: activeTenant?.name ?? t('app.defaultTenant') }))}`
+    : '';
+
   const platformManagedItems = useMemo(() => [
-    { icon: FiLock, label: t('settings.tenantStatus'), value: activeTenant?.status || t('states.notSet'), detail: t('settings.tenantStatusDetail') },
-    { icon: FiCreditCard, label: t('settings.planBilling'), value: activeTenant?.plan || t('states.notSet'), detail: activeTenant?.billingStatus || t('settings.planBillingDetail') },
-    { icon: FiGlobe, label: t('settings.domainRouting'), value: activeTenant?.customDomain || activeTenant?.subdomain || t('states.notSet'), detail: t('settings.domainRoutingDetail') },
+    {
+      icon: FiLock,
+      label: t('settings.tenantStatus'),
+      value: activeTenant?.status || t('states.notSet'),
+      detail: t('settings.tenantStatusDetail'),
+    },
+    {
+      icon: FiCreditCard,
+      label: t('settings.planBilling'),
+      value: activeTenant?.plan || t('states.notSet'),
+      detail: activeTenant?.billingStatus
+        ? t('settings.planBillingStatusDetail', { status: readable(activeTenant.billingStatus) })
+        : t('settings.planBillingDetail'),
+    },
+    {
+      icon: FiGlobe,
+      label: t('settings.domainRouting'),
+      value: activeTenant?.customDomain || activeTenant?.subdomain || t('states.notSet'),
+      detail: t('settings.domainRoutingDetail'),
+    },
+    {
+      icon: FiActivity,
+      label: t('settings.crmLink'),
+      value: activeTenant?.crmLink?.linked ? activeTenant.crmLink.status || t('overview.enabled') : t('overview.disabled'),
+      detail: activeTenant?.crmLink?.crmPrimaryDomain || activeTenant?.crmLink?.crmTenantSlug || t('settings.crmLinkDetail'),
+    },
   ], [activeTenant, t]);
 
   const enabledFeatureCount = useMemo(
@@ -332,7 +381,7 @@ export function SettingsPage() {
   }, [activeTenant, canViewTenantActivity, settingsTab, t]);
 
   const uploadLogo = async (file: File | undefined) => {
-    if (!activeTenant || !file) return;
+    if (!activeTenant || !file || !canEditTenantProfile) return;
 
     setUploadingLogo(true);
     try {
@@ -366,7 +415,7 @@ export function SettingsPage() {
 
   const saveTenantProfile = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!activeTenant) return;
+    if (!activeTenant || !canEditTenantProfile) return;
     const nextErrors: Record<string, string> = {};
     if (!profileForm.name.trim()) {
       nextErrors.name = t('settings.errorTenantNameRequired');
@@ -424,7 +473,7 @@ export function SettingsPage() {
 
   const saveTenantBranding = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!activeTenant) return;
+    if (!activeTenant || !canEditTenantBranding) return;
     const nextErrors: Record<string, string> = {};
     const hexColorPattern = /^#?[0-9a-fA-F]{6}$/;
     if (brandingForm.primaryColor && !hexColorPattern.test(brandingForm.primaryColor)) {
@@ -467,7 +516,7 @@ export function SettingsPage() {
 
   const saveTenantPolicies = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!activeTenant) return;
+    if (!activeTenant || !canEditTenantSettings) return;
     const nextErrors: Record<string, string> = {};
     if (tenantSettingsForm.supportEmail.trim() && !isEmail(tenantSettingsForm.supportEmail.trim())) {
       nextErrors.supportEmail = t('settings.errorSupportEmail');
@@ -517,6 +566,55 @@ export function SettingsPage() {
       <div className="settings-grid">
         <section className="settings-panel">
           <div className="settings-panel-heading">
+            <FiLock />
+            <div>
+              <h2>{t('settings.adminBoundaries')}</h2>
+              <span>{t('settings.adminBoundariesDetail')}</span>
+            </div>
+          </div>
+          <div className="platform-managed-grid access-capability-grid">
+            <article>
+              <FiLock />
+              <div>
+                <span>{t('members.roleOwner')}</span>
+                <strong>{canManageOwners ? t('settings.ownerControlsAvailable') : t('members.platformManaged')}</strong>
+                <small>{t('settings.ownerControlsDetail')}</small>
+              </div>
+            </article>
+            <article>
+              <FiUserCheck />
+              <div>
+                <span>{t('members.roleCompanyAdmin')}</span>
+                <strong>{canEditTenantSettings ? t('overview.enabled') : t('members.readOnly')}</strong>
+                <small>{t('settings.companyAdminControlsDetail')}</small>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section className="settings-panel">
+          <div className="settings-panel-heading">
+            <FiUserCheck />
+            <div>
+              <h2>{t('settings.yourAccess')}</h2>
+              <span>{t('settings.yourAccessDetail')}</span>
+            </div>
+          </div>
+          <div className="definition-grid">
+            <span>{t('groups.name')}</span><strong>{readable(user?.fullName)}</strong>
+            <span>{t('groups.email')}</span><strong>{readable(user?.email)}</strong>
+            <span>{t('settings.tenantRole')}</span><strong>{roleLabel(tenantRole)}</strong>
+            <span>{t('settings.platformRole')}</span><strong>{roleLabel(user?.role)}</strong>
+            <span>{t('settings.tenants')}</span><strong>{tenants.length}</strong>
+          </div>
+        </section>
+      </div>
+      ) : null}
+
+      {settingsTab === 'personal' ? (
+      <div className="settings-grid">
+        <section className="settings-panel">
+          <div className="settings-panel-heading">
             <FiSliders />
             <div>
               <h2>{t('settings.appearance')}</h2>
@@ -545,19 +643,31 @@ export function SettingsPage() {
 
         <section className="settings-panel">
           <div className="settings-panel-heading">
-            <FiUserCheck />
+            <FiGlobe />
             <div>
-              <h2>{t('settings.yourAccess')}</h2>
-              <span>{t('settings.yourAccessDetail')}</span>
+              <h2>{t('settings.languagePreference')}</h2>
+              <span>{t('settings.languagePreferenceDetail')}</span>
             </div>
           </div>
-          <div className="definition-grid">
-            <span>{t('groups.name')}</span><strong>{readable(user?.fullName)}</strong>
-            <span>{t('groups.email')}</span><strong>{readable(user?.email)}</strong>
-            <span>{t('settings.tenantRole')}</span><strong>{roleLabel(tenantRole)}</strong>
-            <span>{t('settings.platformRole')}</span><strong>{roleLabel(user?.role)}</strong>
-            <span>{t('settings.tenants')}</span><strong>{tenants.length}</strong>
+          <div className="theme-settings-row">
+            <div>
+              <span>{t('settings.currentLanguage')}</span>
+              <strong>{languageLabel(locale)}</strong>
+            </div>
+            <div className="segmented-control" aria-label={t('language.label')}>
+              {SUPPORTED_LOCALES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={locale === option ? 'active' : ''}
+                  onClick={() => setLocale(option)}
+                >
+                  {languageLabel(option)}
+                </button>
+              ))}
+            </div>
           </div>
+          <p className="panel-note">{t('settings.personalPreferenceNote')}</p>
         </section>
       </div>
       ) : null}
@@ -581,10 +691,18 @@ export function SettingsPage() {
                   <span>{item.label}</span>
                   <strong>{readable(item.value)}</strong>
                   <small>{item.detail}</small>
+                  <em>{t('settings.managedByPlatform')}</em>
                 </div>
               </article>
             );
           })}
+        </div>
+        <div className="platform-managed-request">
+          <div>
+            <strong>{t('settings.platformRequestTitle')}</strong>
+            <span>{platformContactEmail ? t('settings.platformRequestDetail', { email: platformContactEmail }) : t('settings.platformRequestNoContact')}</span>
+          </div>
+          {platformRequestHref ? <a className="secondary-link-button" href={platformRequestHref}>{t('settings.requestPlatformChange')}</a> : null}
         </div>
       </section>
       ) : null}
@@ -771,17 +889,17 @@ export function SettingsPage() {
             <span>{t('settings.tenantBrandingDetail')}</span>
           </div>
           <div className="profile-actions">
-            {canEditTenantProfile && editingBranding ? (
+            {canEditTenantBranding && editingBranding ? (
               <>
                 <button type="button" className="secondary-button" onClick={cancelBrandingEdit} disabled={savingBranding}>{t('courses.cancel')}</button>
                 <button type="submit" disabled={savingBranding}>{savingBranding ? t('courses.saving') : t('settings.saveBranding')}</button>
               </>
-            ) : canEditTenantProfile ? (
+            ) : canEditTenantBranding ? (
               <button type="button" onClick={() => setEditingBranding(true)}>{t('settings.editBranding')}</button>
             ) : null}
           </div>
         </div>
-        {editingBranding && canEditTenantProfile ? (
+        {editingBranding && canEditTenantBranding ? (
           <div className="settings-grid embedded">
             <section className="form-section">
             <div className="two-col">
@@ -871,17 +989,17 @@ export function SettingsPage() {
             <span>{t('settings.tenantPoliciesDetail')}</span>
           </div>
           <div className="profile-actions">
-            {canEditTenantProfile && editingPolicies ? (
+            {canEditTenantSettings && editingPolicies ? (
               <>
                 <button type="button" className="secondary-button" onClick={cancelPoliciesEdit} disabled={savingPolicies}>{t('courses.cancel')}</button>
                 <button type="submit" disabled={savingPolicies}>{savingPolicies ? t('courses.saving') : t('settings.savePolicies')}</button>
               </>
-            ) : canEditTenantProfile ? (
+            ) : canEditTenantSettings ? (
               <button type="button" onClick={() => setEditingPolicies(true)}>{t('settings.editPolicies')}</button>
             ) : null}
           </div>
         </div>
-        {editingPolicies && canEditTenantProfile ? (
+        {editingPolicies && canEditTenantSettings ? (
           <div className="settings-grid embedded">
             <div className="two-col">
               <label>
@@ -949,7 +1067,7 @@ export function SettingsPage() {
             <div key={feature.key} className="flag-row">
               <div>
                 <span>{feature.label}</span>
-                <small>{feature.explicit ? feature.key : t('settings.featureDefault', { key: feature.key })}</small>
+                <small>{feature.detail} {feature.explicit ? t('settings.featureConfigured') : t('settings.featureDefault')}</small>
               </div>
               <strong className={`status-badge ${feature.enabled ? 'published' : 'destructive'}`}>
                 {booleanLabel(feature.enabled)}

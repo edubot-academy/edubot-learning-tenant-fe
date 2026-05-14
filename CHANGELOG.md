@@ -19,6 +19,36 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.5.0 - 2026-05-14
+
+### Added
+
+- Added owner/admin operations hub for course, group, session, attendance, homework, and certificate workflows.
+- Added reports page with backend-backed summary and time-series chart panels.
+- Added overview insight charts for enrollment, attendance, workload, and setup progress.
+- Added tenant route permission helpers, course health helpers, and admin setup checklist coverage.
+- Added Recharts for release-ready reporting visualizations.
+
+### Changed
+
+- Reworked owner/admin overview around readiness, operational blockers, reports, and setup actions.
+- Updated tenant navigation to separate admin, reporting, and operational surfaces by permission.
+- Updated member, settings, course, certificate, and session surfaces for owner/admin permissions and feature flags.
+- Localized owner/admin operational copy across English, Russian, and Kyrgyz.
+- Package version updated to `1.5.0`.
+
+### Fixed
+
+- Fixed feature flag handling so dotted flags and backend simple aliases both work.
+- Fixed report-only users seeing or opening tenant settings.
+- Fixed overview chart loading/error states so missing trend data is not shown as an empty-state too early.
+
+### Tests
+
+- `npm run lint` passes.
+- `npm test -- --run` passes with 22 test files and 90 tests.
+- `npm run build` passes with the existing Vite main chunk-size warning.
+
 ## 1.4.2 - 2026-05-13
 
 ### Fixed

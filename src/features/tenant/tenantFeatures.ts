@@ -9,6 +9,15 @@ export type TenantFeatureKey =
   | 'homework.enabled'
   | 'aiAssistant.enabled';
 
+const featureFlagAliases: Partial<Record<TenantFeatureKey, string[]>> = {
+  'attendance.enabled': ['attendance'],
+  'homework.enabled': ['homework'],
+  'certificates.enabled': ['certificates'],
+  'courses.onlineLive.enabled': ['liveSessions'],
+};
+
 export function isTenantFeatureEnabled(tenant: Tenant | null | undefined, key: TenantFeatureKey) {
-  return tenant?.featureFlags?.[key] !== false;
+  const flags = tenant?.featureFlags ?? {};
+  if (Object.prototype.hasOwnProperty.call(flags, key)) return flags[key] !== false;
+  return !(featureFlagAliases[key] ?? []).some((alias) => flags[alias] === false);
 }

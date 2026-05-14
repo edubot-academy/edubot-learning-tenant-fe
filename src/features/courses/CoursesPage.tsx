@@ -7,16 +7,17 @@ import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
-import { createTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
+import { createTenantCourse, getCourseCertificateSettings, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
-import { getEffectiveTenantRole } from '../tenant/tenantRoles';
+import { canManageTenantCourses, getEffectiveTenantRole } from '../tenant/tenantRoles';
 import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 import { courseRosterFilterParams, isDefaultCourseRosterFilter, type CourseProgressFilter } from './courseRosterFilters';
+import { courseHealthFilters, courseMatchesHealthFilter, getCourseHealthCounts, type CourseHealthFilter, type CourseHealthSummary } from './courseHealth';
 
 type TenantCourseType = 'offline' | 'online_live' | 'video';
 
@@ -35,9 +36,12 @@ export function CoursesPage() {
   const [unfilteredStudents, setUnfilteredStudents] = useState<GroupStudent[]>([]);
   const [homework, setHomework] = useState<SessionHomework[]>([]);
   const [members, setMembers] = useState<CompanyMember[]>([]);
+  const [courseHealth, setCourseHealth] = useState<Record<number, CourseHealthSummary>>({});
+  const [courseHealthLoading, setCourseHealthLoading] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
   const [query, setQuery] = useState('');
+  const [healthFilter, setHealthFilter] = useState<CourseHealthFilter>('all');
   const [studentQuery, setStudentQuery] = useState('');
   const [progressFilter, setProgressFilter] = useState<CourseProgressFilter>('all');
   const courseLoad = useAsyncLoadState(false);
@@ -79,8 +83,9 @@ export function CoursesPage() {
   });
 
   const activeRole = getEffectiveTenantRole(user, activeTenant);
-  const canCreateCourse = ['owner', 'company_admin', 'instructor'].includes(activeRole);
-  const canApproveTenantCourses = ['owner', 'company_admin'].includes(activeRole);
+  const canManageCourses = canManageTenantCourses(user, activeTenant);
+  const canCreateCourse = canManageCourses || activeRole === 'instructor';
+  const canApproveTenantCourses = canManageCourses;
   const canAssignInstructor = canApproveTenantCourses;
   const featureEnabled = (key: string) => activeTenant?.featureFlags?.[key] !== false;
   const attendanceEnabled = featureEnabled('attendance.enabled');
@@ -133,22 +138,38 @@ export function CoursesPage() {
     [activeRole, canAssignInstructor, members, user?.email, user?.fullName, user?.id],
   );
 
+  const healthCounts = useMemo(() => getCourseHealthCounts(courses, courseHealth), [courseHealth, courses]);
+  const healthFilterLabel = (value: CourseHealthFilter) => {
+    const labels: Record<CourseHealthFilter, string> = {
+      all: t('courses.healthAll'),
+      draft: t('courses.healthDraft'),
+      pending: t('courses.healthPending'),
+      approved_unpublished: t('courses.healthApprovedUnpublished'),
+      no_instructor: t('courses.healthNoInstructor'),
+      no_groups: t('courses.healthNoGroups'),
+      no_sessions: t('courses.healthNoSessions'),
+      certificate_missing: t('courses.healthCertificateMissing'),
+    };
+    return labels[value];
+  };
+
   const filteredCourses = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return courses;
     return courses.filter((course) => (
-      course.title.toLowerCase().includes(normalized)
-      || (course.courseType ?? '').toLowerCase().includes(normalized)
-      || (course.status ?? '').toLowerCase().includes(normalized)
+      courseMatchesHealthFilter(course, healthFilter, courseHealth[course.id])
+      && (!normalized
+        || course.title.toLowerCase().includes(normalized)
+        || (course.courseType ?? '').toLowerCase().includes(normalized)
+        || (course.status ?? '').toLowerCase().includes(normalized))
     ));
-  }, [courses, query]);
+  }, [courseHealth, courses, healthFilter, query]);
 
   useEffect(() => {
-    if (!query.trim()) return;
+    if (!query.trim() && healthFilter === 'all') return;
     if (!filteredCourses.length) return;
     if (selectedCourseId && filteredCourses.some((course) => course.id === selectedCourseId)) return;
     setSelectedCourseId(filteredCourses[0].id);
-  }, [filteredCourses, query, selectedCourseId]);
+  }, [filteredCourses, healthFilter, query, selectedCourseId]);
 
   const selectedCourse = useMemo(
     () => courses.find((course) => course.id === selectedCourseId),
@@ -213,6 +234,7 @@ export function CoursesPage() {
     setStudents([]);
     setHomework([]);
     setMembers([]);
+    setCourseHealth({});
     setSelectedCourseId(undefined);
     setSelectedGroupId(undefined);
     if (!activeTenantId) {
@@ -240,6 +262,61 @@ export function CoursesPage() {
       cancelled = true;
     };
   }, [activeTenantId, canAssignInstructor, courseReloadToken, failCourseLoad, startCourseLoad, succeedCourseLoad, t]);
+
+  useEffect(() => {
+    if (!canManageCourses || !courses.length) {
+      setCourseHealth({});
+      setCourseHealthLoading(false);
+      return;
+    }
+    const backendHealthRows = courses
+      .filter((course) => course.health || course.groupCount !== undefined || course.sessionCount !== undefined || course.certificateConfigured !== undefined)
+      .map((course) => [
+        course.id,
+        {
+          groupCount: course.health?.groupCount ?? course.groupCount,
+          sessionCount: course.health?.sessionCount ?? course.sessionCount,
+          certificateConfigured: certificatesEnabled ? course.health?.certificateConfigured ?? course.certificateConfigured : undefined,
+        } satisfies CourseHealthSummary,
+      ] as const);
+    if (backendHealthRows.length === courses.length) {
+      setCourseHealth(Object.fromEntries(backendHealthRows));
+      setCourseHealthLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCourseHealthLoading(true);
+
+    Promise.all(courses.map(async (course) => {
+      const courseGroups = await listCourseGroups(course.id).catch(() => [] as CourseGroup[]);
+      const sessionLists = await Promise.all(courseGroups.map((group) => listGroupSessions(group.id).catch(() => [] as CourseSession[])));
+      const certificateSettings = certificatesEnabled
+        ? await getCourseCertificateSettings(course.id).catch(() => null)
+        : null;
+      return {
+        courseId: course.id,
+        summary: {
+          groupCount: courseGroups.length,
+          sessionCount: sessionLists.reduce((count, list) => count + list.length, 0),
+          certificateConfigured: certificatesEnabled ? certificateSettings?.enabled === true : undefined,
+        } satisfies CourseHealthSummary,
+      };
+    }))
+      .then((rows) => {
+        if (cancelled) return;
+        setCourseHealth(Object.fromEntries(rows.map((row) => [row.courseId, row.summary])));
+      })
+      .catch(() => {
+        if (!cancelled) toast.error(t('courses.healthLoadFailed'));
+      })
+      .finally(() => {
+        if (!cancelled) setCourseHealthLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canManageCourses, certificatesEnabled, courses, t]);
 
   useEffect(() => {
     setSelectedCourseId((current) => {
@@ -521,6 +598,22 @@ export function CoursesPage() {
           {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
         </select>
       </div>
+      {canManageCourses && courses.length ? (
+        <div className="member-role-chips course-health-filters" aria-label={t('courses.healthFilters')}>
+          {courseHealthFilters.map((filter) => (
+            <button
+              key={filter}
+              type="button"
+              className={healthFilter === filter ? 'active' : ''}
+              onClick={() => setHealthFilter(filter)}
+              disabled={courseHealthLoading && ['no_groups', 'no_sessions', 'certificate_missing'].includes(filter)}
+            >
+              {healthFilterLabel(filter)}
+              <strong>{healthCounts[filter] ?? 0}</strong>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {!courses.length ? (
         <EmptyState
           title={t('courses.emptyTitle')}
@@ -587,7 +680,7 @@ export function CoursesPage() {
                         </td>
                         <td>{courseTypeLabel(course.courseType)}</td>
                         <td><span className={`status-badge ${course.status || 'draft'}`}>{statusLabel(course.status)}</span></td>
-                        <td><span className={`status-badge ${course.isPublished ? 'published' : 'draft'}`}>{publishLabel(course.isPublished)}</span></td>
+                        <td><span className="metadata-text">{publishLabel(course.isPublished)}</span></td>
                         <td>{course.enrolledStudents ?? 0}</td>
                       </tr>
                     ))}

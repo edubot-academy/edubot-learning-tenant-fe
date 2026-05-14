@@ -26,6 +26,8 @@ import type {
   Tenant,
   TenantActivityLog,
   TenantOverview,
+  TenantReportSummary,
+  TenantReportTimeSeries,
   UserSummary,
   WorkspaceListResponse,
 } from '../types/domain';
@@ -315,6 +317,16 @@ export async function getTenantOverview(tenantId: number) {
 
 export async function getTenantDashboard(tenantId: number) {
   const { data } = await api.get<TenantOverview>(`/companies/${tenantId}/dashboard`);
+  return data;
+}
+
+export async function getTenantReportSummary(tenantId: number) {
+  const { data } = await api.get<TenantReportSummary>(`/companies/${tenantId}/reports/summary`);
+  return data;
+}
+
+export async function getTenantReportTimeSeries(tenantId: number) {
+  const { data } = await api.get<TenantReportTimeSeries>(`/companies/${tenantId}/reports/time-series`);
   return data;
 }
 

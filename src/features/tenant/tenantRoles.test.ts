@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthUser, Tenant } from '../../types/domain';
 import {
+  canManageTenantBranding,
+  canManageTenantCourses,
   canManageTenantMembers,
+  canManageTenantOwners,
+  canManageTenantSettings,
   canOperateTenantLearning,
+  canViewTenantReports,
   getEffectiveTenantRole,
   getTenantAccessLevel,
   isPlatformAdmin,
@@ -24,6 +29,13 @@ const tenantWithRoles = (roles: string[]): Tenant => ({
   id: 10,
   name: 'Tenant',
   roles,
+});
+
+const tenantWithPermissions = (permissions: Tenant['permissions'], role: string | null = 'student'): Tenant => ({
+  id: 10,
+  name: 'Tenant',
+  role,
+  permissions,
 });
 
 describe('tenant role access', () => {
@@ -60,5 +72,42 @@ describe('tenant role access', () => {
     expect(canOperateTenantLearning(user('student'), tenant('instructor'))).toBe(true);
     expect(canOperateTenantLearning(user('student'), tenant('assistant'))).toBe(true);
     expect(canOperateTenantLearning(user('student'), tenant('student'))).toBe(false);
+  });
+
+  it('prefers explicit tenant permissions over broad tenant admin role fallback', () => {
+    const restrictedAdmin = tenantWithPermissions({
+      canManageMembers: false,
+      canManageCourses: true,
+      canManageBranding: false,
+      canManageSettings: true,
+      canViewReports: true,
+    }, 'company_admin');
+
+    expect(canManageTenantMembers(user('company_admin'), restrictedAdmin)).toBe(false);
+    expect(canManageTenantCourses(user('company_admin'), restrictedAdmin)).toBe(true);
+    expect(canManageTenantBranding(user('company_admin'), restrictedAdmin)).toBe(false);
+    expect(canManageTenantSettings(user('company_admin'), restrictedAdmin)).toBe(true);
+    expect(canViewTenantReports(user('company_admin'), restrictedAdmin)).toBe(true);
+  });
+
+  it('allows permission-granted managers without owner or company_admin roles', () => {
+    const courseManager = tenantWithPermissions({
+      canManageCourses: true,
+      canManageMembers: false,
+    }, 'assistant');
+
+    expect(canManageTenantCourses(user('assistant'), courseManager)).toBe(true);
+    expect(canOperateTenantLearning(user('assistant'), courseManager)).toBe(true);
+    expect(canManageTenantMembers(user('assistant'), courseManager)).toBe(false);
+  });
+
+  it('allows workspace access from explicit management permissions even without a scalar role', () => {
+    expect(getTenantAccessLevel(user('admin'), tenantWithPermissions({ canManageCourses: true }, null))).toBe('tenant_admin');
+  });
+
+  it('keeps owner management owner-only unless explicit permission is present', () => {
+    expect(canManageTenantOwners(user('owner'), tenant('owner'))).toBe(true);
+    expect(canManageTenantOwners(user('company_admin'), tenant('company_admin'))).toBe(false);
+    expect(canManageTenantOwners(user('company_admin'), tenantWithPermissions({ canManageOwners: true }, 'company_admin'))).toBe(true);
   });
 });

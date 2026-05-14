@@ -10,6 +10,7 @@ export default defineConfig({
           react: ['react', 'react-dom', 'react-router-dom'],
           i18n: ['i18next', 'react-i18next'],
           icons: ['react-icons/fi'],
+          charts: ['recharts'],
           vendor: ['axios', 'clsx', 'react-hot-toast'],
         },
       },

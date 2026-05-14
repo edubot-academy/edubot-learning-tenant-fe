@@ -9,15 +9,15 @@ const signOut = vi.fn();
 
 vi.mock('../features/auth/AuthProvider', () => ({
   useAuth: () => ({
-    user: { id: 1, email: 'admin@example.com', role: 'company_admin', fullName: 'Tenant Admin' },
+    user: { id: 1, email: 'instructor@example.com', role: 'instructor', fullName: 'Tenant Instructor' },
     signOut,
   }),
 }));
 
 vi.mock('../features/tenant/TenantProvider', () => ({
   useTenant: () => ({
-    tenants: [{ id: 10, name: 'Tenant', role: 'company_admin', featureFlags: {} }],
-    activeTenant: { id: 10, name: 'Tenant', role: 'company_admin', featureFlags: {} },
+    tenants: [{ id: 10, name: 'Tenant', role: 'instructor', featureFlags: {} }],
+    activeTenant: { id: 10, name: 'Tenant', role: 'instructor', featureFlags: {} },
     hostnameLocked: true,
     setActiveTenantId: vi.fn(),
   }),

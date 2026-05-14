@@ -31,6 +31,7 @@ export type Tenant = {
     canManageOwners?: boolean;
     canManageMembers?: boolean;
     canManageCourses?: boolean;
+    canManageCertificates?: boolean;
     canViewReports?: boolean;
     canManageBranding?: boolean;
     canManageSettings?: boolean;
@@ -88,7 +89,14 @@ export type TenantActivityLog = {
 };
 
 export type TenantOverviewPermissions = {
+  canEnterWorkspace?: boolean;
+  canManageTenant?: boolean;
+  canManageOwners?: boolean;
   canManageMembers: boolean;
+  canManageCourses?: boolean;
+  canViewReports?: boolean;
+  canManageBranding?: boolean;
+  canManageSettings?: boolean;
   canViewActivity: boolean;
   canManageCertificates: boolean;
   canCreateCourses: boolean;
@@ -149,6 +157,64 @@ export type TenantOverview = {
   } | null;
 };
 
+export type TenantReportPoint = {
+  period: string;
+  count?: number;
+  total?: number;
+  good?: number;
+  rate?: number;
+};
+
+export type TenantReportSummary = {
+  generatedAt?: string;
+  scope?: {
+    companyId?: number | null;
+    from?: string | null;
+    to?: string | null;
+    courseId?: number | null;
+    groupId?: number | null;
+  };
+  summary: {
+    totalUsers?: number;
+    totalStudents?: number;
+    totalInstructors?: number;
+    totalCourses?: number;
+    publishedCourses?: number;
+    draftCourses?: number;
+    totalEnrollments?: number;
+    totalRevenue?: number;
+    revenue?: {
+      amount?: number;
+      scope?: 'all_courses' | 'owned_courses_only';
+      isPartial?: boolean;
+    };
+    attendanceRate?: number;
+    groupFillRate?: number;
+    dropoutRisk?: { high?: number; medium?: number; low?: number };
+    certificates?: {
+      pending?: number;
+      issued?: number;
+      rejected?: number;
+      revoked?: number;
+      total?: number;
+    };
+  };
+  charts?: {
+    topCourses?: Array<{ courseId: number; title: string; enrollments: number }>;
+    lowPerformingCourses?: Array<{ courseId: number; title: string; completionRate: number; avgProgress: number }>;
+  };
+};
+
+export type TenantReportTimeSeries = {
+  generatedAt?: string;
+  series: {
+    enrollments: TenantReportPoint[];
+    attendance: TenantReportPoint[];
+    completions: TenantReportPoint[];
+    certificates: TenantReportPoint[];
+  };
+};
+
 export type WorkspaceItem = {
   id: string;
   type: 'main' | 'tenant';
@@ -184,6 +250,18 @@ export type Course = {
   status?: string;
   isPublished?: boolean;
   enrolledStudents?: number;
+  groupCount?: number;
+  sessionCount?: number;
+  certificateConfigured?: boolean;
+  health?: {
+    approvalStatus?: string;
+    isPublished?: boolean;
+    instructorAssigned?: boolean;
+    groupCount?: number;
+    sessionCount?: number;
+    certificateConfigured?: boolean;
+    enrolledStudents?: number;
+  };
   coverImageUrl?: string | null;
   instructor?: { id: number; fullName?: string };
 };
@@ -500,6 +578,22 @@ export type CompanyMember = {
   fullName?: string;
   email?: string;
   createdAt?: string;
+  invitation?: {
+    status?: string | null;
+    setupLink?: string | null;
+    expiresAt?: string | null;
+    emailSent?: boolean | null;
+    sentAt?: string | null;
+  } | null;
+  onboarding?: {
+    status?: string | null;
+    setupRequired?: boolean | null;
+    setupCompleted?: boolean | null;
+    setupCompletedAt?: string | null;
+    setupLink?: string | null;
+    expiresAt?: string | null;
+    emailSent?: boolean | null;
+  } | null;
   user?: {
     id: number;
     fullName?: string;

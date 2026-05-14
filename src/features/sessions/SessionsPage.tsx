@@ -1288,6 +1288,11 @@ export function SessionsPage() {
                 <EmptyState
                   title={t('sessions.noStudentsInGroup')}
                   detail={t('sessions.noStudentsInGroupDetail')}
+                  action={(
+                    <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
+                      {t('sessions.enrollStudent')}
+                    </button>
+                  )}
                 />
               ) : null}
             </div>

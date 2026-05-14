@@ -1520,6 +1520,11 @@ export function CertificatesPage() {
                   <EmptyState
                     title={t('certificates.emptyCertificatesTitle')}
                     detail={t('certificates.emptyCertificatesDetail')}
+                    action={canManageCertificateAdmin ? (
+                      <button type="button" className="secondary-button" onClick={() => setCertificateTab('rules')}>
+                        {courseSettings?.enabled ? t('certificates.courseRules') : t('certificates.enableCertificates')}
+                      </button>
+                    ) : null}
                   />
                 ) : null}
                 {certificates.length > 0 && !filteredCertificates.length ? (

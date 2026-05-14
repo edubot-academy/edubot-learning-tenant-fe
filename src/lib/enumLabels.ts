@@ -83,12 +83,17 @@ export const activityTypeLabelKeys: Record<string, string> = {
 export const activityActionLabelKeys: Record<string, string> = {
   certificate: 'navigation.certificates',
   course: 'navigation.courses',
+  coursecreated: 'overview.activityCourseCreated',
   create: 'actions.create',
   delete: 'actions.delete',
   group: 'navigation.groups',
   member: 'navigation.members',
+  membercreated: 'overview.activityMemberCreated',
+  memberinvitationresent: 'overview.activityMemberInvitationResent',
   session: 'navigation.sessions',
   tenant: 'overview.tenantTarget',
+  tenantlogoupdated: 'overview.activityTenantLogoUpdated',
+  tenantupdated: 'overview.activityTenantUpdated',
   update: 'actions.update',
   updated: 'actions.update',
 };

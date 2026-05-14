@@ -17,4 +17,16 @@ describe('tenant feature flags', () => {
     expect(isTenantFeatureEnabled(tenant({ 'attendance.enabled': false }), 'attendance.enabled')).toBe(false);
     expect(isTenantFeatureEnabled(tenant({ 'attendance.enabled': true }), 'attendance.enabled')).toBe(true);
   });
+
+  it('supports backend simple feature flag aliases', () => {
+    expect(isTenantFeatureEnabled(tenant({ attendance: false }), 'attendance.enabled')).toBe(false);
+    expect(isTenantFeatureEnabled(tenant({ homework: false }), 'homework.enabled')).toBe(false);
+    expect(isTenantFeatureEnabled(tenant({ certificates: false }), 'certificates.enabled')).toBe(false);
+    expect(isTenantFeatureEnabled(tenant({ liveSessions: false }), 'courses.onlineLive.enabled')).toBe(false);
+  });
+
+  it('lets dotted feature flags override simple aliases', () => {
+    expect(isTenantFeatureEnabled(tenant({ attendance: false, 'attendance.enabled': true }), 'attendance.enabled')).toBe(true);
+    expect(isTenantFeatureEnabled(tenant({ attendance: true, 'attendance.enabled': false }), 'attendance.enabled')).toBe(false);
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -11,6 +11,7 @@ import {
   FiBookOpen,
   FiCalendar,
   FiCheckSquare,
+  FiGrid,
   FiPlusCircle,
   FiSettings,
   FiUsers,
@@ -18,12 +19,16 @@ import {
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, LoadingState } from '../../components/DataState';
-import { getTenantDashboard } from '../../services/api';
-import type { TenantOverview } from '../../types/domain';
+import { getTenantDashboard, getTenantReportTimeSeries } from '../../services/api';
+import type { TenantOverview, TenantReportTimeSeries } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate, readable } from '../../lib/format';
 import { activityActionLabelKeys, commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
+import { getAdminSetupChecklist } from './adminSetupChecklist';
+import type { OverviewWorkloadPoint } from './OverviewInsights';
+
+const OverviewInsights = lazy(() => import('./OverviewInsights'));
 
 function statValue(value: unknown) {
   if (typeof value === 'number' || typeof value === 'string') return value;
@@ -82,16 +87,38 @@ export function OverviewPage() {
   const { activeTenant } = useTenant();
   const activeTenantId = activeTenant?.id;
   const [overview, setOverview] = useState<TenantOverview | null>(null);
+  const [timeSeries, setTimeSeries] = useState<TenantReportTimeSeries | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setOverview(null);
+    setTimeSeries(null);
+    setInsightsLoading(false);
+    setInsightsError(false);
     if (!activeTenantId) return;
     let cancelled = false;
     setLoading(true);
     getTenantDashboard(activeTenantId)
       .then((nextOverview) => {
-        if (!cancelled) setOverview(nextOverview);
+        if (cancelled) return;
+        setOverview(nextOverview);
+        const permissions = nextOverview.permissions ?? nextOverview.workspace?.permissions;
+        if (permissions?.canViewReports || permissions?.canManageMembers) {
+          setInsightsLoading(true);
+          setInsightsError(false);
+          getTenantReportTimeSeries(activeTenantId)
+            .then((nextTimeSeries) => {
+              if (!cancelled) setTimeSeries(nextTimeSeries);
+            })
+            .catch(() => {
+              if (!cancelled) setInsightsError(true);
+            })
+            .finally(() => {
+              if (!cancelled) setInsightsLoading(false);
+            });
+        }
       })
       .catch(() => {
         if (!cancelled) toast.error(t('overview.overviewUnavailableTitle'));
@@ -126,10 +153,9 @@ export function OverviewPage() {
     }
     return [
       { label: t('navigation.courses'), value: statValue(overview.stats.courses), hint: t('overview.tenantCatalog') },
-      { label: t('overview.liveOffline'), value: statValue(overview.stats.deliveryCourses), hint: t('overview.deliveryCourses') },
       { label: t('overview.students'), value: statValue(overview.stats.students), hint: t('overview.studentsHint') },
-      { label: t('overview.today'), value: statValue(overview.stats.todaySessions), hint: t('overview.scheduledSessions') },
-      ...(homeworkEnabled ? [{ label: t('overview.needsReview'), value: statValue(overview.stats.homeworkNeedsReview), hint: t('navigation.homework') }] : []),
+      { label: t('overview.activeGroupsLabel'), value: statValue(overview.stats.activeGroups), hint: t('overview.activeGroupsHint') },
+      { label: t('overview.workspaceReadiness'), value: `${overview.setup.progress}%`, hint: t('overview.configured', { percent: overview.setup.progress }) },
     ];
   }, [canManageMembers, certificatesEnabled, homeworkEnabled, isAssistant, overview, t]);
 
@@ -187,6 +213,13 @@ export function OverviewPage() {
     const unmarkedAttendance = statNumber(overview.stats.unmarkedAttendance);
     const homeworkNeedsReview = statNumber(overview.stats.homeworkNeedsReview);
     return [
+      ...(canManageMembers && overview.setup.progress < 100 ? [{
+        to: '/settings',
+        icon: FiSettings,
+        title: t('overview.workspaceSetupIncomplete'),
+        detail: t('overview.workspaceSetupIncompleteDetail', { percent: overview.setup.progress }),
+        tone: 'warning' as const,
+      }] : []),
       ...(canCreateCourses && draftCourses > 0 ? [{
         to: '/courses',
         icon: FiPlusCircle,
@@ -229,8 +262,8 @@ export function OverviewPage() {
         detail: t('overview.certificateSetupDetail', { count: overview.certificates.coursesWithoutConfig }),
         tone: 'warning' as const,
       }] : []),
-    ];
-  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, overview, t]);
+    ].sort((left, right) => (left.tone === right.tone ? 0 : left.tone === 'warning' ? -1 : 1));
+  }, [attendanceEnabled, canCreateCourses, canManageCertificates, canManageMembers, certificatesEnabled, homeworkEnabled, overview, t]);
 
   const operationStats = useMemo(() => {
     if (!overview) return [];
@@ -245,6 +278,25 @@ export function OverviewPage() {
       ...(canCreateCourses ? [{ label: t('overview.pendingCourses'), value: overview.stats.pendingCourses ?? 0 }] : []),
     ];
   }, [attendanceEnabled, canCreateCourses, overview, t]);
+
+  const workloadChartData = useMemo<OverviewWorkloadPoint[]>(() => {
+    if (!overview) return [];
+    return [
+      { label: t('overview.unmarkedShort'), value: attendanceEnabled ? statNumber(overview.sessions.unmarkedAttendance) : 0 },
+      { label: t('overview.homeworkShort'), value: homeworkEnabled ? statNumber(overview.stats.homeworkNeedsReview) : 0 },
+      { label: t('overview.certificatesShort'), value: certificatesEnabled ? statNumber(overview.certificates.pending) : 0 },
+      { label: t('overview.setupShort'), value: certificatesEnabled ? statNumber(overview.certificates.coursesWithoutConfig) : 0 },
+    ];
+  }, [attendanceEnabled, certificatesEnabled, homeworkEnabled, overview, t]);
+
+  const adminSetupChecklist = useMemo(() => {
+    if (!overview || !canManageMembers) return [];
+    return getAdminSetupChecklist(overview, activeTenant, {
+      canManageCertificates,
+      certificatesEnabled,
+    });
+  }, [activeTenant, canManageCertificates, canManageMembers, certificatesEnabled, overview]);
+  const incompleteSetupCount = adminSetupChecklist.filter((item) => !item.complete).length;
 
   const todayOperations = useMemo(() => {
     if (!overview) return [];
@@ -309,7 +361,15 @@ export function OverviewPage() {
 
   const heading = canManageMembers ? t('overview.tenantOverview') : isAssistant ? t('overview.assistantOverview') : t('overview.instructorOverview');
   const primaryPriorityItem = priorityItems[0];
-  const primaryAvailableAction = actionCards.find((action) => !action.disabled);
+  const primaryAvailableAction = canManageMembers
+    ? {
+      to: '/operations',
+      icon: FiGrid,
+      title: t('overview.openOperations'),
+      detail: t('overview.openOperationsDetail'),
+      metric: t('operations.availableTools'),
+    }
+    : actionCards.find((action) => !action.disabled);
   const primaryOverviewAction = primaryPriorityItem
     ? {
       to: primaryPriorityItem.to,
@@ -358,6 +418,7 @@ export function OverviewPage() {
         </Link>
       ) : null}
 
+      {!canManageMembers ? (
       <section className="overview-today-strip" aria-label={t('overview.todayOperations')}>
         <div className="overview-today-heading">
           <span className="ui-kicker">{t('overview.today')}</span>
@@ -387,12 +448,13 @@ export function OverviewPage() {
           })}
         </div>
       </section>
+      ) : null}
 
       <section className={`overview-priority-strip ${priorityItems.length ? '' : 'all-clear'}`} aria-label={t('overview.needsAttention')}>
         {priorityItems.length ? (
           <>
           <div className="overview-priority-heading">
-            <span className="ui-kicker">{t('overview.needsAttention')}</span>
+            <span className="ui-kicker">{canManageMembers ? t('overview.adminAttentionQueue') : t('overview.needsAttention')}</span>
             <strong>{t('overview.activeItemCount', { count: priorityItems.length })}</strong>
           </div>
           <div className="overview-priority-list">
@@ -413,15 +475,15 @@ export function OverviewPage() {
         ) : (
           <>
             <div className="overview-priority-heading">
-              <span className="ui-kicker">{t('overview.needsAttention')}</span>
-              <strong>{t('overview.noActiveBlockers')}</strong>
+              <span className="ui-kicker">{canManageMembers ? t('overview.adminAttentionQueue') : t('overview.needsAttention')}</span>
+              <strong>{canManageMembers ? t('overview.noAdminBlockers') : t('overview.noActiveBlockers')}</strong>
             </div>
             <div className="overview-priority-list">
               <article className="overview-priority-card info static">
                 <FiCheckSquare />
                 <span>
                   <strong>{t('overview.workspaceClear')}</strong>
-                  <small>{t('overview.allClearDetail')}</small>
+                  <small>{canManageMembers ? t('overview.adminAllClearDetail') : t('overview.allClearDetail')}</small>
                 </span>
               </article>
             </div>
@@ -429,6 +491,109 @@ export function OverviewPage() {
         )}
       </section>
 
+      {canManageMembers ? (
+        <Suspense fallback={<div className="overview-insight-empty">{t('overview.insightsLoading')}</div>}>
+          <OverviewInsights
+            timeSeries={timeSeries}
+            workloadChartData={workloadChartData}
+            setupProgress={statNumber(overview.setup.progress)}
+            insightsLoading={insightsLoading}
+            insightsError={insightsError}
+          />
+        </Suspense>
+      ) : null}
+
+      {canManageMembers ? (
+        <div className="settings-grid overview-lower-grid overview-admin-grid">
+          <section className="settings-panel">
+            <div className="section-heading-row">
+              <div>
+                <h2>{t('overview.workspaceReadiness')}</h2>
+                <span>{t('overview.configured', { percent: overview.setup.progress })}</span>
+              </div>
+            </div>
+            <div className="progress-cell overview-progress">
+              <span style={{ width: `${overview.setup.progress}%` }} />
+              <strong>{overview.setup.progress}%</strong>
+            </div>
+            <div className="stack-list">
+              {overview.setup.items.map((item) => {
+                const itemCopy = getReadinessItemCopy(item, t);
+                return (
+                  <article className="stack-list-item" key={item.label}>
+                    <div>
+                      <strong>{itemCopy.label}</strong>
+                      <span>{itemCopy.hint}</span>
+                    </div>
+                    <strong>{itemCopy.value}</strong>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="settings-panel overview-setup-checklist">
+            <div className="section-heading-row">
+              <div>
+                <h2>{t('overview.setupChecklist.title')}</h2>
+                <span>{incompleteSetupCount ? t('overview.setupChecklist.remaining', { count: incompleteSetupCount }) : t('overview.setupChecklist.complete')}</span>
+              </div>
+              <FiCheckSquare />
+            </div>
+            <div className="stack-list">
+              {adminSetupChecklist.map((item) => (
+                <Link className={`stack-list-item setup-checklist-item ${item.complete ? 'complete' : 'current'}`} to={item.to} key={item.key}>
+                  <FiCheckSquare aria-hidden="true" />
+                  <div>
+                    <strong>{t(item.labelKey)}</strong>
+                    <span>{t(item.detailKey)}</span>
+                  </div>
+                  <span className={`status-badge ${item.complete ? 'published' : 'pending'}`}>
+                    {item.complete ? t('overview.setupChecklist.done') : t('overview.setupChecklist.todo')}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section className="settings-panel">
+            <div className="section-heading-row">
+              <div>
+                <h2>{t('navigation.operations')}</h2>
+                <span>{t('overview.adminOperationsDetail')}</span>
+              </div>
+              <FiGrid />
+            </div>
+            <div className="stat-grid compact session-stat-grid">
+              <section className="stat-tile"><span>{t('navigation.courses')}</span><strong>{overview.stats.courses ?? 0}</strong></section>
+              <section className="stat-tile"><span>{t('navigation.groups')}</span><strong>{overview.stats.activeGroups ?? 0}</strong></section>
+              <section className="stat-tile"><span>{t('overview.pendingCourses')}</span><strong>{overview.stats.pendingCourses ?? 0}</strong></section>
+              <section className="stat-tile"><span>{t('overview.unmarked')}</span><strong>{attendanceEnabled ? overview.sessions.unmarkedAttendance : t('overview.disabled')}</strong></section>
+            </div>
+            <Link className="secondary-link-button" to="/operations"><FiGrid /> {t('overview.openOperations')}</Link>
+          </section>
+
+          {certificatesEnabled && canManageCertificates ? (
+            <section className="settings-panel">
+              <div className="section-heading-row">
+                <div>
+                  <h2>{t('navigation.certificates')}</h2>
+                  <span>{t('overview.certificatesWorkload')}</span>
+                </div>
+                <Link className="link-button" to="/certificates">{t('student.open')}</Link>
+              </div>
+              <div className="stat-grid compact session-stat-grid">
+                <section className="stat-tile"><span>{t('overview.pending')}</span><strong>{overview.certificates.pending}</strong></section>
+                <section className="stat-tile"><span>{t('overview.notIssued')}</span><strong>{overview.certificates.waiting ?? overview.certificates.eligibleWaiting}</strong></section>
+                <section className="stat-tile"><span>{t('overview.issued')}</span><strong>{overview.certificates.issued}</strong></section>
+                <section className="stat-tile"><span>{t('overview.needsConfig')}</span><strong>{overview.certificates.coursesWithoutConfig}</strong></section>
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!canManageMembers ? (
       <section className="overview-action-grid" aria-label={t('overview.primaryActions')}>
         {supportingActionCards.map((action) => {
           const Icon = action.icon;
@@ -449,6 +614,7 @@ export function OverviewPage() {
           );
         })}
       </section>
+      ) : null}
 
       <div className="workspace-grid overview-grid">
         <section className="content-section">
@@ -476,7 +642,7 @@ export function OverviewPage() {
                       <Link className="table-primary-link" to={`/courses?courseId=${course.id}`}>{course.title}</Link>
                       {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
                     </td>
-                    <td><span className="status-badge">{overviewCourseTypeLabel(course.courseType)}</span></td>
+                    <td><span className="metadata-text">{overviewCourseTypeLabel(course.courseType)}</span></td>
                     <td><span className={`status-badge ${course.status || 'draft'}`}>{overviewStatusLabel(course.status)}</span></td>
                     <td>{course.enrolledStudents ?? 0}</td>
                   </tr>
@@ -528,6 +694,7 @@ export function OverviewPage() {
       </div>
 
       <div className="settings-grid overview-lower-grid">
+        {!canManageMembers ? (
         <section className="settings-panel">
           <div className="section-heading-row">
             <div>
@@ -545,8 +712,9 @@ export function OverviewPage() {
             ))}
           </div>
         </section>
+        ) : null}
 
-        {homeworkEnabled ? (
+        {homeworkEnabled && !canManageMembers ? (
           <section className="settings-panel">
             <div className="section-heading-row">
               <div>
@@ -581,7 +749,7 @@ export function OverviewPage() {
           </section>
         ) : null}
 
-        {certificatesEnabled && canManageCertificates ? (
+        {certificatesEnabled && canManageCertificates && !canManageMembers ? (
           <section className="settings-panel">
             <div className="section-heading-row">
               <div>
@@ -599,6 +767,7 @@ export function OverviewPage() {
           </section>
         ) : null}
 
+        {!canManageMembers ? (
         <section className="settings-panel">
           <div className="section-heading-row">
             <div>
@@ -625,26 +794,8 @@ export function OverviewPage() {
             })}
           </div>
         </section>
-
-        {canManageMembers ? (
-          <section className="settings-panel">
-            <div className="section-heading-row">
-              <div>
-                <h2>{t('overview.tools')}</h2>
-                <span>{t('overview.toolsHint')}</span>
-              </div>
-              <FiActivity />
-            </div>
-            <div className="flag-grid">
-              {overview.features.map((feature) => (
-                <div className="flag-row" key={feature.key}>
-                  <span>{feature.key}</span>
-                  <strong className={`status-badge ${feature.enabled ? 'published' : 'destructive'}`}>{feature.enabled ? t('overview.enabled') : t('overview.disabled')}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
         ) : null}
+
       </div>
 
       {canViewActivity ? (

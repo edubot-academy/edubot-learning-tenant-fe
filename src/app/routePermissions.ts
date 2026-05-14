@@ -5,7 +5,6 @@ import {
   canManageTenantMembers,
   canManageTenantOwners,
   canManageTenantSettings,
-  canOperateTenantLearning,
   canViewTenantReports,
   isPlatformAdmin,
 } from '../features/tenant/tenantRoles';
@@ -25,7 +24,7 @@ export function canAccessTenantPermissionSurface(
 ) {
   if (isPlatformAdmin(user)) return false;
   if (surface === 'members') return canManageTenantMembers(user, tenant);
-  if (surface === 'courses') return canOperateTenantLearning(user, tenant) || canManageTenantCourses(user, tenant);
+  if (surface === 'courses') return canManageTenantCourses(user, tenant);
   if (surface === 'branding') return canManageTenantBranding(user, tenant);
   if (surface === 'settings') return canManageTenantSettings(user, tenant);
   if (surface === 'reports') return canViewTenantReports(user, tenant);

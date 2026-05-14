@@ -26,7 +26,7 @@ import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
-import { isTenantAdmin } from '../tenant/tenantRoles';
+import { canCoordinateTenantLearning, canEnrollTenantStudents, isTenantAdmin } from '../tenant/tenantRoles';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 
 type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
@@ -101,6 +101,8 @@ export function GroupsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
   const canAssignInstructor = isTenantAdmin(user, activeTenant);
+  const canCoordinateGroups = canCoordinateTenantLearning(user, activeTenant);
+  const canManageEnrollment = canEnrollTenantStudents(user, activeTenant);
 
   const initialCourseId = Number(searchParams.get('courseId')) || undefined;
   const initialGroupId = Number(searchParams.get('groupId')) || undefined;
@@ -148,7 +150,7 @@ export function GroupsPage() {
   const ineligibleCourseCount = allCourses.filter((course) => !isCourseWorkflowReady(course)).length;
   const scheduleBlocksReady = Boolean(selectedGroup?.scheduleBlocks?.some((block) => block.day && block.startTime && block.endTime));
   const scheduleDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
-  const generationReady = scheduleBlocksReady && scheduleDatesReady;
+  const generationReady = canCoordinateGroups && scheduleBlocksReady && scheduleDatesReady;
   const selectedCourseReady = isCourseWorkflowReady(selectedCourse);
   const courseTypeLabel = (value: Course['courseType'] | string | undefined | null) => enumLabel(value, courseTypeLabelKeys, t);
   const statusLabel = (value: string | undefined | null) => {
@@ -317,6 +319,7 @@ export function GroupsPage() {
 
   const submitCreateGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canCoordinateGroups) return;
     if (!courseId) return toast.error(t('groups.selectCourseFirst'));
     if (!groupForm.name.trim()) return toast.error(t('groups.groupNameRequired'));
     setSavingGroup(true);
@@ -339,6 +342,7 @@ export function GroupsPage() {
 
   const submitUpdateGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canCoordinateGroups) return;
     if (!groupId || !courseId) return;
     if (!groupForm.name.trim()) return toast.error(t('groups.groupNameRequired'));
     setSavingGroup(true);
@@ -369,6 +373,7 @@ export function GroupsPage() {
 
   const submitEnrollment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canManageEnrollment) return;
     if (!courseId || !groupId || !selectedStudentId) return toast.error(t('groups.selectStudentToEnroll'));
     setEnrolling(true);
     try {
@@ -387,6 +392,7 @@ export function GroupsPage() {
 
   const submitInviteAndEnroll = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canManageEnrollment) return;
     if (!activeTenantId || !courseId || !groupId) return;
     if (!studentInviteForm.fullName.trim() || !studentInviteForm.email.trim()) {
       toast.error(t('groups.studentNameEmailRequired'));
@@ -412,6 +418,7 @@ export function GroupsPage() {
   };
 
   const removeStudent = async (student: GroupStudent) => {
+    if (!canManageEnrollment) return;
     if (!courseId || !groupId) return;
     setRemovingStudentId(student.userId);
     try {
@@ -427,6 +434,7 @@ export function GroupsPage() {
   };
 
   const previewGeneration = async () => {
+    if (!canCoordinateGroups) return;
     if (!groupId) return;
     if (!generationReady) return toast.error(t('groups.completeScheduleFirst'));
     setGenerationLoading(true);
@@ -441,6 +449,7 @@ export function GroupsPage() {
   };
 
   const generateSessions = async () => {
+    if (!canCoordinateGroups) return;
     if (!groupId || !generationPreview?.newCount) return toast.error(t('groups.previewNewSessionsFirst'));
     setGenerationLoading(true);
     try {
@@ -536,7 +545,9 @@ export function GroupsPage() {
         <section className="content-section">
           <div className="section-heading-row">
             <div><h2>{t('navigation.courses')}</h2><span>{t('groups.courseSelectionHint')}</span></div>
-            <button type="button" className="primary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> {t('groups.createGroup')}</button>
+            {canCoordinateGroups ? (
+              <button type="button" className="primary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> {t('groups.createGroup')}</button>
+            ) : null}
           </div>
           {ineligibleCourseCount > 0 ? (
             <p className="panel-note">{t('groups.ineligibleCourses', { count: ineligibleCourseCount })}</p>
@@ -570,7 +581,7 @@ export function GroupsPage() {
               <EmptyState
                 title={t('groups.emptyGroupsTitle')}
                 detail={selectedCourseReady ? t('groups.emptyGroupsDetail') : selectedCourseBlocker}
-                action={selectedCourseReady ? (
+                action={selectedCourseReady && canCoordinateGroups ? (
                   <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }}>
                     {t('groups.createGroup')}
                   </button>
@@ -587,7 +598,9 @@ export function GroupsPage() {
             <div><h2>{selectedGroup.name}</h2><span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span></div>
             <div className="page-actions">
               <span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{statusLabel(selectedGroup.status)}</span>
-              <button type="button" className="secondary-button" onClick={() => { setGroupForm(groupToForm(selectedGroup)); setIsEditOpen(true); }}><FiEdit2 /> {t('groups.editGroup')}</button>
+              {canCoordinateGroups ? (
+                <button type="button" className="secondary-button" onClick={() => { setGroupForm(groupToForm(selectedGroup)); setIsEditOpen(true); }}><FiEdit2 /> {t('groups.editGroup')}</button>
+              ) : null}
               <Link className="secondary-link-button" to={nextSessionLink}><FiCalendar /> {t('navigation.sessions')}</Link>
               <Link className="secondary-link-button" to={attendanceLink}><FiCheckSquare /> {t('navigation.attendance')}</Link>
               <Link className="secondary-link-button" to={homeworkLink}><FiClipboard /> {t('navigation.homework')}</Link>
@@ -617,6 +630,7 @@ export function GroupsPage() {
             <section className="stat-tile"><span>{t('groups.capacity')}</span><strong>{selectedGroup.seatLimit ?? t('groups.capacityOpen')}</strong></section>
             <section className="stat-tile"><span>{t('groups.timezone')}</span><strong>{selectedGroup.timezone ?? '-'}</strong></section>
           </div>
+          {canCoordinateGroups ? (
           <div className="settings-panel session-generation-panel workflow-context-panel compact">
             <div className="section-heading-row compact"><div><h3>{t('groups.generateSessions')}</h3><span>{t('groups.generateSessionsHint')}</span></div></div>
             <p className={`panel-note ${generationReady ? 'success' : ''}`}>
@@ -646,11 +660,14 @@ export function GroupsPage() {
               </div>
             ) : null}
           </div>
+          ) : null}
           <div className="workspace-grid">
             <section className="content-section">
               <div className="section-heading-row">
                 <div><h2>{t('groups.roster')}</h2><span>{t('groups.activeLearnerCount', { count: students.length })}</span></div>
               </div>
+              {canManageEnrollment ? (
+              <>
               <div className="segmented-control enrollment-tabs" role="tablist" aria-label={t('groups.enrollmentMode')}>
                 <button type="button" className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => setEnrollmentMode('existing')}>{t('groups.existingStudent')}</button>
                 <button type="button" className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => setEnrollmentMode('new')}>{t('groups.newStudent')}</button>
@@ -673,24 +690,28 @@ export function GroupsPage() {
                   <button type="submit" className="primary-button" disabled={enrolling}>{t('groups.createAndEnroll')}</button>
                 </form>
               )}
+              </>
+              ) : null}
               <div className="stack-list">
                 {students.map((student) => (
                   <article key={student.userId} className="stack-list-item">
                     <div><strong>{student.fullName || student.email || t('courses.studentFallback', { id: student.userId })}</strong><span>{student.email || t('groups.noEmail')} · {t('groups.progressPercent', { percent: Math.round(student.progressPercent ?? 0) })}</span></div>
-                    <button type="button" className="link-button danger" onClick={() => setStudentToRemove(student)} disabled={removingStudentId === student.userId}>
-                      {removingStudentId === student.userId ? t('groups.removing') : t('groups.remove')}
-                    </button>
+                    {canManageEnrollment ? (
+                      <button type="button" className="link-button danger" onClick={() => setStudentToRemove(student)} disabled={removingStudentId === student.userId}>
+                        {removingStudentId === student.userId ? t('groups.removing') : t('groups.remove')}
+                      </button>
+                    ) : null}
                   </article>
                 ))}
                 {!students.length ? (
                   <EmptyState
                     title={t('groups.noStudentsTitle')}
                     detail={t('groups.noStudentsDetail')}
-                    action={(
+                    action={canManageEnrollment ? (
                       <button type="button" className="secondary-button" onClick={() => setEnrollmentMode('new')}>
                         {t('groups.newStudent')}
                       </button>
-                    )}
+                    ) : null}
                   />
                 ) : null}
               </div>
@@ -717,7 +738,7 @@ export function GroupsPage() {
         </section>
       ) : null}
 
-      {isEditOpen && selectedGroup ? (
+      {isEditOpen && selectedGroup && canCoordinateGroups ? (
         <FormModal labelledBy="edit-group-title" onClose={() => setIsEditOpen(false)} onSubmit={submitUpdateGroup}>
           <div className="modal-header-block">
             <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
@@ -731,7 +752,7 @@ export function GroupsPage() {
         </FormModal>
       ) : null}
 
-      {isCreateOpen ? (
+      {isCreateOpen && canCoordinateGroups ? (
         <FormModal labelledBy="create-group-title" onClose={() => setIsCreateOpen(false)} onSubmit={submitCreateGroup}>
           <div className="modal-header-block">
             <span>{selectedCourse?.title ?? t('groups.courseRequired')}</span>
@@ -744,7 +765,7 @@ export function GroupsPage() {
           </div>
         </FormModal>
       ) : null}
-      {studentToRemove ? (
+      {studentToRemove && canManageEnrollment ? (
         <Modal labelledBy="remove-student-title" onClose={() => setStudentToRemove(null)}>
           <div className="modal-header-block">
             <span>{t('groups.removeEnrollment')}</span>

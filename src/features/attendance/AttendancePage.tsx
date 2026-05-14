@@ -6,6 +6,8 @@ import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { CountFilterRow } from '../../components/CountFilterRow';
 import { useTenant } from '../tenant/TenantProvider';
+import { useAuth } from '../auth/AuthProvider';
+import { canTeachAssignedSessions } from '../tenant/tenantRoles';
 import {
   attendanceStatuses,
   filterAttendanceStudents,
@@ -35,6 +37,7 @@ function isAttendanceCourseReady(course: Course | undefined | null) {
 export function AttendancePage() {
   const { t } = useTranslation();
   const { activeTenant } = useTenant();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
   const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
@@ -44,6 +47,7 @@ export function AttendancePage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
+  const [assignedSessions, setAssignedSessions] = useState<CourseSession[]>([]);
   const [students, setStudents] = useState<GroupStudent[]>([]);
   const [attendance, setAttendance] = useState<Record<number, EditableAttendance>>({});
   const [savedAttendance, setSavedAttendance] = useState<Record<number, EditableAttendance>>({});
@@ -68,6 +72,7 @@ export function AttendancePage() {
     [groupId, groups],
   );
   const selectedSessionReady = isAttendanceSessionReady(selectedSession);
+  const canUseAssignedSessionPicker = canTeachAssignedSessions(user, activeTenant);
 
   const filteredStudents = useMemo(() => {
     return filterAttendanceStudents(students, attendance, studentQuery, statusFilter);
@@ -133,11 +138,24 @@ export function AttendancePage() {
       state: selectedSession ? 'current' : 'locked',
     },
   ], [attendanceCounts.marked, attendanceCounts.total, selectedCourse, selectedGroup, selectedSession, t]);
+  const attendanceReadyAssignedSessions = useMemo(() => {
+    return assignedSessions
+      .filter(isAttendanceSessionReady)
+      .slice(0, 8);
+  }, [assignedSessions]);
+  const openAssignedSession = (session: CourseSession) => {
+    const next = new URLSearchParams(searchParamsString);
+    next.set('courseId', String(session.courseId));
+    if (session.groupId) next.set('groupId', String(session.groupId));
+    next.set('sessionId', String(session.id));
+    setSearchParams(next);
+  };
 
   useEffect(() => {
     setCourses([]);
     setGroups([]);
     setSessions([]);
+    setAssignedSessions([]);
     setStudents([]);
     setAttendance({});
     setSavedAttendance({});
@@ -163,6 +181,22 @@ export function AttendancePage() {
       cancelled = true;
     };
   }, [activeTenantId, t]);
+
+  useEffect(() => {
+    setAssignedSessions([]);
+    if (!activeTenantId || !canUseAssignedSessionPicker) return;
+    let cancelled = false;
+    listGroupSessions()
+      .then((nextSessions) => {
+        if (!cancelled) setAssignedSessions(nextSessions);
+      })
+      .catch(() => {
+        if (!cancelled) setAssignedSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantId, canUseAssignedSessionPicker]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -393,6 +427,32 @@ export function AttendancePage() {
           ))}
         </select>
       </div>
+
+      {canUseAssignedSessionPicker && attendanceReadyAssignedSessions.length ? (
+        <section className="content-section workflow-context-panel">
+          <div className="section-heading-row">
+            <div>
+              <h2>{t('homework.assigned')} {t('navigation.attendance')}</h2>
+              <span>{t('attendance.chooseSessionDetail')}</span>
+            </div>
+          </div>
+          <div className="stack-list">
+            {attendanceReadyAssignedSessions.map((session) => (
+              <article className="stack-list-item" key={session.id}>
+                <div>
+                  <strong>{session.title}</strong>
+                  <span>
+                    {formatDate(session.startsAt)} · <span className={`status-badge ${session.status || 'scheduled'}`}>{sessionStatusLabel(session.status)}</span>
+                  </span>
+                </div>
+                <button type="button" className="link-button" onClick={() => openAssignedSession(session)}>
+                  {t('student.open')}
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {loading ? <LoadingState label={t('attendance.loading')} /> : null}
 

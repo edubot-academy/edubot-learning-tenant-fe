@@ -19,9 +19,11 @@ import {
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, LoadingState } from '../../components/DataState';
-import { getTenantDashboard, getTenantReportTimeSeries } from '../../services/api';
-import type { TenantOverview, TenantReportTimeSeries } from '../../types/domain';
+import { getActivityReviewQueue, getInstructorDashboard, getTenantDashboard, getTenantReportTimeSeries } from '../../services/api';
+import type { ActivityReviewQueue, InstructorDashboard, TenantOverview, TenantReportTimeSeries } from '../../types/domain';
+import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
+import { canTeachAssignedSessions } from '../tenant/tenantRoles';
 import { formatDate, readable } from '../../lib/format';
 import { activityActionLabelKeys, commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
@@ -85,8 +87,11 @@ function getReadinessItemCopy(item: SetupItem, t: TFunction) {
 export function OverviewPage() {
   const { t } = useTranslation();
   const { activeTenant } = useTenant();
+  const { user } = useAuth();
   const activeTenantId = activeTenant?.id;
   const [overview, setOverview] = useState<TenantOverview | null>(null);
+  const [instructorDashboard, setInstructorDashboard] = useState<InstructorDashboard | null>(null);
+  const [activityQueue, setActivityQueue] = useState<ActivityReviewQueue | null>(null);
   const [timeSeries, setTimeSeries] = useState<TenantReportTimeSeries | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState(false);
@@ -94,16 +99,36 @@ export function OverviewPage() {
 
   useEffect(() => {
     setOverview(null);
+    setInstructorDashboard(null);
+    setActivityQueue(null);
     setTimeSeries(null);
     setInsightsLoading(false);
     setInsightsError(false);
     if (!activeTenantId) return;
     let cancelled = false;
+    const shouldLoadInstructorDashboard = canTeachAssignedSessions(user, activeTenant);
     setLoading(true);
     getTenantDashboard(activeTenantId)
       .then((nextOverview) => {
         if (cancelled) return;
         setOverview(nextOverview);
+        if (shouldLoadInstructorDashboard) {
+          void Promise.all([
+            getInstructorDashboard(activeTenantId),
+            getActivityReviewQueue({ limit: 20 }),
+          ])
+            .then(([nextInstructorDashboard, nextActivityQueue]) => {
+              if (cancelled) return;
+              setInstructorDashboard(nextInstructorDashboard);
+              setActivityQueue(nextActivityQueue);
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setInstructorDashboard(null);
+                setActivityQueue(null);
+              }
+            });
+        }
         const permissions = nextOverview.permissions ?? nextOverview.workspace?.permissions;
         if (permissions?.canViewReports || permissions?.canManageMembers) {
           setInsightsLoading(true);
@@ -129,7 +154,7 @@ export function OverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, t]);
+  }, [activeTenant, activeTenantId, t, user]);
 
   const overviewPermissions = overview?.permissions ?? overview?.workspace?.permissions;
   const canManageMembers = Boolean(overviewPermissions?.canManageMembers);
@@ -140,6 +165,14 @@ export function OverviewPage() {
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
   const certificatesEnabled = isTenantFeatureEnabled(activeTenant, 'certificates.enabled');
   const attendanceEnabled = isTenantFeatureEnabled(activeTenant, 'attendance.enabled');
+  const instructorQueues = instructorDashboard?.queues;
+  const instructorTodaySessions = useMemo(() => instructorDashboard?.today.sessions ?? [], [instructorDashboard]);
+  const instructorUpcomingSessions = useMemo(() => instructorDashboard?.upcomingSessions ?? [], [instructorDashboard]);
+  const instructorNextSession = instructorDashboard?.today.nextSession ?? instructorUpcomingSessions[0] ?? null;
+  const unmarkedAttendanceCount = instructorQueues?.unmarkedAttendance ?? statNumber(overview?.stats.unmarkedAttendance);
+  const homeworkNeedsReviewCount = instructorQueues?.homeworkNeedsReview ?? statNumber(overview?.stats.homeworkNeedsReview);
+  const activityNeedsReviewCount = activityQueue?.summary.needsReview ?? instructorQueues?.activityNeedsReview ?? 0;
+  const upcomingWithoutMaterialsCount = instructorQueues?.upcomingWithoutMaterials ?? 0;
 
   const stats = useMemo(() => {
     if (!overview) return [];
@@ -147,7 +180,7 @@ export function OverviewPage() {
       return [
         { label: isAssistant ? t('navigation.courses') : t('student.myCourses'), value: statValue(overview.stats.courses), hint: t('overview.coursesScopeHint') },
         { label: t('student.upcomingSessions'), value: statValue(overview.stats.upcomingSessions), hint: t('overview.scheduledClasses') },
-        ...(homeworkEnabled ? [{ label: t('overview.needsReview'), value: statValue(overview.stats.homeworkNeedsReview), hint: t('overview.homeworkQueueHint') }] : []),
+        ...(homeworkEnabled ? [{ label: t('overview.needsReview'), value: homeworkNeedsReviewCount, hint: t('overview.homeworkQueueHint') }] : []),
         ...(certificatesEnabled ? [{ label: t('navigation.certificates'), value: statValue(overview.stats.certificatesPending), hint: t('overview.certificatesHint') }] : []),
       ];
     }
@@ -157,7 +190,7 @@ export function OverviewPage() {
       { label: t('overview.activeGroupsLabel'), value: statValue(overview.stats.activeGroups), hint: t('overview.activeGroupsHint') },
       { label: t('overview.workspaceReadiness'), value: `${overview.setup.progress}%`, hint: t('overview.configured', { percent: overview.setup.progress }) },
     ];
-  }, [canManageMembers, certificatesEnabled, homeworkEnabled, isAssistant, overview, t]);
+  }, [canManageMembers, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, isAssistant, overview, t]);
 
   const actionCards = useMemo(() => {
     if (!overview) return [];
@@ -181,7 +214,7 @@ export function OverviewPage() {
         icon: FiCheckSquare,
         title: t('navigation.attendance'),
         detail: t('overview.markClasses'),
-        metric: t('overview.unmarkedMetric', { count: overview.stats.unmarkedAttendance ?? 0 }),
+        metric: t('overview.unmarkedMetric', { count: unmarkedAttendanceCount }),
         disabled: !attendanceEnabled,
         disabledReason: t('overview.attendanceDisabled'),
       },
@@ -190,7 +223,7 @@ export function OverviewPage() {
         icon: FiBookOpen,
         title: t('overview.homeworkReview'),
         detail: t('overview.homeworkReviewDetail'),
-        metric: t('overview.submissionsNeedReview', { count: overview.stats.homeworkNeedsReview ?? 0 }),
+        metric: t('overview.submissionsNeedReview', { count: homeworkNeedsReviewCount }),
         disabled: !homeworkEnabled,
         disabledReason: t('overview.homeworkDisabled'),
       },
@@ -204,14 +237,14 @@ export function OverviewPage() {
         disabledReason: t('errors.featureDisabledDetail'),
       }] : []),
     ];
-  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, overview, t]);
+  }, [attendanceEnabled, canCreateCourses, canManageCertificates, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, overview, t, unmarkedAttendanceCount]);
 
   const priorityItems = useMemo(() => {
     if (!overview) return [];
     const draftCourses = statNumber(overview.stats.draftCourses);
     const pendingCourses = statNumber(overview.stats.pendingCourses);
-    const unmarkedAttendance = statNumber(overview.stats.unmarkedAttendance);
-    const homeworkNeedsReview = statNumber(overview.stats.homeworkNeedsReview);
+    const unmarkedAttendance = unmarkedAttendanceCount;
+    const homeworkNeedsReview = homeworkNeedsReviewCount;
     return [
       ...(canManageMembers && overview.setup.progress < 100 ? [{
         to: '/settings',
@@ -248,6 +281,20 @@ export function OverviewPage() {
         detail: t('overview.submissionsNeedReview', { count: homeworkNeedsReview }),
         tone: 'info' as const,
       }] : []),
+      ...(activityNeedsReviewCount > 0 ? [{
+        to: '/sessions',
+        icon: FiActivity,
+        title: t('overview.activity'),
+        detail: t('overview.activeItemCount', { count: activityNeedsReviewCount }),
+        tone: 'info' as const,
+      }] : []),
+      ...(upcomingWithoutMaterialsCount > 0 ? [{
+        to: '/sessions',
+        icon: FiAlertTriangle,
+        title: t('sessions.materials'),
+        detail: t('overview.activeItemCount', { count: upcomingWithoutMaterialsCount }),
+        tone: 'warning' as const,
+      }] : []),
       ...(certificatesEnabled && canManageCertificates && overview.certificates.pending > 0 ? [{
         to: '/certificates',
         icon: FiAward,
@@ -263,31 +310,31 @@ export function OverviewPage() {
         tone: 'warning' as const,
       }] : []),
     ].sort((left, right) => (left.tone === right.tone ? 0 : left.tone === 'warning' ? -1 : 1));
-  }, [attendanceEnabled, canCreateCourses, canManageCertificates, canManageMembers, certificatesEnabled, homeworkEnabled, overview, t]);
+  }, [activityNeedsReviewCount, attendanceEnabled, canCreateCourses, canManageCertificates, canManageMembers, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, overview, t, unmarkedAttendanceCount, upcomingWithoutMaterialsCount]);
 
   const operationStats = useMemo(() => {
     if (!overview) return [];
     return [
       ...(attendanceEnabled ? [
         { label: t('overview.attendanceRate'), value: overview.stats.attendanceRate === null ? '-' : `${overview.stats.attendanceRate}%` },
-        { label: t('overview.unmarked'), value: overview.sessions.unmarkedAttendance },
+        { label: t('overview.unmarked'), value: unmarkedAttendanceCount },
         { label: t('overview.cancelled'), value: overview.sessions.cancelled },
       ] : [
         { label: t('navigation.attendance'), value: t('overview.disabled') },
       ]),
       ...(canCreateCourses ? [{ label: t('overview.pendingCourses'), value: overview.stats.pendingCourses ?? 0 }] : []),
     ];
-  }, [attendanceEnabled, canCreateCourses, overview, t]);
+  }, [attendanceEnabled, canCreateCourses, overview, t, unmarkedAttendanceCount]);
 
   const workloadChartData = useMemo<OverviewWorkloadPoint[]>(() => {
     if (!overview) return [];
     return [
-      { label: t('overview.unmarkedShort'), value: attendanceEnabled ? statNumber(overview.sessions.unmarkedAttendance) : 0 },
-      { label: t('overview.homeworkShort'), value: homeworkEnabled ? statNumber(overview.stats.homeworkNeedsReview) : 0 },
+      { label: t('overview.unmarkedShort'), value: attendanceEnabled ? unmarkedAttendanceCount : 0 },
+      { label: t('overview.homeworkShort'), value: homeworkEnabled ? homeworkNeedsReviewCount : 0 },
       { label: t('overview.certificatesShort'), value: certificatesEnabled ? statNumber(overview.certificates.pending) : 0 },
       { label: t('overview.setupShort'), value: certificatesEnabled ? statNumber(overview.certificates.coursesWithoutConfig) : 0 },
     ];
-  }, [attendanceEnabled, certificatesEnabled, homeworkEnabled, overview, t]);
+  }, [attendanceEnabled, certificatesEnabled, homeworkEnabled, homeworkNeedsReviewCount, overview, t, unmarkedAttendanceCount]);
 
   const adminSetupChecklist = useMemo(() => {
     if (!overview || !canManageMembers) return [];
@@ -300,14 +347,18 @@ export function OverviewPage() {
 
   const todayOperations = useMemo(() => {
     if (!overview) return [];
-    const nextLiveSession = overview.sessions.upcoming.find((session) => session.liveJoinUrl || session.liveHostUrl);
+    const visibleUpcomingSessions = instructorDashboard
+      ? [...instructorTodaySessions, ...instructorUpcomingSessions]
+      : overview.sessions.upcoming;
+    const nextLiveSession = visibleUpcomingSessions.find((session) => session.liveJoinUrl || session.liveHostUrl);
+    const firstSession = instructorNextSession ?? visibleUpcomingSessions[0];
     return [
       {
         to: '/sessions',
         label: t('overview.todaySessions'),
-        value: overview.sessions.today,
-        detail: overview.sessions.upcoming[0]
-          ? `${overview.sessions.upcoming[0].title} · ${formatDate(overview.sessions.upcoming[0].startsAt)}`
+        value: instructorDashboard ? instructorTodaySessions.length : overview.sessions.today,
+        detail: firstSession
+          ? `${firstSession.title} · ${formatDate(firstSession.startsAt)}`
           : t('overview.noSessionsToday'),
         icon: FiCalendar,
         enabled: true,
@@ -315,7 +366,7 @@ export function OverviewPage() {
       {
         to: '/attendance',
         label: t('overview.unmarkedAttendance'),
-        value: attendanceEnabled ? overview.sessions.unmarkedAttendance : t('overview.disabled'),
+        value: attendanceEnabled ? unmarkedAttendanceCount : t('overview.disabled'),
         detail: attendanceEnabled ? t('overview.markClasses') : t('overview.attendanceDisabled'),
         icon: FiCheckSquare,
         enabled: attendanceEnabled,
@@ -323,7 +374,7 @@ export function OverviewPage() {
       {
         to: '/homework',
         label: t('overview.pendingHomeworkReviews'),
-        value: homeworkEnabled ? overview.stats.homeworkNeedsReview ?? 0 : t('overview.disabled'),
+        value: homeworkEnabled ? homeworkNeedsReviewCount : t('overview.disabled'),
         detail: homeworkEnabled ? t('overview.homeworkReviewDetail') : t('overview.homeworkDisabled'),
         icon: FiBookOpen,
         enabled: homeworkEnabled,
@@ -338,7 +389,7 @@ export function OverviewPage() {
         external: Boolean(nextLiveSession?.liveHostUrl || nextLiveSession?.liveJoinUrl),
       },
     ];
-  }, [attendanceEnabled, homeworkEnabled, overview, t]);
+  }, [attendanceEnabled, homeworkEnabled, homeworkNeedsReviewCount, instructorDashboard, instructorNextSession, instructorTodaySessions, instructorUpcomingSessions, overview, t, unmarkedAttendanceCount]);
 
   const overviewCourseTypeLabel = (value?: string | null) => {
     return value ? enumLabel(value, courseTypeLabelKeys, t) : t('overview.courseTypeDefault');
@@ -391,6 +442,8 @@ export function OverviewPage() {
     ? actionCards
     : actionCards.filter((action) => action.title !== primaryAvailableAction?.title);
   const PrimaryOverviewIcon = primaryOverviewAction?.icon;
+  const courseWorkspacePath = canCreateCourses ? '/courses' : '/groups';
+  const courseDetailPath = (courseId: number) => canCreateCourses ? `/courses?courseId=${courseId}` : `/groups?courseId=${courseId}`;
 
   return (
     <>
@@ -623,7 +676,7 @@ export function OverviewPage() {
               <h2>{canManageMembers ? t('overview.recentCourses') : t('overview.coursesInScope')}</h2>
               <span>{t('overview.tenantCourseWorkspace')}</span>
             </div>
-            <Link className="link-button" to="/courses">{t('overview.viewAll')}</Link>
+            <Link className="link-button" to={courseWorkspacePath}>{t('overview.viewAll')}</Link>
           </div>
           <div className="table-wrap overview-course-table-wrap">
             <table>
@@ -639,7 +692,7 @@ export function OverviewPage() {
                 {overview.courses.map((course) => (
                   <tr key={course.id}>
                     <td>
-                      <Link className="table-primary-link" to={`/courses?courseId=${course.id}`}>{course.title}</Link>
+                      <Link className="table-primary-link" to={courseDetailPath(course.id)}>{course.title}</Link>
                       {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
                     </td>
                     <td><span className="metadata-text">{overviewCourseTypeLabel(course.courseType)}</span></td>
@@ -765,35 +818,6 @@ export function OverviewPage() {
               <section className="stat-tile"><span>{t('overview.needsConfig')}</span><strong>{overview.certificates.coursesWithoutConfig}</strong></section>
             </div>
           </section>
-        ) : null}
-
-        {!canManageMembers ? (
-        <section className="settings-panel">
-          <div className="section-heading-row">
-            <div>
-              <h2>{t('overview.workspaceReadiness')}</h2>
-              <span>{t('overview.configured', { percent: overview.setup.progress })}</span>
-            </div>
-          </div>
-          <div className="progress-cell overview-progress">
-            <span style={{ width: `${overview.setup.progress}%` }} />
-            <strong>{overview.setup.progress}%</strong>
-          </div>
-          <div className="stack-list">
-            {overview.setup.items.map((item) => {
-              const itemCopy = getReadinessItemCopy(item, t);
-              return (
-                <article className="stack-list-item" key={item.label}>
-                  <div>
-                    <strong>{itemCopy.label}</strong>
-                    <span>{itemCopy.hint}</span>
-                  </div>
-                  <strong>{itemCopy.value}</strong>
-                </article>
-              );
-            })}
-          </div>
-        </section>
         ) : null}
 
       </div>

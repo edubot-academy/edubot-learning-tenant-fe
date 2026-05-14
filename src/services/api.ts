@@ -2,6 +2,7 @@ import axios from 'axios';
 import type {
   AttendanceRecord,
   AttendanceStatus,
+  ActivityReviewQueue,
   AuthUser,
   CertificateBranding,
   CourseCertificate,
@@ -11,8 +12,10 @@ import type {
   CourseGroup,
   CourseSession,
   GroupStudent,
+  HomeworkReviewQueue,
   HomeworkReviewRoster,
   HomeworkSubmission,
+  InstructorDashboard,
   LiveMeeting,
   SessionMaterial,
   SessionActivity,
@@ -317,6 +320,11 @@ export async function getTenantOverview(tenantId: number) {
 
 export async function getTenantDashboard(tenantId: number) {
   const { data } = await api.get<TenantOverview>(`/companies/${tenantId}/dashboard`);
+  return data;
+}
+
+export async function getInstructorDashboard(tenantId: number) {
+  const { data } = await api.get<InstructorDashboard>(`/companies/${tenantId}/instructor-dashboard`);
   return data;
 }
 
@@ -925,9 +933,19 @@ export async function getHomeworkSummary(courseId?: number, groupId?: number) {
   return data;
 }
 
+export async function getHomeworkReviewQueue(params: { limit?: number; courseId?: number; groupId?: number } = {}) {
+  const { data } = await api.get<HomeworkReviewQueue>('/homework/review-queue', { params });
+  return data;
+}
+
 export async function listHomework(courseId?: number, groupId?: number) {
   const { data } = await api.get<SessionHomework[] | { items?: SessionHomework[] }>('/homework', { params: { courseId, groupId } });
   return Array.isArray(data) ? data : data.items ?? [];
+}
+
+export async function getActivityReviewQueue(params: { limit?: number; courseId?: number; groupId?: number } = {}) {
+  const { data } = await api.get<ActivityReviewQueue>('/group-sessions/activity-review-queue', { params });
+  return data;
 }
 
 export async function getStudentDashboard(params: { courseId?: number; groupId?: number; limit?: number } = {}) {

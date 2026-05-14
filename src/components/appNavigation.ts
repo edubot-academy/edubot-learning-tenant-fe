@@ -6,7 +6,11 @@ import {
   canManageTenantMembers,
   canManageTenantProfile,
   canManageTenantSettings,
+  canApproveAssignedCertificates,
+  canCoordinateTenantLearning,
   canOperateTenantLearning,
+  canTeachAssignedSessions,
+  canViewAssignedLearning,
   canViewTenantReports,
   getEffectiveTenantRole,
   isTenantStudent,
@@ -23,6 +27,16 @@ export const staffNavItems = [
   { to: '/homework', labelKey: 'navigation.homework', icon: FiClipboard, feature: 'homework.enabled' },
   { to: '/certificates', labelKey: 'navigation.certificates', icon: FiAward, feature: 'certificates.enabled' },
   { to: '/members', labelKey: 'navigation.members', icon: FiUsers },
+  { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
+] satisfies NavItem[];
+
+export const instructorNavItems = [
+  { to: '/', labelKey: 'navigation.overview', icon: FiHome },
+  { to: '/sessions', labelKey: 'navigation.sessions', icon: FiCalendar },
+  { to: '/attendance', labelKey: 'navigation.attendance', icon: FiCheckSquare, feature: 'attendance.enabled' },
+  { to: '/homework', labelKey: 'navigation.homework', icon: FiClipboard, feature: 'homework.enabled' },
+  { to: '/groups', labelKey: 'navigation.groups', icon: FiUsers },
+  { to: '/certificates', labelKey: 'navigation.certificates', icon: FiAward, feature: 'certificates.enabled' },
   { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
 ] satisfies NavItem[];
 
@@ -48,11 +62,16 @@ export const studentNavItems = [
   { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
 ] satisfies NavItem[];
 
+export const assistantNavItems = [
+  { to: '/', labelKey: 'navigation.overview', icon: FiHome },
+  { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
+] satisfies NavItem[];
+
 export const primaryMobileRoutes = new Set(['/', '/courses', '/groups', '/sessions']);
 
 const mobileRoutePriorityByRole: Record<string, string[]> = {
-  instructor: ['/sessions', '/attendance', '/homework', '/courses'],
-  assistant: ['/sessions', '/attendance', '/homework', '/courses'],
+  instructor: ['/sessions', '/attendance', '/homework', '/'],
+  assistant: ['/', '/settings'],
   owner: ['/', '/operations', '/members', '/settings'],
   company_admin: ['/', '/operations', '/members', '/settings'],
 };
@@ -62,12 +81,21 @@ export function getVisibleOperationalNavItems(user: AuthUser | null | undefined,
     if (item.to === '/certificates') {
       return canManageTenantCertificates(user, tenant) && (!item.feature || isTenantFeatureEnabled(tenant, item.feature));
     }
+    if (['/courses', '/groups'].includes(item.to) && !canCoordinateTenantLearning(user, tenant)) return false;
     if (!canOperateTenantLearning(user, tenant)) return false;
     return !item.feature || isTenantFeatureEnabled(tenant, item.feature);
   });
 }
 
 function shouldUseAdminNavigation(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
+  const role = getEffectiveTenantRole(user, tenant);
+  const teachingRole = role === 'instructor';
+  if (teachingRole) {
+    return canManageTenantMembers(user, tenant)
+      || canManageTenantProfile(user, tenant)
+      || canManageTenantSettings(user, tenant);
+  }
+
   return canManageTenantMembers(user, tenant)
     || canManageTenantProfile(user, tenant)
     || canManageTenantSettings(user, tenant)
@@ -77,6 +105,9 @@ function shouldUseAdminNavigation(user: AuthUser | null | undefined, tenant: Ten
 export function getVisibleNavItems(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
   const learnerView = isTenantStudent(user, tenant);
   if (learnerView) return studentNavItems;
+  if (getEffectiveTenantRole(user, tenant) === 'assistant' && !canOperateTenantLearning(user, tenant)) {
+    return assistantNavItems;
+  }
 
   if (shouldUseAdminNavigation(user, tenant)) {
     const visibleOperations = getVisibleOperationalNavItems(user, tenant);
@@ -90,6 +121,13 @@ export function getVisibleNavItems(user: AuthUser | null | undefined, tenant: Te
           || canOperateTenantLearning(user, tenant);
       }
       return true;
+    });
+  }
+
+  if (canTeachAssignedSessions(user, tenant) || canViewAssignedLearning(user, tenant)) {
+    return instructorNavItems.filter((item) => {
+      if (item.to === '/certificates') return canApproveAssignedCertificates(user, tenant);
+      return !item.feature || isTenantFeatureEnabled(tenant, item.feature);
     });
   }
 

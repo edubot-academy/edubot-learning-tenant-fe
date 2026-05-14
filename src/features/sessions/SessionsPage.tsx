@@ -41,7 +41,7 @@ import { formatDate } from '../../lib/format';
 import { activityTypeLabelKeys, commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
-import { isTenantAdmin } from '../tenant/tenantRoles';
+import { canCoordinateTenantLearning, canEnrollTenantStudents, canTeachAssignedSessions, isTenantAdmin } from '../tenant/tenantRoles';
 import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
@@ -183,6 +183,7 @@ export function SessionsPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
   const [sessions, setSessions] = useState<CourseSession[]>([]);
+  const [assignedSessions, setAssignedSessions] = useState<CourseSession[]>([]);
   const [students, setStudents] = useState<GroupStudent[]>([]);
   const [tenantMembers, setTenantMembers] = useState<CompanyMember[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
@@ -244,6 +245,9 @@ export function SessionsPage() {
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
   const canAssignInstructor = isTenantAdmin(user, activeTenant);
+  const canCoordinateGroups = canCoordinateTenantLearning(user, activeTenant);
+  const canManageEnrollment = canEnrollTenantStudents(user, activeTenant);
+  const canUseAssignedSessionPicker = canTeachAssignedSessions(user, activeTenant);
   const instructorOptions = useMemo(
     () => tenantMembers.filter((member) => String(member.role).toLowerCase() === 'instructor'),
     [tenantMembers],
@@ -255,7 +259,7 @@ export function SessionsPage() {
   const sessionActivities = selectedSession?.activities ?? [];
   const savedScheduleReady = Boolean(selectedGroup?.scheduleBlocks?.some((block) => block.day && block.startTime && block.endTime));
   const generationDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
-  const generationReady = savedScheduleReady && generationDatesReady;
+  const generationReady = canCoordinateGroups && savedScheduleReady && generationDatesReady;
   const statusLabel = (value: string | undefined | null) => {
     return enumLabel(value || 'scheduled', commonStatusLabelKeys, t);
   };
@@ -314,11 +318,25 @@ export function SessionsPage() {
       state: selectedSession ? 'current' : 'locked',
     },
   ], [selectedCourse, selectedGroup, selectedSession, t]);
+  const upcomingAssignedSessions = useMemo(() => {
+    const now = Date.now();
+    return assignedSessions
+      .filter((session) => !session.startsAt || new Date(session.startsAt).getTime() >= now || session.status === 'scheduled')
+      .slice(0, 8);
+  }, [assignedSessions]);
+  const openAssignedSession = (session: CourseSession) => {
+    const next = new URLSearchParams(searchParamsString);
+    next.set('courseId', String(session.courseId));
+    if (session.groupId) next.set('groupId', String(session.groupId));
+    next.set('sessionId', String(session.id));
+    setSearchParams(next);
+  };
 
   useEffect(() => {
     setCourses([]);
     setGroups([]);
     setSessions([]);
+    setAssignedSessions([]);
     setStudents([]);
     setTenantMembers([]);
     setAttendance([]);
@@ -346,6 +364,22 @@ export function SessionsPage() {
       cancelled = true;
     };
   }, [activeTenantId, t]);
+
+  useEffect(() => {
+    setAssignedSessions([]);
+    if (!activeTenantId || !canUseAssignedSessionPicker) return;
+    let cancelled = false;
+    listGroupSessions()
+      .then((nextSessions) => {
+        if (!cancelled) setAssignedSessions(nextSessions);
+      })
+      .catch(() => {
+        if (!cancelled) setAssignedSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantId, canUseAssignedSessionPicker]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -564,6 +598,7 @@ export function SessionsPage() {
 
   const submitGroup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canCoordinateGroups) return;
     const nextErrors: Record<string, string> = {};
     if (!courseId) {
       nextErrors.course = t('sessions.selectCourseBeforeGroup');
@@ -612,6 +647,7 @@ export function SessionsPage() {
 
   const submitGroupUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canCoordinateGroups) return;
     if (!groupId || !courseId) return;
     if (!editGroupForm.name.trim()) {
       toast.error(t('groups.groupNameRequired'));
@@ -647,6 +683,7 @@ export function SessionsPage() {
 
   const submitSession = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canCoordinateGroups) return;
     const nextErrors: Record<string, string> = {};
     if (!groupId) {
       nextErrors.group = t('sessions.selectGroupBeforeSession');
@@ -690,6 +727,7 @@ export function SessionsPage() {
   };
 
   const previewSessionGeneration = async () => {
+    if (!canCoordinateGroups) return;
     if (!groupId) return;
     if (!generationReady) {
       toast.error(t('sessions.completeSavedScheduleFirst'));
@@ -709,6 +747,7 @@ export function SessionsPage() {
   };
 
   const generateSessions = async () => {
+    if (!canCoordinateGroups) return;
     if (!groupId) return;
     if (!generationPreview?.newCount) {
       toast.error(t('groups.previewNewSessionsFirst'));
@@ -729,6 +768,7 @@ export function SessionsPage() {
   };
 
   const searchStudents = async () => {
+    if (!canManageEnrollment) return;
     setEnrolling(true);
     try {
       const results = await searchUsers({ search: studentSearch, role: 'student', limit: 12 });
@@ -743,6 +783,7 @@ export function SessionsPage() {
 
   const submitEnrollment = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canManageEnrollment) return;
     const nextErrors: Record<string, string> = {};
     if (!courseId || !groupId || !selectedStudentId) {
       nextErrors.student = t('groups.selectStudentToEnroll');
@@ -775,6 +816,7 @@ export function SessionsPage() {
   };
 
   const submitInviteAndEnroll = async () => {
+    if (!canManageEnrollment) return;
     if (!activeTenantId || !courseId || !groupId) return;
     if (!studentInviteForm.fullName.trim() || !studentInviteForm.email.trim()) {
       toast.error(t('groups.studentNameEmailRequired'));
@@ -804,6 +846,7 @@ export function SessionsPage() {
   };
 
   const removeStudentFromGroup = async (student: GroupStudent) => {
+    if (!canManageEnrollment) return;
     if (!courseId || !groupId) return;
     setRemovingStudentId(student.userId);
     try {
@@ -820,6 +863,7 @@ export function SessionsPage() {
 
   const submitSessionUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canCoordinateGroups) return;
     if (!sessionId || !groupId) return;
     const nextErrors: Record<string, string> = {};
     if (!editSessionForm.title.trim()) nextErrors.title = t('sessions.sessionTitleRequired');
@@ -1144,6 +1188,31 @@ export function SessionsPage() {
           ))}
         </select>
       </div>
+      {canUseAssignedSessionPicker && upcomingAssignedSessions.length ? (
+        <section className="content-section workflow-context-panel">
+          <div className="section-heading-row">
+            <div>
+              <h2>{t('homework.assigned')} {t('navigation.sessions')}</h2>
+              <span>{t('sessions.sessionScheduleDetail')}</span>
+            </div>
+          </div>
+          <div className="stack-list">
+            {upcomingAssignedSessions.map((session) => (
+              <article className="stack-list-item" key={session.id}>
+                <div>
+                  <strong>{session.title}</strong>
+                  <span>
+                    {formatDate(session.startsAt)} · <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
+                  </span>
+                </div>
+                <button type="button" className="link-button" onClick={() => openAssignedSession(session)}>
+                  {t('student.open')}
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section className="session-workflow-strip" aria-label={t('sessions.workflow')}>
         {workflowSteps.map((step, index) => (
           <article key={step.label} className={`workflow-step ${step.state}`}>
@@ -1156,23 +1225,32 @@ export function SessionsPage() {
         ))}
       </section>
       {loading ? <LoadingState label={t('sessions.loading')} /> : null}
+      {canCoordinateGroups || canManageEnrollment ? (
       <section className="workflow-section workflow-context-panel">
         <div className="section-heading-row">
           <div>
             <h2>{t('sessions.setupTitle')}</h2>
             <span>{t('sessions.setupDetail')}</span>
           </div>
-          <div className="page-actions">
-            <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>
-              {t('groups.createGroup')}
-            </button>
-            <button type="button" className="secondary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>
-              {t('sessions.scheduleSession')}
-            </button>
-            <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
-              {t('sessions.enrollStudent')}
-            </button>
-          </div>
+          {canCoordinateGroups || canManageEnrollment ? (
+            <div className="page-actions">
+              {canCoordinateGroups ? (
+                <>
+                  <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>
+                    {t('groups.createGroup')}
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>
+                    {t('sessions.scheduleSession')}
+                  </button>
+                </>
+              ) : null}
+              {canManageEnrollment ? (
+                <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
+                  {t('sessions.enrollStudent')}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         <div className="create-action-grid">
           <article>
@@ -1189,6 +1267,7 @@ export function SessionsPage() {
           </article>
         </div>
       </section>
+      ) : null}
 
       {selectedGroup ? (
         <section className="settings-panel group-edit-panel workflow-section workflow-context-panel">
@@ -1197,7 +1276,7 @@ export function SessionsPage() {
               <h2>{t('sessions.groupScheduleDefaults')}</h2>
               <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
             </div>
-            <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(true)}>{t('groups.editGroup')}</button>
+            {canCoordinateGroups ? <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(true)}>{t('groups.editGroup')}</button> : null}
           </div>
           <div className="group-summary-grid">
             <section><span>{t('courses.status')}</span><strong>{statusLabel(selectedGroup.status)}</strong></section>
@@ -1207,6 +1286,7 @@ export function SessionsPage() {
             <section><span>{t('groups.capacity')}</span><strong>{selectedGroup.seatLimit ?? t('groups.capacityOpen')}</strong></section>
             <section><span>{t('groups.location')}</span><strong>{selectedGroup.location || selectedGroup.meetingProvider || t('states.notSet')}</strong></section>
           </div>
+          {canCoordinateGroups ? (
           <div className="session-generation-panel">
             <div className="section-heading-row compact">
               <div>
@@ -1254,15 +1334,18 @@ export function SessionsPage() {
               </div>
             ) : null}
           </div>
+          ) : null}
           <div className="group-roster-panel">
             <div className="section-heading-row compact">
               <div>
                 <h3>{t('courses.groupRoster')}</h3>
                 <span>{t('groups.activeLearnerCount', { count: students.length })}</span>
               </div>
+              {canManageEnrollment ? (
               <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
                 {t('sessions.enrollStudent')}
               </button>
+              ) : null}
             </div>
             <div className="stack-list">
               {students.map((student) => (
@@ -1274,25 +1357,27 @@ export function SessionsPage() {
                       {student.completed ? ` · ${t('courses.completed')}` : ''}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    className="link-button danger"
-                    onClick={() => setPendingRemoval({ type: 'student', student })}
-                    disabled={removingStudentId === student.userId}
-                  >
-                    {removingStudentId === student.userId ? t('groups.removing') : t('groups.remove')}
-                  </button>
+                  {canManageEnrollment ? (
+                    <button
+                      type="button"
+                      className="link-button danger"
+                      onClick={() => setPendingRemoval({ type: 'student', student })}
+                      disabled={removingStudentId === student.userId}
+                    >
+                      {removingStudentId === student.userId ? t('groups.removing') : t('groups.remove')}
+                    </button>
+                  ) : null}
                 </article>
               ))}
               {!students.length ? (
                 <EmptyState
                   title={t('sessions.noStudentsInGroup')}
                   detail={t('sessions.noStudentsInGroupDetail')}
-                  action={(
+                  action={canManageEnrollment ? (
                     <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
                       {t('sessions.enrollStudent')}
                     </button>
-                  )}
+                  ) : null}
                 />
               ) : null}
             </div>
@@ -1306,8 +1391,12 @@ export function SessionsPage() {
           detail={selectedGroup ? t('sessions.emptyScheduledDetail') : t('sessions.emptySelectedDetail')}
           action={(
             <>
-              <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>{t('groups.createGroup')}</button>
-              <button type="button" className="primary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>{t('sessions.scheduleSession')}</button>
+              {canCoordinateGroups ? (
+                <>
+                  <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>{t('groups.createGroup')}</button>
+                  <button type="button" className="primary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>{t('sessions.scheduleSession')}</button>
+                </>
+              ) : null}
             </>
           )}
         />
@@ -1480,9 +1569,11 @@ export function SessionsPage() {
                   <span>{t('sessions.recording')}</span><strong>{selectedSession.recordingUrl ? t('sessions.attached') : t('sessions.notAttached')}</strong>
                 </div>
                 <div className="session-summary-actions">
+                  {canCoordinateGroups ? (
                   <button type="button" className="secondary-button" onClick={() => setEditSessionOpen(true)}>
                     {t('sessions.editSession')}
                   </button>
+                  ) : null}
                 </div>
                   </>
                 ) : null}
@@ -1693,7 +1784,7 @@ export function SessionsPage() {
           </aside>
         </div>
       )}
-      {editGroupOpen && selectedGroup ? (
+      {editGroupOpen && selectedGroup && canCoordinateGroups ? (
         <FormModal labelledBy="edit-group-title" onClose={() => setEditGroupOpen(false)} onSubmit={submitGroupUpdate}>
           <div className="modal-header-block">
             <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
@@ -1830,7 +1921,7 @@ export function SessionsPage() {
           </div>
         </FormModal>
       ) : null}
-      {editSessionOpen && selectedSession ? (
+      {editSessionOpen && selectedSession && canCoordinateGroups ? (
         <FormModal labelledBy="edit-session-title" onClose={() => setEditSessionOpen(false)} onSubmit={submitSessionUpdate}>
           <div className="modal-header-block">
             <span>{selectedGroup?.name ?? t('courses.selectedGroup')}</span>
@@ -1943,7 +2034,7 @@ export function SessionsPage() {
           </div>
         </Modal>
       ) : null}
-      {createModal === 'group' ? (
+      {createModal === 'group' && canCoordinateGroups ? (
         <FormModal labelledBy="create-group-title" onClose={() => setCreateModal(null)} onSubmit={submitGroup}>
             <div className="modal-header-block">
               <span>{selectedCourse?.title ?? t('groups.courseRequired')}</span>
@@ -2083,7 +2174,7 @@ export function SessionsPage() {
             </div>
         </FormModal>
       ) : null}
-      {createModal === 'session' ? (
+      {createModal === 'session' && canCoordinateGroups ? (
         <FormModal labelledBy="schedule-session-title" onClose={() => setCreateModal(null)} onSubmit={submitSession}>
             <div className="modal-header-block">
               <span>{selectedGroup?.name ?? t('sessions.groupRequired')}</span>
@@ -2145,7 +2236,7 @@ export function SessionsPage() {
             </div>
         </FormModal>
       ) : null}
-      {createModal === 'enrollment' ? (
+      {createModal === 'enrollment' && canManageEnrollment ? (
         <FormModal
           labelledBy="enroll-student-title"
           onClose={() => setCreateModal(null)}

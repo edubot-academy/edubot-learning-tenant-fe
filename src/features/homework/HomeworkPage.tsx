@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +18,7 @@ import {
 import {
   createSessionHomework,
   deleteSessionHomework,
+  getHomeworkReviewQueue,
   getHomeworkReviewRoster,
   getHomeworkSummary,
   listCourseGroups,
@@ -30,7 +31,7 @@ import {
   reviewHomeworkSubmission,
   updateSessionHomework,
 } from '../../services/api';
-import type { Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
+import type { Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewQueue, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
@@ -57,6 +58,7 @@ export function HomeworkPage() {
   const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
   const requestedGroupId = Number(searchParams.get('groupId')) || undefined;
   const requestedSessionId = Number(searchParams.get('sessionId')) || undefined;
+  const requestedHomeworkId = Number(searchParams.get('homeworkId')) || undefined;
   const searchParamsString = searchParams.toString();
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<CourseGroup[]>([]);
@@ -66,6 +68,7 @@ export function HomeworkPage() {
   const [groupId, setGroupId] = useState<number | undefined>();
   const [sessionId, setSessionId] = useState<number | undefined>();
   const [summary, setSummary] = useState<Record<string, number> | null>(null);
+  const [reviewQueue, setReviewQueue] = useState<HomeworkReviewQueue | null>(null);
   const [items, setItems] = useState<SessionHomework[]>([]);
   const [sessionItems, setSessionItems] = useState<SessionHomework[]>([]);
   const [selectedHomeworkId, setSelectedHomeworkId] = useState<number | undefined>();
@@ -190,6 +193,15 @@ export function HomeworkPage() {
     };
     return labels[state] ?? enumLabel(state, commonStatusLabelKeys, t);
   };
+  const homeworkQueueCount = (
+    homework: SessionHomework,
+    key: 'needsReview' | 'missing' | 'needsRevision' | 'assigned' | 'submitted' | 'late',
+  ) => {
+    const queue = homework.queue;
+    if (!queue) return 0;
+    const countKey = `${key}Count` as keyof NonNullable<SessionHomework['queue']>;
+    return Number(queue[key] ?? queue[countKey] ?? 0);
+  };
   const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const selectedCountLabel = (count: number) => (
     count ? t('homework.selectedCount', { count }) : t('homework.allStudentsInGroup')
@@ -204,6 +216,7 @@ export function HomeworkPage() {
     setGroupId(undefined);
     setSessionId(undefined);
     setItems([]);
+    setReviewQueue(null);
     setSessionItems([]);
     setSummary(null);
     setSelectedHomeworkId(undefined);
@@ -223,6 +236,22 @@ export function HomeworkPage() {
       cancelled = true;
     };
   }, [activeTenantId, t]);
+
+  useEffect(() => {
+    setReviewQueue(null);
+    if (!activeTenantId) return;
+    let cancelled = false;
+    getHomeworkReviewQueue({ limit: 20 })
+      .then((nextQueue) => {
+        if (!cancelled) setReviewQueue(nextQueue);
+      })
+      .catch(() => {
+        if (!cancelled) setReviewQueue(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantId]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -357,7 +386,7 @@ export function HomeworkPage() {
     };
   }, [sessionId, t]);
 
-  const loadReviewRoster = async (homeworkId: number) => {
+  const loadReviewRoster = useCallback(async (homeworkId: number) => {
     if (!sessionId) return;
     setSelectedHomeworkId(homeworkId);
     setReviewFilter('needsReview');
@@ -381,17 +410,25 @@ export function HomeworkPage() {
     } finally {
       setReviewLoading(false);
     }
-  };
+  }, [sessionId, t]);
+
+  useEffect(() => {
+    if (!requestedHomeworkId || !sessionId || selectedHomeworkId === requestedHomeworkId) return;
+    if (!sessionItems.some((item) => item.id === requestedHomeworkId)) return;
+    void loadReviewRoster(requestedHomeworkId);
+  }, [loadReviewRoster, requestedHomeworkId, selectedHomeworkId, sessionId, sessionItems]);
 
   const reloadHomeworkLists = async () => {
-    const [nextSessionItems, nextSummary, nextItems] = await Promise.all([
+    const [nextSessionItems, nextSummary, nextItems, nextReviewQueue] = await Promise.all([
       sessionId ? listSessionHomework(sessionId) : Promise.resolve([]),
       getHomeworkSummary(courseId, groupId),
       listHomework(courseId, groupId),
+      getHomeworkReviewQueue({ limit: 20 }),
     ]);
     setSessionItems(nextSessionItems);
     setSummary(nextSummary);
     setItems(nextItems);
+    setReviewQueue(nextReviewQueue);
   };
 
   const startEditHomework = (homework: SessionHomework) => {
@@ -563,6 +600,9 @@ export function HomeworkPage() {
       setSummary(nextSummary);
       setItems(nextItems);
       setSessionItems(nextSessionItems);
+      void getHomeworkReviewQueue({ limit: 20 })
+        .then(setReviewQueue)
+        .catch(() => undefined);
       toast.success(t('homework.reviewSaved'));
     } catch {
       toast.error(t('homework.reviewSaveFailed'));
@@ -627,6 +667,45 @@ export function HomeworkPage() {
             </section>
           ))}
         </div>
+      ) : null}
+
+      {reviewQueue ? (
+        <section className="content-section homework-list-section">
+          <div className="section-heading-row">
+            <div>
+              <h2>{t('homework.reviewRoster')}</h2>
+              <span>{t('homework.assignmentScopeCount', { count: reviewQueue.summary.actionRequired })}</span>
+            </div>
+          </div>
+          {reviewQueue.items.length ? (
+            <div className="stack-list homework-assignment-list">
+              {reviewQueue.items.slice(0, 6).map((homework) => {
+                const next = new URLSearchParams();
+                if (homework.courseId) next.set('courseId', String(homework.courseId));
+                if (homework.groupId) next.set('groupId', String(homework.groupId));
+                if (homework.sessionId) next.set('sessionId', String(homework.sessionId));
+                next.set('homeworkId', String(homework.id));
+                return (
+                  <Link className="stack-list-item homework-assignment-item" to={`/homework?${next.toString()}`} key={homework.id}>
+                    <div>
+                      <strong>{homework.title}</strong>
+                      <span>
+                        {homework.courseTitle ?? t('student.courseNotSet')} · {homework.groupName ?? t('student.groupNotSet')} · {formatDate(homework.deadline ?? homework.dueAt)}
+                      </span>
+                      <small>{homework.sessionTitle ?? t('homework.selectedSession')}</small>
+                    </div>
+                    <div className="activity-actions">
+                      <span className="status-badge pending_approval">{t('homework.reviewCount', { count: homeworkQueueCount(homework, 'needsReview') })}</span>
+                      <span className="status-badge destructive">{t('homework.reviewMissing')}: {homeworkQueueCount(homework, 'missing')}</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState title={t('overview.homeworkQueueEmptyTitle')} detail={t('overview.homeworkQueueEmptyDetail')} />
+          )}
+        </section>
       ) : null}
 
       <div className="workspace-grid homework-workspace-grid">
@@ -927,6 +1006,7 @@ export function HomeworkPage() {
                           if (homework.courseId) next.set('courseId', String(homework.courseId));
                           if (homework.groupId) next.set('groupId', String(homework.groupId));
                           next.set('sessionId', String(homework.sessionId));
+                          next.set('homeworkId', String(homework.id));
                           setSearchParams(next);
                           setSelectedHomeworkId(undefined);
                           setReviewRoster(null);
@@ -939,7 +1019,7 @@ export function HomeworkPage() {
                     <td>{homework.courseTitle ?? '-'}</td>
                     <td>{homework.groupName ?? '-'}</td>
                     <td>{formatDate(homework.deadline ?? homework.dueAt)}</td>
-                    <td>{homework.queue?.needsReview ?? 0}</td>
+                    <td>{homeworkQueueCount(homework, 'needsReview')}</td>
                     <td><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? t('courses.published') : t('courses.draft')}</span></td>
                   </tr>
                 ))}

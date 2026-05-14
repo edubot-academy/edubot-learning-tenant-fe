@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthUser, Tenant } from '../../types/domain';
 import {
+  canApproveAssignedCertificates,
+  canCoordinateTenantLearning,
+  canEnrollTenantStudents,
   canManageTenantBranding,
   canManageTenantCourses,
   canManageTenantMembers,
   canManageTenantOwners,
   canManageTenantSettings,
   canOperateTenantLearning,
+  canTeachAssignedSessions,
   canViewTenantReports,
   getEffectiveTenantRole,
   getTenantAccessLevel,
@@ -67,11 +71,16 @@ describe('tenant role access', () => {
     expect(getEffectiveTenantRole(user('admin'), tenantWithRoles(['student', 'instructor', 'owner']))).toBe('owner');
   });
 
-  it('allows tenant admin and teaching roles to operate learning workflows', () => {
+  it('allows tenant admin and instructors to operate learning workflows with separate coordination rights', () => {
     expect(canManageTenantMembers(user('student'), tenant('company_admin'))).toBe(true);
     expect(canOperateTenantLearning(user('student'), tenant('instructor'))).toBe(true);
-    expect(canOperateTenantLearning(user('student'), tenant('assistant'))).toBe(true);
+    expect(canOperateTenantLearning(user('student'), tenant('assistant'))).toBe(false);
     expect(canOperateTenantLearning(user('student'), tenant('student'))).toBe(false);
+    expect(canTeachAssignedSessions(user('student'), tenant('instructor'))).toBe(true);
+    expect(canTeachAssignedSessions(user('student'), tenant('assistant'))).toBe(false);
+    expect(canCoordinateTenantLearning(user('student'), tenant('instructor'))).toBe(false);
+    expect(canEnrollTenantStudents(user('student'), tenant('instructor'))).toBe(false);
+    expect(canCoordinateTenantLearning(user('student'), tenant('company_admin'))).toBe(true);
   });
 
   it('prefers explicit tenant permissions over broad tenant admin role fallback', () => {
@@ -98,7 +107,17 @@ describe('tenant role access', () => {
 
     expect(canManageTenantCourses(user('assistant'), courseManager)).toBe(true);
     expect(canOperateTenantLearning(user('assistant'), courseManager)).toBe(true);
+    expect(canCoordinateTenantLearning(user('assistant'), courseManager)).toBe(true);
     expect(canManageTenantMembers(user('assistant'), courseManager)).toBe(false);
+  });
+
+  it('supports explicit instructor capability grants and denials', () => {
+    expect(canTeachAssignedSessions(user('student'), tenantWithPermissions({ canTeachAssignedSessions: true }, null))).toBe(true);
+    expect(getTenantAccessLevel(user('student'), tenantWithPermissions({ canTeachAssignedSessions: true }, null))).toBe('instructor');
+    expect(canTeachAssignedSessions(user('instructor'), tenantWithPermissions({ canTeachAssignedSessions: false }, 'instructor'))).toBe(false);
+    expect(canCoordinateTenantLearning(user('instructor'), tenantWithPermissions({ canCoordinateGroups: true }, 'instructor'))).toBe(true);
+    expect(canEnrollTenantStudents(user('instructor'), tenantWithPermissions({ canEnrollStudents: true }, 'instructor'))).toBe(true);
+    expect(canApproveAssignedCertificates(user('instructor'), tenant('instructor'))).toBe(true);
   });
 
   it('allows workspace access from explicit management permissions even without a scalar role', () => {

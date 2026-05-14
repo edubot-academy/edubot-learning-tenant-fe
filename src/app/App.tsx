@@ -12,7 +12,10 @@ import {
   canManageTenantCertificates,
   canManageTenantProfile,
   canManageTenantSettings,
+  canApproveAssignedCertificates,
+  canCoordinateTenantLearning,
   canOperateTenantLearning,
+  canViewAssignedLearning,
   getTenantAccessLevel,
   isPlatformAdmin,
   isTenantStudent,
@@ -177,9 +180,17 @@ function AccessDeniedState({
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canAccessTenantPermissionSurface('courses', user, activeTenant)
+  return canViewAssignedLearning(user, activeTenant) || canOperateTenantLearning(user, activeTenant)
     ? children
     : <AccessDeniedState detailKey="errors.staffOnlyDetail" to="/student" actionKey="navigation.myLearning" />;
+}
+
+function CourseAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { activeTenant } = useTenant();
+  return canAccessTenantPermissionSurface('courses', user, activeTenant)
+    ? children
+    : <AccessDeniedState detailKey="errors.tenantAdminOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
 
 function StudentRoute({ children }: { children: React.ReactNode }) {
@@ -202,6 +213,7 @@ function CertificateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
   return canManageTenantCertificates(user, activeTenant)
+    || canApproveAssignedCertificates(user, activeTenant)
     ? children
     : <AccessDeniedState detailKey="errors.certificateManagerOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
@@ -209,7 +221,7 @@ function CertificateRoute({ children }: { children: React.ReactNode }) {
 function OperationsRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canOperateTenantLearning(user, activeTenant) || canManageTenantCertificates(user, activeTenant)
+  return canCoordinateTenantLearning(user, activeTenant) || canManageTenantCertificates(user, activeTenant)
     ? children
     : <AccessDeniedState detailKey="errors.staffOnlyDetail" to="/student" actionKey="navigation.myLearning" />;
 }
@@ -352,7 +364,7 @@ function AppRoutes() {
         <Route element={<ProtectedRoutes />}>
           <Route index element={<HomeRoute />} />
           <Route path="/student" element={<StudentRoute><StudentDashboardPage /></StudentRoute>} />
-          <Route path="/courses" element={<StaffRoute><CoursesPage /></StaffRoute>} />
+          <Route path="/courses" element={<CourseAdminRoute><CoursesPage /></CourseAdminRoute>} />
           <Route path="/groups" element={<StaffRoute><GroupsPage /></StaffRoute>} />
           <Route path="/sessions" element={<StaffRoute><SessionsPage /></StaffRoute>} />
           <Route path="/attendance" element={<StaffRoute><FeatureRoute feature="attendance.enabled"><AttendancePage /></FeatureRoute></StaffRoute>} />

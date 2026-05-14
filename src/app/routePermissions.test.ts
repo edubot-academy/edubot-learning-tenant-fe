@@ -74,6 +74,13 @@ describe('tenant route permission surfaces', () => {
     });
   });
 
+  it('keeps plain instructors out of the course administration surface', () => {
+    expect(canAccessTenantPermissionSurface('courses', user('instructor'), tenant('instructor'))).toBe(false);
+    expect(canAccessTenantPermissionSurface('courses', user('instructor'), tenant('instructor', {
+      canManageCourses: true,
+    }))).toBe(true);
+  });
+
   it('respects explicit denials over company admin fallback', () => {
     const restrictedAdmin = tenant('company_admin', {
       canManageMembers: false,
@@ -89,7 +96,7 @@ describe('tenant route permission surfaces', () => {
       canAccessTenantPermissionSurface(surface, user('company_admin'), restrictedAdmin),
     ]))).toEqual({
       members: false,
-      courses: true,
+      courses: false,
       branding: false,
       settings: false,
       reports: false,

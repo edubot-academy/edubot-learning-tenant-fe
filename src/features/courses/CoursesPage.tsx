@@ -11,7 +11,7 @@ import { createTenantCourse, getCourseCertificateSettings, listCourseGroups, lis
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
-import { canManageTenantCourses, getEffectiveTenantRole } from '../tenant/tenantRoles';
+import { canApproveTenantCourses, canManageTenantCourses, getEffectiveTenantRole } from '../tenant/tenantRoles';
 import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
@@ -84,9 +84,9 @@ export function CoursesPage() {
 
   const activeRole = getEffectiveTenantRole(user, activeTenant);
   const canManageCourses = canManageTenantCourses(user, activeTenant);
-  const canCreateCourse = canManageCourses || activeRole === 'instructor';
-  const canApproveTenantCourses = canManageCourses;
-  const canAssignInstructor = canApproveTenantCourses;
+  const canApproveCourses = canApproveTenantCourses(user, activeTenant);
+  const canCreateCourse = canManageCourses;
+  const canAssignInstructor = canApproveCourses;
   const featureEnabled = (key: string) => activeTenant?.featureFlags?.[key] !== false;
   const attendanceEnabled = featureEnabled('attendance.enabled');
   const homeworkEnabled = featureEnabled('homework.enabled');
@@ -175,7 +175,7 @@ export function CoursesPage() {
     () => courses.find((course) => course.id === selectedCourseId),
     [courses, selectedCourseId],
   );
-  const canEditCourse = Boolean(selectedCourse && (canApproveTenantCourses || (activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id)));
+  const canEditCourse = Boolean(selectedCourse && canManageCourses);
   const selectedCourseOperational = isCourseWorkflowReady(selectedCourse, false);
   const selectedCourseDeliveryReady = isCourseWorkflowReady(selectedCourse);
   const courseBlockerMessage = workflowBlockerMessage(selectedCourse, false);
@@ -809,7 +809,7 @@ export function CoursesPage() {
                           {t('courses.editCourse')}
                         </button>
                       ) : null}
-                      {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
+                      {canApproveCourses && selectedCourse.status === 'pending' ? (
                         <button
                           type="button"
                           className="primary-button"
@@ -819,7 +819,7 @@ export function CoursesPage() {
                           {t('courses.approve')}
                         </button>
                       ) : null}
-                      {canApproveTenantCourses && selectedCourse.status === 'pending' ? (
+                      {canApproveCourses && selectedCourse.status === 'pending' ? (
                         <button
                           type="button"
                           className="secondary-button"
@@ -830,7 +830,7 @@ export function CoursesPage() {
                         </button>
                       ) : null}
                       {['draft', 'rejected'].includes(selectedCourse.status || 'draft') && (
-                        canApproveTenantCourses || (activeRole === 'instructor' && selectedCourse.instructor?.id === user?.id)
+                        canApproveCourses
                       ) ? (
                         <button
                           type="button"

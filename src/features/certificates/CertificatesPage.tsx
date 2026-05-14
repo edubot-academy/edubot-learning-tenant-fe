@@ -31,7 +31,7 @@ import { useTenant } from '../tenant/TenantProvider';
 import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAuth } from '../auth/AuthProvider';
-import { isTenantAdmin } from '../tenant/tenantRoles';
+import { canApproveAssignedCertificates, canManageTenantCertificates } from '../tenant/tenantRoles';
 import {
   certificateTabs,
   describeEligibility,
@@ -147,7 +147,8 @@ export function CertificatesPage() {
   const { activeTenant } = useTenant();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
-  const canManageCertificateAdmin = isTenantAdmin(user, activeTenant);
+  const canManageCertificateAdmin = canManageTenantCertificates(user, activeTenant);
+  const canApproveAssignedCertificateRequests = canApproveAssignedCertificates(user, activeTenant);
   const canManageCourseRules = canManageCertificateAdmin;
   const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
   const requestedTab = searchParams.get('tab') as CertificateTab | null;
@@ -423,10 +424,10 @@ export function CertificatesPage() {
     [courseId, courses],
   );
   const selectedCourseIsDelivery = selectedCertificateCourse?.courseType === 'offline' || selectedCertificateCourse?.courseType === 'online_live';
-  const canIssueCertificates = true;
+  const canIssueCertificates = canManageCertificateAdmin;
   const canRevokeCertificates = canManageCertificateAdmin;
   const canRegenerateCertificates = canManageCertificateAdmin;
-  const canApproveCertificates = canManageCertificateAdmin || courseSettings?.approvalMode === 'instructor';
+  const canApproveCertificates = canManageCertificateAdmin || (canApproveAssignedCertificateRequests && courseSettings?.approvalMode === 'instructor');
   const rosterCounts = useMemo(() => {
     const eligible = courseStudents.filter((student) => isStudentEligibleForCertificate(student)).length;
     return {

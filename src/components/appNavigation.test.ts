@@ -21,12 +21,14 @@ describe('app navigation visibility', () => {
     expect(getVisibleNavItems(user('student'), tenant('student')).map((item) => item.to)).toEqual(['/student', '/settings']);
   });
 
-  it('hides member management from non-admin staff', () => {
+  it('keeps instructor navigation focused on teaching work', () => {
     const routes = getVisibleNavItems(user('instructor'), tenant('instructor')).map((item) => item.to);
 
+    expect(routes).toEqual(['/', '/sessions', '/attendance', '/homework', '/groups', '/certificates', '/settings']);
     expect(routes).toContain('/sessions');
     expect(routes).toContain('/certificates');
     expect(routes).not.toContain('/members');
+    expect(routes).not.toContain('/courses');
   });
 
   it('hides feature-flagged tools when disabled', () => {
@@ -57,13 +59,27 @@ describe('app navigation visibility', () => {
     expect(routes).toContain('/operations');
   });
 
-  it('shows reports when report permission is granted', () => {
+  it('keeps plain assistants off the instructor teaching navigation surface', () => {
     const routes = getVisibleNavItems(user('assistant'), tenant('assistant', {}, {
       canViewReports: true,
     })).map((item) => item.to);
 
-    expect(routes).toContain('/reports');
-    expect(routes).toContain('/settings');
+    expect(routes).toEqual(['/', '/settings']);
+    expect(routes).not.toContain('/reports');
+    expect(routes).not.toContain('/operations');
+    expect(routes).not.toContain('/sessions');
+    expect(routes).not.toContain('/attendance');
+    expect(routes).not.toContain('/homework');
+  });
+
+  it('uses admin navigation for teaching roles with management permissions', () => {
+    const routes = getVisibleNavItems(user('instructor'), tenant('instructor', {}, {
+      canManageMembers: true,
+    })).map((item) => item.to);
+
+    expect(routes).toContain('/members');
+    expect(routes).toContain('/operations');
+    expect(routes).not.toContain('/sessions');
   });
 
   it('does not show settings for report-only permission users', () => {
@@ -79,6 +95,7 @@ describe('app navigation visibility', () => {
     const routes = getVisibleNavItems(user('assistant'), tenant('assistant', {}, {
       canManageMembers: true,
       canManageCertificates: true,
+      canManageCourses: true,
     })).map((item) => item.to);
 
     expect(routes).toContain('/members');
@@ -109,8 +126,9 @@ describe('app navigation visibility', () => {
     const visible = getVisibleNavItems(user('instructor'), tenant('instructor'));
     const groups = getMobileNavGroups(visible, false, user('instructor'), tenant('instructor'));
 
-    expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/sessions', '/attendance', '/homework', '/courses']);
+    expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/sessions', '/attendance', '/homework', '/']);
     expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/settings');
+    expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/groups');
   });
 
   it('counts enabled staff tools from current feature flags', () => {

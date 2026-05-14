@@ -19,6 +19,43 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.6.0 - 2026-05-14
+
+### Added
+
+- Added instructor-specific navigation focused on overview, sessions, attendance, homework, assigned groups, certificates, and personal settings.
+- Added instructor dashboard integration for today's sessions, next session, assigned queues, assigned courses, and assigned groups.
+- Added assigned homework and activity review queue API wrappers and frontend domain types.
+- Added an assistant operational-support planning document to keep assistant behavior separate from instructor teaching workflows.
+
+### Changed
+
+- Split instructor teaching permissions from coordinator/admin operations so plain instructors no longer inherit course, group, session setup, enrollment, or tenant administration actions.
+- Restricted course creation, course editing, course approval, group setup, session scheduling, session generation, enrollment, and student removal UI behind explicit management capabilities.
+- Updated certificates, settings, overview, sessions, attendance, homework, courses, and groups pages to render actions from granular role capabilities.
+- Package version updated to `1.6.0`.
+
+### Fixed
+
+- Fixed plain assistant navigation so assistant no longer inherits instructor teaching surfaces by default.
+- Fixed instructor overview noise by removing workspace readiness/setup content from non-admin teaching views.
+
+### Tests
+
+- Added and updated role, route, and navigation coverage for instructor, assistant, tenant admin, and explicit permission override behavior.
+- `npx vitest run src/components/appNavigation.test.ts src/features/tenant/tenantRoles.test.ts src/app/routePermissions.test.ts --environment node` passes with 30 tests.
+- `npm test` passes with 22 test files and 93 tests.
+- `npm run lint` passes.
+- `npm run build` passes with the existing Vite large chunk warning.
+
+### Dependencies
+
+- Pinned `jsdom` to `26.1.0` so the Vitest jsdom environment remains compatible with the current Node 20.17 local release runtime.
+
+### Migration Notes
+
+- Release this frontend with the matching backend instructor-scope changes, including granular tenant permissions, assigned-scope enforcement, `GET /companies/:tenantId/instructor-dashboard`, `GET /homework/review-queue`, and `GET /group-sessions/activity-review-queue`.
+
 ## 1.5.0 - 2026-05-14
 
 ### Added

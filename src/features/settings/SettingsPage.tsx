@@ -180,6 +180,7 @@ export function SettingsPage() {
   const canEditTenantSettings = canManageTenantSettings(user, activeTenant);
   const canManageOwners = canManageTenantOwners(user, activeTenant);
   const canViewTenantActivity = canViewTenantReports(user, activeTenant) || isTenantAdmin(user, activeTenant);
+  const canViewWorkspaceProfile = canEditTenantProfile || canEditTenantBranding || canEditTenantSettings || canManageOwners || canViewTenantActivity;
 
   const featureRows = useMemo(() => {
     const rows: Array<{ key: string; label: string; detail: string; explicit: boolean; enabled: boolean }> = knownFeatures.map((feature) => ({
@@ -205,15 +206,17 @@ export function SettingsPage() {
   }, [flags, t]);
 
   const settingsTabs = useMemo<Array<{ key: SettingsTab; label: string; description: string }>>(() => [
-    { key: 'profile', label: t('settings.tabProfile'), description: t('settings.tabProfileDetail') },
-    { key: 'branding', label: t('settings.tabBranding'), description: t('settings.tabBrandingDetail') },
-    { key: 'policies', label: t('settings.tabPolicies'), description: t('settings.tabPoliciesDetail') },
-    { key: 'platform', label: t('settings.tabPlatform'), description: t('settings.tabPlatformDetail') },
-    { key: 'features', label: t('settings.tabFeatures'), description: t('settings.tabFeaturesDetail') },
-    { key: 'access', label: t('settings.tabAccess'), description: t('settings.tabAccessDetail') },
+    ...(canEditTenantProfile ? [{ key: 'profile' as const, label: t('settings.tabProfile'), description: t('settings.tabProfileDetail') }] : []),
+    ...(canEditTenantBranding ? [{ key: 'branding' as const, label: t('settings.tabBranding'), description: t('settings.tabBrandingDetail') }] : []),
+    ...(canEditTenantSettings ? [{ key: 'policies' as const, label: t('settings.tabPolicies'), description: t('settings.tabPoliciesDetail') }] : []),
+    ...(canViewWorkspaceProfile ? [
+      { key: 'platform' as const, label: t('settings.tabPlatform'), description: t('settings.tabPlatformDetail') },
+      { key: 'features' as const, label: t('settings.tabFeatures'), description: t('settings.tabFeaturesDetail') },
+      { key: 'access' as const, label: t('settings.tabAccess'), description: t('settings.tabAccessDetail') },
+    ] : []),
     { key: 'personal', label: t('settings.tabPersonal'), description: t('settings.tabPersonalDetail') },
     ...(canViewTenantActivity ? [{ key: 'activity' as const, label: t('settings.tabActivity'), description: t('settings.tabActivityDetail') }] : []),
-  ], [canViewTenantActivity, t]);
+  ], [canEditTenantBranding, canEditTenantProfile, canEditTenantSettings, canViewTenantActivity, canViewWorkspaceProfile, t]);
 
   const languageLabel = (locale: SupportedLocale) => {
     const labels: Record<SupportedLocale, string> = {
@@ -356,8 +359,12 @@ export function SettingsPage() {
   }, [activeTenant]);
 
   useEffect(() => {
+    if (!settingsTabs.some((tab) => tab.key === settingsTab)) {
+      setSettingsTab(settingsTabs[0]?.key ?? 'personal');
+      return;
+    }
     if (settingsTab === 'activity' && !canViewTenantActivity) {
-      setSettingsTab('profile');
+      setSettingsTab(settingsTabs[0]?.key ?? 'personal');
       setActivityRows([]);
       setActivityLoading(false);
       return;
@@ -378,7 +385,7 @@ export function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenant, canViewTenantActivity, settingsTab, t]);
+  }, [activeTenant, canViewTenantActivity, settingsTab, settingsTabs, t]);
 
   const uploadLogo = async (file: File | undefined) => {
     if (!activeTenant || !file || !canEditTenantProfile) return;

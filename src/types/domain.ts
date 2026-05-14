@@ -35,6 +35,18 @@ export type Tenant = {
     canViewReports?: boolean;
     canManageBranding?: boolean;
     canManageSettings?: boolean;
+    canTeachAssignedSessions?: boolean;
+    canViewAssignedCourses?: boolean;
+    canViewAssignedGroups?: boolean;
+    canManageAssignedAttendance?: boolean;
+    canManageAssignedHomework?: boolean;
+    canManageAssignedActivities?: boolean;
+    canManageAssignedMaterials?: boolean;
+    canManageAssignedLiveMeetings?: boolean;
+    canApproveAssignedCertificates?: boolean;
+    canCoordinateGroups?: boolean;
+    canEnrollStudents?: boolean;
+    canApproveCourses?: boolean;
   };
   host?: string | null;
   crmLink?: {
@@ -97,6 +109,18 @@ export type TenantOverviewPermissions = {
   canViewReports?: boolean;
   canManageBranding?: boolean;
   canManageSettings?: boolean;
+  canTeachAssignedSessions?: boolean;
+  canViewAssignedCourses?: boolean;
+  canViewAssignedGroups?: boolean;
+  canManageAssignedAttendance?: boolean;
+  canManageAssignedHomework?: boolean;
+  canManageAssignedActivities?: boolean;
+  canManageAssignedMaterials?: boolean;
+  canManageAssignedLiveMeetings?: boolean;
+  canApproveAssignedCertificates?: boolean;
+  canCoordinateGroups?: boolean;
+  canEnrollStudents?: boolean;
+  canApproveCourses?: boolean;
   canViewActivity: boolean;
   canManageCertificates: boolean;
   canCreateCourses: boolean;
@@ -155,6 +179,76 @@ export type TenantOverview = {
     dropoutRisk: string;
     groupFillRate: string;
   } | null;
+};
+
+export type InstructorDashboardSession = {
+  id: number;
+  title: string;
+  courseId?: number | null;
+  courseTitle?: string | null;
+  groupId?: number | null;
+  groupName?: string | null;
+  instructorId?: number | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  status?: string | null;
+  location?: string | null;
+  liveJoinUrl?: string | null;
+  liveHostUrl?: string | null;
+  materialsCount?: number;
+  activitiesCount?: number;
+  attendanceMarked?: boolean;
+  homeworkNeedsReview?: number;
+};
+
+export type InstructorDashboard = {
+  generatedAt?: string;
+  instructor: { id: number; fullName?: string | null; email?: string | null };
+  tenant: TenantOverview['tenant'];
+  role?: string | null;
+  permissions: TenantOverviewPermissions;
+  today: {
+    sessions: InstructorDashboardSession[];
+    nextSession?: InstructorDashboardSession | null;
+  };
+  queues: {
+    unmarkedAttendance: number;
+    homeworkNeedsReview: number;
+    activityNeedsReview: number;
+    missingHomework: number;
+    upcomingWithoutMaterials: number;
+  };
+  attentionStudents: Array<{
+    studentId: number;
+    fullName?: string | null;
+    groupId?: number | null;
+    groupName?: string | null;
+    severity?: 'high' | 'medium' | 'low' | string;
+    reasons?: Array<{ code: string; label: string; route?: string }>;
+  }>;
+  assignedCourses: Array<{
+    id: number;
+    title: string;
+    courseType?: string | null;
+    status?: string | null;
+    isPublished?: boolean;
+    groupCount: number;
+    activeStudentCount: number;
+  }>;
+  assignedGroups: Array<{
+    id: number;
+    name: string;
+    code?: string | null;
+    status?: string | null;
+    courseId: number;
+    courseTitle?: string | null;
+    instructorId?: number | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    timezone?: string | null;
+    studentCount: number;
+  }>;
+  upcomingSessions: InstructorDashboardSession[];
 };
 
 export type TenantReportPoint = {
@@ -520,12 +614,61 @@ export type SessionHomework = {
   groupName?: string | null;
   queue?: {
     assigned?: number;
+    assignedCount?: number;
     submitted?: number;
+    submittedCount?: number;
     approved?: number;
+    approvedCount?: number;
     rejected?: number;
+    rejectedCount?: number;
     needsRevision?: number;
+    needsRevisionCount?: number;
     missing?: number;
+    missingCount?: number;
     needsReview?: number;
+    needsReviewCount?: number;
+    late?: number;
+    pendingSubmissionCount?: number;
+    lateCount?: number;
+  };
+};
+
+export type HomeworkReviewQueue = {
+  items: SessionHomework[];
+  summary: {
+    total: number;
+    needsReview: number;
+    missing: number;
+    needsRevision: number;
+    late: number;
+    actionRequired: number;
+  };
+};
+
+export type ActivityReviewQueue = {
+  items: Array<{
+    submissionId: number;
+    activityId: number;
+    activityTitle?: string | null;
+    activityType?: string | null;
+    sessionId?: number | null;
+    sessionTitle?: string | null;
+    courseId?: number | null;
+    courseTitle?: string | null;
+    groupId?: number | null;
+    groupName?: string | null;
+    studentId: number;
+    studentName?: string | null;
+    status?: string | null;
+    score?: number | null;
+    answerText?: string | null;
+    attachmentUrl?: string | null;
+    submittedAt?: string | null;
+    updatedAt?: string | null;
+  }>;
+  summary: {
+    total: number;
+    needsReview: number;
   };
 };
 

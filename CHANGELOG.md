@@ -19,6 +19,26 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.9.1 - 2026-05-15
+
+### Changed
+
+- Centralized backend API error formatting so auth setup and password reset flows can show localized messages from backend error codes.
+- Updated locale initialization to use the shared locale resolver.
+- Package version updated to `1.9.1`.
+
+### Fixed
+
+- Fixed CSRF retry detection so backend responses using `CSRF_TOKEN_INVALID` still trigger the one-time profile refresh and request retry.
+- Fixed modal localization test setup so close-button assertions run against the expected Kyrgyz language state.
+
+### Tests
+
+- Added API error helper coverage for backend code extraction, translated known errors, and unknown-code fallback messages.
+- `npm test` passes with 26 test files and 131 tests.
+- `npm run lint` passes.
+- `npm run build` passes with the existing Vite large chunk warning.
+
 ## 1.9.0 - 2026-05-15
 
 ### Added

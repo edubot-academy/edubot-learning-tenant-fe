@@ -1,8 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import '../i18n/config';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../i18n/config';
 import { Modal } from './Modal';
+
+beforeEach(() => {
+  i18n.changeLanguage('ky');
+});
 
 afterEach(() => {
   document.body.innerHTML = '';

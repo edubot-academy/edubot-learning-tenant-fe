@@ -1192,6 +1192,28 @@
     "workspaceViewFailedDetail": "Refresh this view or return to another workspace section.",
     "workspaceViewFailedTitle": "Workspace view failed"
   },
+  "backendErrors": {
+    "AUTH_ACCOUNT_ALREADY_ACTIVE": "This account is already active.",
+    "AUTH_CREDENTIALS_INVALID": "The email or password is incorrect.",
+    "AUTH_EMAIL_ALREADY_REGISTERED": "This email is already registered.",
+    "AUTH_ONBOARDING_REAL_EMAIL_REQUIRED": "Use a real email address to activate this account.",
+    "AUTH_ONBOARDING_STUDENT_REQUIRED": "Only student accounts can use this setup link.",
+    "AUTH_ONBOARDING_TOKEN_INVALID": "This setup link is invalid or expired.",
+    "AUTH_PASSWORD_TOO_SHORT": "The password is too short.",
+    "AUTH_PHONE_ALREADY_REGISTERED": "This phone number is already registered.",
+    "AUTH_RESET_OTP_INVALID": "The reset code is invalid or expired.",
+    "AUTH_TOKEN_INVALID": "Your session token is invalid.",
+    "AUTHENTICATION_REQUIRED": "Sign in to continue.",
+    "COMPANY_LOCALE_UNSUPPORTED": "This workspace language is not supported.",
+    "COMPANY_SCOPE_ACCESS_DENIED": "You do not have access to this workspace.",
+    "COMPANY_SCOPE_RESOURCE_MISMATCH": "This resource belongs to another workspace.",
+    "CSRF_TOKEN_INVALID": "Your session security token expired. Try again.",
+    "ROLE_ACCESS_DENIED": "You do not have permission to perform this action.",
+    "TENANT_CONTEXT_MISMATCH": "The selected workspace does not match this request.",
+    "TENANT_INACTIVE": "This workspace is inactive.",
+    "TENANT_NOT_CONFIGURED": "This workspace is not configured yet.",
+    "USER_NOT_FOUND": "User not found."
+  },
   "language": {
     "current": "Current language",
     "en": "English",

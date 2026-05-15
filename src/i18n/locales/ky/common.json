@@ -1192,6 +1192,28 @@
     "workspaceViewFailedDetail": "Бул бөлүмдү жаңыртыңыз же окуу мейкиндигинин башка бөлүмүнө өтүңүз.",
     "workspaceViewFailedTitle": "Мейкиндик бөлүмү ачылган жок"
   },
+  "backendErrors": {
+    "AUTH_ACCOUNT_ALREADY_ACTIVE": "Бул аккаунт мурунтан активдүү.",
+    "AUTH_CREDENTIALS_INVALID": "Email же сырсөз туура эмес.",
+    "AUTH_EMAIL_ALREADY_REGISTERED": "Бул email мурунтан катталган.",
+    "AUTH_ONBOARDING_REAL_EMAIL_REQUIRED": "Аккаунтту активдештирүү үчүн чыныгы email колдонуңуз.",
+    "AUTH_ONBOARDING_STUDENT_REQUIRED": "Бул шилтеме студент аккаунттары үчүн гана.",
+    "AUTH_ONBOARDING_TOKEN_INVALID": "Орнотуу шилтемеси жараксыз же мөөнөтү өткөн.",
+    "AUTH_PASSWORD_TOO_SHORT": "Сырсөз өтө кыска.",
+    "AUTH_PHONE_ALREADY_REGISTERED": "Бул телефон номери мурунтан катталган.",
+    "AUTH_RESET_OTP_INVALID": "Калыбына келтирүү коду жараксыз же мөөнөтү өткөн.",
+    "AUTH_TOKEN_INVALID": "Сессия токени жараксыз.",
+    "AUTHENTICATION_REQUIRED": "Улантуу үчүн кириңиз.",
+    "COMPANY_LOCALE_UNSUPPORTED": "Бул мейкиндик тили колдоого алынбайт.",
+    "COMPANY_SCOPE_ACCESS_DENIED": "Бул мейкиндикке кирүү укугуңуз жок.",
+    "COMPANY_SCOPE_RESOURCE_MISMATCH": "Бул ресурс башка мейкиндикке тиешелүү.",
+    "CSRF_TOKEN_INVALID": "Сессиянын коргоо токени эскирди. Кайра аракет кылыңыз.",
+    "ROLE_ACCESS_DENIED": "Бул аракетти аткарууга укугуңуз жок.",
+    "TENANT_CONTEXT_MISMATCH": "Тандалган мейкиндик бул сурамга туура келбейт.",
+    "TENANT_INACTIVE": "Бул мейкиндик активдүү эмес.",
+    "TENANT_NOT_CONFIGURED": "Бул мейкиндик азырынча жөндөлө элек.",
+    "USER_NOT_FOUND": "Колдонуучу табылган жок."
+  },
   "language": {
     "current": "Учурдагы тил",
     "en": "English",

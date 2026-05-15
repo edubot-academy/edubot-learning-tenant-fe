@@ -260,7 +260,7 @@ Tasks:
 
 - Wire the existing language dropdown location in the main platform header.
 - Add a compact language selector in the tenant app shell or settings page.
-- Show language names as `Кыргызча`, `Русский`, `English`.
+- Show full language names as `Кыргызча`, `Русский`, `English` in expanded/settings selectors; the tenant shell menu may use compact labels `KG`, `RU`, `US` by product choice.
 - Keep the control accessible with a label.
 - Do not add unsupported tenant/company-level language changes unless saving to tenant/company settings is already supported.
 

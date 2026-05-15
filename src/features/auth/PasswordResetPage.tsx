@@ -4,22 +4,11 @@ import toast from 'react-hot-toast';
 import { FiCheckCircle, FiMail } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { requestPasswordReset, resetPassword } from '../../services/api';
+import { getApiErrorMessage } from '../../lib/apiErrors';
 import { useTenant } from '../tenant/TenantProvider';
 import { getPasswordSetupError } from './authPassword';
 
 type ResetStep = 'request' | 'reset';
-
-function getApiErrorMessage(error: unknown, fallback: string) {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'response' in error &&
-    typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
-  ) {
-    return (error as { response: { data: { message: string } } }).response.data.message;
-  }
-  return error instanceof Error ? error.message : fallback;
-}
 
 export function PasswordResetPage() {
   const { t } = useTranslation();

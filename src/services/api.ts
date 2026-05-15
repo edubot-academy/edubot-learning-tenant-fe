@@ -55,6 +55,7 @@ import type {
   WorkspaceListResponse,
 } from '../types/domain';
 import { getCurrentLocale } from '../i18n/locale';
+import { getBackendErrorCode } from '../lib/apiErrors';
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -110,6 +111,7 @@ export const api = axios.create({
 
 export const AUTH_EXPIRED_EVENT = 'edubot_tenant_auth_expired';
 const CSRF_ERROR_TEXT = 'CSRF token missing or invalid';
+const CSRF_ERROR_CODE = 'CSRF_TOKEN_INVALID';
 
 function getCookieValue(name: string) {
   if (typeof document === 'undefined') return null;
@@ -142,11 +144,13 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const message = error?.response?.data?.message;
+    const code = getBackendErrorCode(error);
     const isCsrfError =
       error?.response?.status === 403 &&
-      (Array.isArray(message)
-        ? message.includes(CSRF_ERROR_TEXT)
-        : String(message || '').includes(CSRF_ERROR_TEXT));
+      (code === CSRF_ERROR_CODE ||
+        (Array.isArray(message)
+          ? message.includes(CSRF_ERROR_TEXT)
+          : String(message || '').includes(CSRF_ERROR_TEXT)));
 
     if (isCsrfError && error.config && !error.config.__csrfRetry) {
       error.config.__csrfRetry = true;

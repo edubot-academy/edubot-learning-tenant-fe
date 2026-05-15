@@ -3,7 +3,7 @@ import { initReactI18next } from 'react-i18next';
 import enCommon from './locales/en/common.json';
 import kyCommon from './locales/ky/common.json';
 import ruCommon from './locales/ru/common.json';
-import { DEFAULT_LOCALE, normalizeLocale } from './locale';
+import { DEFAULT_LOCALE, resolveLocale } from './locale';
 
 i18n
   .use(initReactI18next)
@@ -13,7 +13,7 @@ i18n
       ru: { common: ruCommon },
       en: { common: enCommon },
     },
-    lng: normalizeLocale(typeof window !== 'undefined' ? window.localStorage.getItem('edubot_locale') : null),
+    lng: resolveLocale(),
     fallbackLng: DEFAULT_LOCALE,
     supportedLngs: ['ky', 'ru', 'en'],
     defaultNS: 'common',

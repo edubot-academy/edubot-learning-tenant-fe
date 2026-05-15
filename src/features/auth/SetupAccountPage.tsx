@@ -3,21 +3,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiCheckCircle, FiLock } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
+import { getApiErrorMessage } from '../../lib/apiErrors';
 import { useAuth } from './AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { getPasswordSetupError } from './authPassword';
-
-function getSetupErrorMessage(error: unknown, fallback: string) {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'response' in error &&
-    typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === 'string'
-  ) {
-    return (error as { response: { data: { message: string } } }).response.data.message;
-  }
-  return error instanceof Error ? error.message : fallback;
-}
 
 export function SetupAccountPage() {
   const { t } = useTranslation();
@@ -58,7 +47,7 @@ export function SetupAccountPage() {
       toast.success(t('auth.accountSetupComplete'));
       navigate('/', { replace: true });
     } catch (setupError) {
-      setError(getSetupErrorMessage(setupError, t('auth.setupInvalid')));
+      setError(getApiErrorMessage(setupError, t('auth.setupInvalid')));
     } finally {
       setSubmitting(false);
     }

@@ -129,7 +129,7 @@ describe('api browser stores', () => {
         return Promise.reject({
           config,
           response: {
-            data: { message: 'CSRF token missing or invalid' },
+            data: { code: 'CSRF_TOKEN_INVALID', message: 'Localized server text' },
             status: 403,
             statusText: 'Forbidden',
             headers: {},

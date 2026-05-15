@@ -1192,6 +1192,28 @@
     "workspaceViewFailedDetail": "Обновите этот раздел или перейдите в другой раздел учебного пространства.",
     "workspaceViewFailedTitle": "Раздел пространства не открылся"
   },
+  "backendErrors": {
+    "AUTH_ACCOUNT_ALREADY_ACTIVE": "Этот аккаунт уже активирован.",
+    "AUTH_CREDENTIALS_INVALID": "Неверный email или пароль.",
+    "AUTH_EMAIL_ALREADY_REGISTERED": "Этот email уже зарегистрирован.",
+    "AUTH_ONBOARDING_REAL_EMAIL_REQUIRED": "Используйте реальный email для активации аккаунта.",
+    "AUTH_ONBOARDING_STUDENT_REQUIRED": "Эта ссылка доступна только для аккаунтов студентов.",
+    "AUTH_ONBOARDING_TOKEN_INVALID": "Ссылка для настройки недействительна или истекла.",
+    "AUTH_PASSWORD_TOO_SHORT": "Пароль слишком короткий.",
+    "AUTH_PHONE_ALREADY_REGISTERED": "Этот номер телефона уже зарегистрирован.",
+    "AUTH_RESET_OTP_INVALID": "Код сброса недействителен или истек.",
+    "AUTH_TOKEN_INVALID": "Токен сессии недействителен.",
+    "AUTHENTICATION_REQUIRED": "Войдите, чтобы продолжить.",
+    "COMPANY_LOCALE_UNSUPPORTED": "Этот язык пространства не поддерживается.",
+    "COMPANY_SCOPE_ACCESS_DENIED": "У вас нет доступа к этому пространству.",
+    "COMPANY_SCOPE_RESOURCE_MISMATCH": "Этот ресурс относится к другому пространству.",
+    "CSRF_TOKEN_INVALID": "Защитный токен сессии истек. Попробуйте еще раз.",
+    "ROLE_ACCESS_DENIED": "У вас нет прав для этого действия.",
+    "TENANT_CONTEXT_MISMATCH": "Выбранное пространство не соответствует этому запросу.",
+    "TENANT_INACTIVE": "Это пространство неактивно.",
+    "TENANT_NOT_CONFIGURED": "Это пространство еще не настроено.",
+    "USER_NOT_FOUND": "Пользователь не найден."
+  },
   "language": {
     "current": "Текущий язык",
     "en": "English",

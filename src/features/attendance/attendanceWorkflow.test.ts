@@ -5,6 +5,7 @@ import {
   filterAttendanceStudents,
   getAttendanceCounts,
   getAttendanceSaveBlocker,
+  getAttendanceSessionDetail,
   getChangedAttendanceRows,
   type EditableAttendance,
 } from './attendanceWorkflow';
@@ -59,5 +60,23 @@ describe('attendance workflow helpers', () => {
   it('returns concrete save blockers', () => {
     expect(getAttendanceSaveBlocker({ sessionReady: false, studentCount: 2, markedCount: 1, changedCount: 1 })).toContain('scheduled or completed');
     expect(getAttendanceSaveBlocker({ sessionReady: true, studentCount: 2, markedCount: 1, changedCount: 1 })).toBe('');
+  });
+
+  it('uses one-student copy for individual attendance sessions', () => {
+    expect(getAttendanceSessionDetail({
+      groupDeliveryMode: 'individual',
+      students: [{ id: 3, userId: 30, fullName: 'Cara One', email: 'cara@example.com' }],
+      marked: 0,
+      total: 1,
+      studentFallback: (id) => `Student ${id}`,
+    })).toBe('One-to-one session for Cara One');
+
+    expect(getAttendanceSessionDetail({
+      groupDeliveryMode: 'group',
+      students,
+      marked: 1,
+      total: 2,
+      studentFallback: (id) => `Student ${id}`,
+    })).toBe('1 of 2 marked');
   });
 });

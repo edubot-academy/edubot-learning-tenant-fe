@@ -19,6 +19,43 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.9.0 - 2026-05-15
+
+### Added
+
+- Added individual course group creation with tenant-scoped student selection, one-to-one delivery badges, first-session creation support, and validation for required schedule setup.
+- Added delivery-mode indicators across groups, sessions, courses, and attendance views.
+- Added course deletion for unpublished courses where the tenant role is allowed to remove them.
+- Added frontend API helpers and domain typing for individual course groups, group delivery mode, session group delivery mode, and course deletion.
+- Added regression coverage for individual group creation, tenant-scoped student search, permission gating, API payload shape, and attendance one-to-one session copy.
+
+### Changed
+
+- Reduced course creation follow-up fan-out by selecting the newly created course locally and avoiding eager course detail calls.
+- Changed Groups course selection to show only eligible approved, published offline/live courses.
+- Changed course health filters so summary-dependent filters are disabled when the backend does not provide catalog health summaries instead of showing misleading counts.
+- Improved async load state updates to avoid no-op state churn.
+- Package version updated to `1.9.0`.
+
+### Fixed
+
+- Fixed course creation selection so the newly created course remains selected instead of falling back to the previous course.
+- Fixed repeated render/API churn around selected course detail loading.
+- Fixed individual student search in the create-group modal so typing searches tenant students without calling forbidden global `/users` endpoints.
+- Fixed Groups page loading so member-roster permission failures do not block course/group access.
+- Fixed individual group creation permission gating so users without enrollment permission do not see the individual delivery mode.
+- Fixed course health summary behavior for newly created courses and later detail reloads.
+
+### Tests
+
+- `npm run lint` passes.
+- `npm test` passes.
+- `npm run build` passes with the existing Vite large chunk warning.
+
+### Migration Notes
+
+- Release this frontend with backend support for `POST /course-groups/individual`, `deliveryMode` on course groups, `groupDeliveryMode` on sessions, catalog health summary fields on course list responses when course health filters should be enabled, and `DELETE /courses/:courseId` for unpublished course deletion.
+
 ## 1.8.0 - 2026-05-15
 
 ### Added

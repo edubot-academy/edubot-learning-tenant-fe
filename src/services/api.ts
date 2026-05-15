@@ -218,16 +218,18 @@ export async function getCurrentUser() {
 }
 
 export async function searchUsers(params: { search?: string; role?: string; limit?: number } = {}) {
-  const { data } = await api.get<{ data?: UserSummary[]; items?: UserSummary[] } | UserSummary[]>('/users', {
+  const search = params.search?.trim() || undefined;
+  const { data } = await api.get<{ data?: UserSummary[]; items?: UserSummary[]; users?: UserSummary[] } | UserSummary[]>('/users', {
     params: {
       page: 1,
       limit: params.limit ?? 10,
-      search: params.search,
+      search,
+      q: search,
       role: params.role,
     },
   });
   if (Array.isArray(data)) return data;
-  return data.data ?? data.items ?? [];
+  return data.data ?? data.items ?? data.users ?? [];
 }
 
 export async function listMyTenants() {
@@ -507,6 +509,11 @@ export async function updateTenantCourse(courseId: number, payload: {
   return data;
 }
 
+export async function deleteTenantCourse(courseId: number) {
+  const { data } = await api.delete<{ message?: string }>(`/courses/${courseId}`);
+  return data;
+}
+
 export async function updateCourseStatus(courseId: number, status: 'pending' | 'approved' | 'rejected') {
   const { data } = await api.patch<{ success: boolean; status: string }>(`/courses/${courseId}/status`, { status });
   return data;
@@ -523,6 +530,7 @@ export async function createCourseGroup(payload: {
   courseId: number;
   name: string;
   code: string;
+  deliveryMode?: 'group' | 'individual';
   status?: 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
   startDate?: string;
   endDate?: string;
@@ -539,9 +547,28 @@ export async function createCourseGroup(payload: {
   return data;
 }
 
+export async function createIndividualCourseGroup(payload: {
+  courseId: number;
+  studentId: number;
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  timezone?: string;
+  location?: string;
+  meetingProvider?: string;
+  meetingUrl?: string;
+  scheduleBlocks?: Array<{ day: string; startTime: string; endTime: string }> | null;
+  instructorId?: number;
+  createFirstSession?: boolean;
+}) {
+  const { data } = await api.post<{ group: CourseGroup; enrollment?: unknown; firstSession?: CourseSession | null }>('/course-groups/individual', payload);
+  return data;
+}
+
 export async function updateCourseGroup(groupId: number, payload: {
   name?: string;
   code?: string;
+  deliveryMode?: 'group' | 'individual';
   status?: 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
   startDate?: string;
   endDate?: string;

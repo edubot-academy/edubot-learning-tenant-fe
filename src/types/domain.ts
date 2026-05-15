@@ -525,6 +525,7 @@ export type CourseGroup = {
   code?: string;
   courseId: number;
   companyId?: number | null;
+  deliveryMode?: 'group' | 'individual';
   status?: string;
   instructorId?: number | null;
   startDate?: string | null;
@@ -581,6 +582,7 @@ export type CourseSession = {
   title: string;
   courseId: number;
   groupId?: number | null;
+  groupDeliveryMode?: 'group' | 'individual';
   sessionIndex?: number;
   startsAt?: string;
   endsAt?: string;

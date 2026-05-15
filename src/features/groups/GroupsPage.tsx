@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -8,6 +8,7 @@ import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
 import {
   createCourseGroup,
+  createIndividualCourseGroup,
   enrollUser,
   generateGroupSessions,
   inviteTenantMember,
@@ -17,7 +18,6 @@ import {
   listTenantCourses,
   listTenantMembers,
   previewGeneratedSessions,
-  searchUsers,
   unenrollUser,
   updateCourseGroup,
 } from '../../services/api';
@@ -30,6 +30,7 @@ import { canCoordinateTenantLearning, canEnrollTenantStudents, isTenantAdmin } f
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 
 type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
+type DeliveryMode = 'group' | 'individual';
 type ScheduleDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 type ScheduleBlockForm = { day: ScheduleDay; startTime: string; endTime: string };
 
@@ -42,6 +43,7 @@ const emptyScheduleBlock = (): ScheduleBlockForm => ({
 const emptyGroupForm = {
   name: '',
   code: '',
+  deliveryMode: 'group' as DeliveryMode,
   status: 'active' as GroupStatus,
   startDate: '',
   endDate: '',
@@ -53,6 +55,7 @@ const emptyGroupForm = {
   scheduleNote: '',
   scheduleBlocks: [emptyScheduleBlock()],
   instructorId: '',
+  createFirstSession: false,
 };
 
 const emptyStudentInviteForm = {
@@ -78,6 +81,7 @@ function groupToForm(group?: CourseGroup | null) {
   return {
     name: group.name ?? '',
     code: group.code ?? '',
+    deliveryMode: group.deliveryMode ?? 'group',
     status: ['planned', 'open', 'active', 'completed', 'cancelled'].includes(String(group.status))
       ? group.status as GroupStatus
       : 'active',
@@ -91,6 +95,7 @@ function groupToForm(group?: CourseGroup | null) {
     scheduleNote: group.scheduleNote ?? '',
     scheduleBlocks,
     instructorId: group.instructorId ? String(group.instructorId) : '',
+    createFirstSession: false,
   };
 }
 
@@ -120,6 +125,7 @@ export function GroupsPage() {
   const [studentQuery, setStudentQuery] = useState('');
   const [studentResults, setStudentResults] = useState<UserSummary[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<number | undefined>();
+  const [studentSearchAttempted, setStudentSearchAttempted] = useState(false);
   const [studentInviteForm, setStudentInviteForm] = useState(emptyStudentInviteForm);
   const [groupForm, setGroupForm] = useState(emptyGroupForm);
   const [generationRange, setGenerationRange] = useState({ fromDate: '', toDate: '' });
@@ -137,8 +143,23 @@ export function GroupsPage() {
 
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
+  const selectedIndividualStudent = selectedGroup?.deliveryMode === 'individual' ? students[0] : undefined;
+  const selectedIndividualStudentName = selectedIndividualStudent
+    ? selectedIndividualStudent.fullName || selectedIndividualStudent.email || t('courses.studentFallback', { id: selectedIndividualStudent.userId })
+    : '';
   const instructorOptions = useMemo(
     () => members.filter((member) => String(member.role).toLowerCase() === 'instructor'),
+    [members],
+  );
+  const tenantStudentOptions = useMemo(
+    () => members
+      .filter((member) => String(member.role).toLowerCase() === 'student')
+      .map((member) => ({
+        id: member.userId,
+        email: member.email ?? '',
+        fullName: member.fullName,
+        role: member.role,
+      })),
     [members],
   );
   const filteredCourses = useMemo(() => {
@@ -156,6 +177,9 @@ export function GroupsPage() {
   const statusLabel = (value: string | undefined | null) => {
     return enumLabel(value || 'planned', commonStatusLabelKeys, t);
   };
+  const deliveryModeLabel = (value?: DeliveryMode | string | null) => (
+    value === 'individual' ? t('groups.deliveryIndividual') : t('groups.deliveryGroup')
+  );
   const selectedCourseBlocker = (() => {
     if (!selectedCourse) return t('courses.blockerChooseCourse');
     if (!['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''))) return t('courses.blockerDeliveryType');
@@ -180,12 +204,15 @@ export function GroupsPage() {
     setLoading(true);
     Promise.all([
       listTenantCourses(activeTenantId),
-      canAssignInstructor ? listTenantMembers(activeTenantId) : Promise.resolve([]),
+      canAssignInstructor || canManageEnrollment
+        ? listTenantMembers(activeTenantId).catch(() => [] as CompanyMember[])
+        : Promise.resolve([] as CompanyMember[]),
     ])
       .then(([nextCourses, nextMembers]) => {
         if (cancelled) return;
+        const eligibleCourses = nextCourses.filter((course) => isCourseWorkflowReady(course));
         setAllCourses(nextCourses);
-        setCourses(nextCourses);
+        setCourses(eligibleCourses);
         setMembers(nextMembers);
       })
       .catch(() => {
@@ -197,7 +224,7 @@ export function GroupsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, canAssignInstructor, t]);
+  }, [activeTenantId, canAssignInstructor, canManageEnrollment, t]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -298,6 +325,7 @@ export function GroupsPage() {
   const toPayload = () => ({
     name: groupForm.name.trim(),
     code: groupForm.code.trim() || undefined,
+    deliveryMode: groupForm.deliveryMode,
     status: groupForm.status,
     startDate: groupForm.startDate || undefined,
     endDate: groupForm.endDate || undefined,
@@ -322,16 +350,43 @@ export function GroupsPage() {
     if (!canCoordinateGroups) return;
     if (!courseId) return toast.error(t('groups.selectCourseFirst'));
     if (!groupForm.name.trim()) return toast.error(t('groups.groupNameRequired'));
+    if (groupForm.deliveryMode === 'individual' && !canManageEnrollment) {
+      return toast.error(t('groups.individualEnrollmentNotAllowed'));
+    }
+    if (groupForm.deliveryMode === 'individual' && !selectedStudentId) {
+      return toast.error(t('groups.selectStudentForIndividual'));
+    }
+    const payload = toPayload();
+    if (groupForm.deliveryMode === 'individual' && groupForm.createFirstSession && (!payload.startDate || !payload.scheduleBlocks.length)) {
+      return toast.error(t('groups.createFirstSessionSetupRequired'));
+    }
     setSavingGroup(true);
     try {
-      const payload = toPayload();
-      const saved = await createCourseGroup({
-        ...payload,
-        code: payload.code || `${courseId}-${Date.now().toString(36)}`.toUpperCase(),
-        courseId,
-      });
+      const saved = groupForm.deliveryMode === 'individual'
+        ? (await createIndividualCourseGroup({
+          courseId,
+          studentId: selectedStudentId as number,
+          name: payload.name,
+          startDate: payload.startDate,
+          endDate: payload.endDate,
+          timezone: payload.timezone,
+          location: payload.location,
+          meetingProvider: payload.meetingProvider,
+          meetingUrl: payload.meetingUrl,
+          scheduleBlocks: payload.scheduleBlocks,
+          instructorId: payload.instructorId,
+          createFirstSession: groupForm.createFirstSession,
+        })).group
+        : await createCourseGroup({
+          ...payload,
+          code: payload.code || `${courseId}-${Date.now().toString(36)}`.toUpperCase(),
+          courseId,
+        });
       await reloadGroups(courseId, saved.id);
       setIsCreateOpen(false);
+      setStudentQuery('');
+      setStudentResults([]);
+      setSelectedStudentId(undefined);
       toast.success(t('groups.groupCreated'));
     } catch {
       toast.error(t('groups.groupCreateFailed'));
@@ -358,18 +413,46 @@ export function GroupsPage() {
     }
   };
 
-  const searchStudents = async () => {
-    setEnrolling(true);
-    try {
-      const results = await searchUsers({ search: studentQuery, role: 'student', limit: 12 });
-      setStudentResults(results);
-      setSelectedStudentId(results[0]?.id);
-    } catch {
-      toast.error(t('groups.studentSearchFailed'));
-    } finally {
-      setEnrolling(false);
-    }
+  const searchStudents = useCallback(async () => {
+    setStudentSearchAttempted(true);
+    const normalized = studentQuery.trim().toLowerCase();
+    const results = tenantStudentOptions
+      .filter((student) => !normalized
+        || student.fullName?.toLowerCase().includes(normalized)
+        || student.email.toLowerCase().includes(normalized))
+      .slice(0, 12);
+    setStudentResults(results);
+    setSelectedStudentId(results[0]?.id);
+  }, [studentQuery, tenantStudentOptions]);
+
+  const handleStudentSearchChange = (value: string) => {
+    setStudentQuery(value);
+    setStudentResults([]);
+    setSelectedStudentId(undefined);
+    setStudentSearchAttempted(false);
   };
+
+  const handleStudentSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    void searchStudents();
+  };
+
+  useEffect(() => {
+    const canSearchInCreateModal = isCreateOpen && groupForm.deliveryMode === 'individual';
+    const canSearchInRoster = selectedGroup && enrollmentMode === 'existing';
+    if (!canSearchInCreateModal && !canSearchInRoster) return;
+    if (!studentQuery.trim()) {
+      setStudentResults([]);
+      setSelectedStudentId(undefined);
+      setStudentSearchAttempted(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void searchStudents();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [enrollmentMode, groupForm.deliveryMode, isCreateOpen, searchStudents, selectedGroup, studentQuery]);
 
   const submitEnrollment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -464,17 +547,58 @@ export function GroupsPage() {
     }
   };
 
-  const renderGroupForm = () => (
+  const renderGroupForm = (mode: 'create' | 'edit' = 'edit') => (
     <>
       <section className="form-section">
         <h3>{t('groups.groupBasics')}</h3>
-        <div className="two-col">
+        {mode === 'create' ? (
+          <>
+            <div className="segmented-control delivery-mode-tabs" role="tablist" aria-label={t('groups.deliveryMode')}>
+              <button type="button" className={groupForm.deliveryMode === 'group' ? 'active' : ''} onClick={() => setGroupForm((current) => ({ ...current, deliveryMode: 'group', seatLimit: current.seatLimit === '1' ? '' : current.seatLimit }))}>
+                {t('groups.deliveryGroup')}
+              </button>
+              {canManageEnrollment ? (
+                <button type="button" className={groupForm.deliveryMode === 'individual' ? 'active' : ''} onClick={() => setGroupForm((current) => ({ ...current, deliveryMode: 'individual', seatLimit: '1' }))}>
+                  {t('groups.deliveryIndividual')}
+                </button>
+              ) : null}
+            </div>
+            {groupForm.deliveryMode === 'individual' ? (
+              <>
+                <div className="student-search-row compact">
+                  <label>{t('groups.individualStudent')}<input value={studentQuery} onChange={(event) => handleStudentSearchChange(event.target.value)} onKeyDown={handleStudentSearchKeyDown} placeholder={t('groups.nameOrEmail')} /></label>
+                  <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>{enrolling ? t('groups.searchingStudents') : t('groups.search')}</button>
+                  <select value={selectedStudentId ?? ''} onChange={(event) => setSelectedStudentId(Number(event.target.value) || undefined)} disabled={!studentResults.length}>
+                    <option value="">{t('groups.selectStudent')}</option>
+                    {studentResults.map((student) => <option key={student.id} value={student.id}>{student.fullName || student.email} ({student.email})</option>)}
+                  </select>
+                  {studentSearchAttempted && !enrolling && !studentResults.length ? <span className="field-note">{t('groups.noMatchingStudents')}</span> : null}
+                </div>
+                <label className="inline-check">
+                  <input
+                    type="checkbox"
+                    checked={groupForm.createFirstSession}
+                    onChange={(event) => setGroupForm((current) => ({ ...current, createFirstSession: event.target.checked }))}
+                  /> {t('groups.createFirstSession')}
+                </label>
+                {groupForm.createFirstSession ? <p className="panel-note">{t('groups.createFirstSessionHint')}</p> : null}
+              </>
+            ) : null}
+          </>
+        ) : (
+          <span className={`status-badge delivery-${groupForm.deliveryMode}`}>{deliveryModeLabel(groupForm.deliveryMode)}</span>
+        )}
+        <div className={groupForm.deliveryMode === 'individual' ? '' : 'two-col'}>
           <label>{t('groups.name')}<input value={groupForm.name} onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value }))} /></label>
-          <label>{t('groups.code')}<input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder={t('groups.codePlaceholder')} /></label>
+          {groupForm.deliveryMode !== 'individual' ? (
+            <label>{t('groups.code')}<input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder={t('groups.codePlaceholder')} /></label>
+          ) : null}
         </div>
-        <label>{t('groups.status')}<select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as GroupStatus }))}>
-          <option value="planned">{t('courses.statusPlanned')}</option><option value="open">{t('groups.statusOpen')}</option><option value="active">{t('groups.statusActive')}</option><option value="completed">{t('groups.statusCompleted')}</option><option value="cancelled">{t('groups.statusCancelled')}</option>
-        </select></label>
+        {groupForm.deliveryMode !== 'individual' ? (
+          <label>{t('groups.status')}<select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as GroupStatus }))}>
+            <option value="planned">{t('courses.statusPlanned')}</option><option value="open">{t('groups.statusOpen')}</option><option value="active">{t('groups.statusActive')}</option><option value="completed">{t('groups.statusCompleted')}</option><option value="cancelled">{t('groups.statusCancelled')}</option>
+          </select></label>
+        ) : null}
       </section>
       <section className="form-section">
         <h3>{t('groups.datesCapacity')}</h3>
@@ -483,7 +607,7 @@ export function GroupsPage() {
           <label>{t('groups.endDate')}<input type="date" value={groupForm.endDate} onChange={(event) => setGroupForm((current) => ({ ...current, endDate: event.target.value }))} /></label>
         </div>
         <div className="two-col">
-          <label>{t('groups.seatLimit')}<input type="number" min="1" value={groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder={t('groups.noLimit')} /></label>
+          <label>{t('groups.seatLimit')}<input type="number" min="1" value={groupForm.deliveryMode === 'individual' ? '1' : groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder={t('groups.noLimit')} disabled={groupForm.deliveryMode === 'individual'} /></label>
           <label>{t('groups.timezone')}<input value={groupForm.timezone} onChange={(event) => setGroupForm((current) => ({ ...current, timezone: event.target.value }))} /></label>
         </div>
       </section>
@@ -533,7 +657,9 @@ export function GroupsPage() {
             scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
           }))}>{t('groups.addScheduleBlock')}</button>
         </div>
-        <label>{t('groups.scheduleNote')}<textarea value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} /></label>
+        {groupForm.deliveryMode !== 'individual' ? (
+          <label>{t('groups.scheduleNote')}<textarea value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} /></label>
+        ) : null}
       </section>
     </>
   );
@@ -546,7 +672,7 @@ export function GroupsPage() {
           <div className="section-heading-row">
             <div><h2>{t('navigation.courses')}</h2><span>{t('groups.courseSelectionHint')}</span></div>
             {canCoordinateGroups ? (
-              <button type="button" className="primary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> {t('groups.createGroup')}</button>
+              <button type="button" className="primary-button" onClick={() => { setGroupForm(emptyGroupForm); setStudentQuery(''); setStudentResults([]); setSelectedStudentId(undefined); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> {t('groups.createGroup')}</button>
             ) : null}
           </div>
           {ineligibleCourseCount > 0 ? (
@@ -574,7 +700,7 @@ export function GroupsPage() {
             {groups.map((group) => (
               <button key={group.id} type="button" className={`stack-list-item ${group.id === groupId ? 'active' : ''}`} onClick={() => setGroupId(group.id)}>
                 <div><strong>{group.name}</strong><span>{group.code ?? '-'} · {statusLabel(group.status)}</span></div>
-                <span className={`status-badge ${group.status ?? 'planned'}`}>{statusLabel(group.status)}</span>
+                <span className={`status-badge delivery-${group.deliveryMode ?? 'group'}`}>{deliveryModeLabel(group.deliveryMode)}</span>
               </button>
             ))}
             {!groups.length ? (
@@ -582,7 +708,7 @@ export function GroupsPage() {
                 title={t('groups.emptyGroupsTitle')}
                 detail={selectedCourseReady ? t('groups.emptyGroupsDetail') : selectedCourseBlocker}
                 action={selectedCourseReady && canCoordinateGroups ? (
-                  <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm); setIsCreateOpen(true); }}>
+                  <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm); setStudentQuery(''); setStudentResults([]); setSelectedStudentId(undefined); setIsCreateOpen(true); }}>
                     {t('groups.createGroup')}
                   </button>
                 ) : null}
@@ -595,9 +721,10 @@ export function GroupsPage() {
       {selectedGroup ? (
         <section className="workflow-section workflow-context-panel">
           <div className="section-heading-row">
-            <div><h2>{selectedGroup.name}</h2><span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span></div>
+            <div><h2>{selectedGroup.name}</h2><span>{selectedIndividualStudentName || selectedCourse?.title || t('courses.selectedCourse')}</span></div>
             <div className="page-actions">
               <span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{statusLabel(selectedGroup.status)}</span>
+              <span className={`status-badge delivery-${selectedGroup.deliveryMode ?? 'group'}`}>{deliveryModeLabel(selectedGroup.deliveryMode)}</span>
               {canCoordinateGroups ? (
                 <button type="button" className="secondary-button" onClick={() => { setGroupForm(groupToForm(selectedGroup)); setIsEditOpen(true); }}><FiEdit2 /> {t('groups.editGroup')}</button>
               ) : null}
@@ -618,6 +745,10 @@ export function GroupsPage() {
                   ? t('groups.scheduleBlockCount', { count: selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0 })
                   : t('groups.needsSetup')}
               </strong>
+            </section>
+            <section>
+              <span>{t('groups.deliveryMode')}</span>
+              <strong>{deliveryModeLabel(selectedGroup.deliveryMode)}</strong>
             </section>
             <section>
               <span>{t('groups.location')}</span>
@@ -674,12 +805,13 @@ export function GroupsPage() {
               </div>
               {enrollmentMode === 'existing' ? (
                 <form className="student-search-row" onSubmit={submitEnrollment}>
-                  <label>{t('groups.searchStudent')}<input value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} placeholder={t('groups.nameOrEmail')} /></label>
-                  <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>{t('groups.search')}</button>
+                  <label>{t('groups.searchStudent')}<input value={studentQuery} onChange={(event) => handleStudentSearchChange(event.target.value)} onKeyDown={handleStudentSearchKeyDown} placeholder={t('groups.nameOrEmail')} /></label>
+                  <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>{enrolling ? t('groups.searchingStudents') : t('groups.search')}</button>
                   <select value={selectedStudentId ?? ''} onChange={(event) => setSelectedStudentId(Number(event.target.value) || undefined)} disabled={!studentResults.length}>
                     <option value="">{t('groups.selectStudent')}</option>
                     {studentResults.map((student) => <option key={student.id} value={student.id}>{student.fullName || student.email} ({student.email})</option>)}
                   </select>
+                  {studentSearchAttempted && !enrolling && !studentResults.length ? <span className="field-note">{t('groups.noMatchingStudents')}</span> : null}
                   <button type="submit" className="primary-button" disabled={!selectedStudentId || enrolling}>{t('groups.enroll')}</button>
                 </form>
               ) : (
@@ -721,7 +853,7 @@ export function GroupsPage() {
               <div className="stack-list">
                 {sessions.slice(0, 8).map((session) => (
                   <article key={session.id} className="stack-list-item">
-                    <div><strong>{session.title}</strong><span>{formatDate(session.startsAt)}</span></div>
+                    <div><strong>{session.title}</strong><span>{selectedIndividualStudentName ? `${selectedIndividualStudentName} · ${formatDate(session.startsAt)}` : formatDate(session.startsAt)}</span></div>
                     <span className={`status-badge ${session.status ?? 'scheduled'}`}>{statusLabel(session.status)}</span>
                   </article>
                 ))}
@@ -744,7 +876,7 @@ export function GroupsPage() {
             <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
             <h2 id="edit-group-title">{t('groups.editGroup')}</h2>
           </div>
-          {renderGroupForm()}
+          {renderGroupForm('edit')}
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={() => setIsEditOpen(false)} disabled={savingGroup}>{t('courses.cancel')}</button>
             <button type="submit" className="primary-button" disabled={savingGroup}>{savingGroup ? t('courses.saving') : t('groups.saveGroup')}</button>
@@ -758,7 +890,7 @@ export function GroupsPage() {
             <span>{selectedCourse?.title ?? t('groups.courseRequired')}</span>
             <h2 id="create-group-title">{t('groups.createGroup')}</h2>
           </div>
-          {renderGroupForm()}
+          {renderGroupForm('create')}
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={() => setIsCreateOpen(false)} disabled={savingGroup}>{t('courses.cancel')}</button>
             <button type="submit" className="primary-button" disabled={savingGroup}>{savingGroup ? t('courses.saving') : t('groups.createGroup')}</button>

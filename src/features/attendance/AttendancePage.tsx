@@ -13,6 +13,7 @@ import {
   filterAttendanceStudents,
   getAttendanceCounts,
   getAttendanceSaveBlocker,
+  getAttendanceSessionDetail,
   getChangedAttendanceRows,
   isAttendanceSessionReady,
   type EditableAttendance,
@@ -115,6 +116,9 @@ export function AttendancePage() {
   const sessionStatusLabel = (status?: string) => {
     return enumLabel(status ?? 'scheduled', commonStatusLabelKeys, t);
   };
+  const deliveryModeLabel = (value?: CourseGroup['deliveryMode'] | CourseSession['groupDeliveryMode'] | string | null) => (
+    value === 'individual' ? t('groups.deliveryIndividual') : t('groups.deliveryGroup')
+  );
   const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const workflowSteps = useMemo(() => [
     {
@@ -443,6 +447,7 @@ export function AttendancePage() {
                   <strong>{session.title}</strong>
                   <span>
                     {formatDate(session.startsAt)} · <span className={`status-badge ${session.status || 'scheduled'}`}>{sessionStatusLabel(session.status)}</span>
+                    {' '}<span className={`status-badge delivery-${session.groupDeliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode)}</span>
                   </span>
                 </div>
                 <button type="button" className="link-button" onClick={() => openAssignedSession(session)}>
@@ -493,7 +498,13 @@ export function AttendancePage() {
           <div className="section-heading-row">
             <div>
               <h2>{selectedSession?.title ?? t('attendance.sessionAttendance')}</h2>
-              <span>{t('attendance.markedOfTotal', { marked: attendanceCounts.marked, total: attendanceCounts.total })}</span>
+              <span>{getAttendanceSessionDetail({
+                groupDeliveryMode: selectedSession?.groupDeliveryMode ?? selectedGroup?.deliveryMode,
+                students,
+                marked: attendanceCounts.marked,
+                total: attendanceCounts.total,
+                studentFallback,
+              })}</span>
             </div>
             <div className="attendance-save-state">
               <span className={`status-badge ${hasAttendanceChanges ? 'pending_approval' : 'published'}`}>
@@ -513,6 +524,10 @@ export function AttendancePage() {
             <section>
               <span>{t('attendance.changed')}</span>
               <strong>{changedAttendanceRows.length}</strong>
+            </section>
+            <section>
+              <span>{t('groups.deliveryMode')}</span>
+              <strong>{deliveryModeLabel(selectedSession?.groupDeliveryMode ?? selectedGroup?.deliveryMode)}</strong>
             </section>
             <section>
               <span>{t('courses.sessions')}</span>

@@ -250,7 +250,7 @@ function StudentRoute({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [activeTenant?.id, user]);
+  }, [activeTenant, user]);
 
   if (!isTenantStudent(user, activeTenant) || accessState === 'denied') {
     return <AccessDeniedState detailKey="errors.studentOnlyDetail" to="/" actionKey="actions.goToOverview" />;

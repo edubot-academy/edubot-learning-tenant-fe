@@ -1,7 +1,7 @@
 import type { AxiosAdapter } from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearCurrentLocale } from '../i18n/locale';
-import { api, tenantStore, tokenStore } from './api';
+import { api, createIndividualCourseGroup, searchUsers, tenantStore, tokenStore } from './api';
 
 describe('api browser stores', () => {
   const defaultAdapter = api.defaults.adapter;
@@ -98,6 +98,25 @@ describe('api browser stores', () => {
     expect(response.config.headers?.['X-CSRF-Token']).toBeUndefined();
   });
 
+  it('searches users with both supported query names and accepts users response shape', async () => {
+    let seenParams: unknown;
+    api.defaults.adapter = async (config) => {
+      seenParams = config.params;
+      return {
+        data: { users: [{ id: 12, email: 'aida@example.test', fullName: 'Aida Student' }] },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    const results = await searchUsers({ search: ' Aida ', role: 'student', limit: 12 });
+
+    expect(seenParams).toMatchObject({ search: 'Aida', q: 'Aida', role: 'student', limit: 12 });
+    expect(results).toEqual([{ id: 12, email: 'aida@example.test', fullName: 'Aida Student' }]);
+  });
+
   it('refreshes profile and retries once after a CSRF rejection', async () => {
     document.cookie = 'edubot_csrf_token=csrf-123; path=/';
     const seenRequests: string[] = [];
@@ -170,5 +189,39 @@ describe('api browser stores', () => {
       response: { status: 403 },
     });
     expect(seenRequests).toEqual(['/courses', '/auth/profile', '/courses']);
+  });
+
+  it('posts only supported fields for individual course group creation', async () => {
+    let requestBody: Record<string, unknown> | null = null;
+    api.defaults.adapter = async (config) => {
+      requestBody = JSON.parse(String(config.data || '{}')) as Record<string, unknown>;
+      return {
+        data: { group: { id: 301, deliveryMode: 'individual' }, enrollment: { id: 701 }, firstSession: null },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    await createIndividualCourseGroup({
+      courseId: 101,
+      studentId: 201,
+      name: 'Aida individual',
+      startDate: '2026-05-18',
+      scheduleBlocks: [{ day: 'mon', startTime: '10:00', endTime: '11:00' }],
+      createFirstSession: true,
+    });
+
+    expect(requestBody).toMatchObject({
+      courseId: 101,
+      studentId: 201,
+      name: 'Aida individual',
+      startDate: '2026-05-18',
+      createFirstSession: true,
+    });
+    expect(requestBody).not.toHaveProperty('code');
+    expect(requestBody).not.toHaveProperty('status');
+    expect(requestBody).not.toHaveProperty('scheduleNote');
   });
 });

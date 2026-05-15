@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { FiBookOpen, FiCalendar, FiCheckSquare, FiEdit2, FiFileText, FiPlus, FiUsers } from 'react-icons/fi';
+import { FiBookOpen, FiCalendar, FiCheckSquare, FiEdit2, FiFileText, FiPlus, FiTrash2, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
-import { createTenantCourse, getCourseCertificateSettings, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
+import { createTenantCourse, deleteTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
@@ -20,6 +20,24 @@ import { courseRosterFilterParams, isDefaultCourseRosterFilter, type CourseProgr
 import { courseHealthFilters, courseMatchesHealthFilter, getCourseHealthCounts, type CourseHealthFilter, type CourseHealthSummary } from './courseHealth';
 
 type TenantCourseType = 'offline' | 'online_live' | 'video';
+
+const courseIdValue = (course: Pick<Course, 'id'>) => Number(course.id);
+const summaryHealthFilters = new Set<CourseHealthFilter>(['no_groups', 'no_sessions', 'certificate_missing']);
+
+function uniqueCourses(items: Course[]) {
+  const seen = new Set<number>();
+  return items.filter((course) => {
+    const id = courseIdValue(course);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function upsertCourse(items: Course[], nextCourse: Course) {
+  const nextCourseId = courseIdValue(nextCourse);
+  return [nextCourse, ...items.filter((course) => courseIdValue(course) !== nextCourseId)];
+}
 
 export function CoursesPage() {
   const { t } = useTranslation();
@@ -37,7 +55,6 @@ export function CoursesPage() {
   const [homework, setHomework] = useState<SessionHomework[]>([]);
   const [members, setMembers] = useState<CompanyMember[]>([]);
   const [courseHealth, setCourseHealth] = useState<Record<number, CourseHealthSummary>>({});
-  const [courseHealthLoading, setCourseHealthLoading] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
   const [query, setQuery] = useState('');
@@ -58,8 +75,6 @@ export function CoursesPage() {
     start: startCourseDetailLoad,
     succeed: succeedCourseDetailLoad,
     fail: failCourseDetailLoad,
-    retry: retryCourseDetailLoad,
-    reloadToken: courseDetailReloadToken,
   } = courseDetailLoad;
   const {
     start: startGroupDetailLoad,
@@ -74,13 +89,21 @@ export function CoursesPage() {
   const [savingCourse, setSavingCourse] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [courseRejectPending, setCourseRejectPending] = useState<Course | null>(null);
+  const [courseDeletePending, setCourseDeletePending] = useState<Course | null>(null);
+  const [deletingCourse, setDeletingCourse] = useState(false);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const [loadedCourseDetailId, setLoadedCourseDetailId] = useState<number | undefined>();
   const [createForm, setCreateForm] = useState({
     title: '',
     description: '',
     courseType: 'offline' as TenantCourseType,
     instructorId: undefined as number | undefined,
   });
+  const knownEmptyCourseIdsRef = useRef(new Set<number>());
+  const pendingCreatedCourseIdRef = useRef<number | null>(null);
+  const creatingCourseRef = useRef(false);
+  const selectedCourseIdRef = useRef<number | undefined>(undefined);
+  const loadingCourseDetailIdRef = useRef<number | null>(null);
 
   const activeRole = getEffectiveTenantRole(user, activeTenant);
   const canManageCourses = canManageTenantCourses(user, activeTenant);
@@ -110,6 +133,9 @@ export function CoursesPage() {
     }, t);
   };
   const publishLabel = (published?: boolean | null) => t(published ? 'courses.published' : 'courses.draft');
+  const deliveryModeLabel = (value?: CourseGroup['deliveryMode'] | CourseSession['groupDeliveryMode'] | string | null) => (
+    value === 'individual' ? t('groups.deliveryIndividual') : t('groups.deliveryGroup')
+  );
   const workflowBlockerMessage = (course: Course | undefined, requireDelivery = true) => {
     if (!course) return t('courses.blockerChooseCourse');
     if (requireDelivery && !['offline', 'online_live'].includes(String(course.courseType ?? ''))) {
@@ -139,6 +165,8 @@ export function CoursesPage() {
   );
 
   const healthCounts = useMemo(() => getCourseHealthCounts(courses, courseHealth), [courseHealth, courses]);
+  const courseHealthComplete = courses.length > 0 && courses.every((course) => Boolean(courseHealth[courseIdValue(course)]));
+  const healthFilterNeedsSummary = summaryHealthFilters.has(healthFilter);
   const healthFilterLabel = (value: CourseHealthFilter) => {
     const labels: Record<CourseHealthFilter, string> = {
       all: t('courses.healthAll'),
@@ -155,31 +183,45 @@ export function CoursesPage() {
 
   const filteredCourses = useMemo(() => {
     const normalized = query.trim().toLowerCase();
+    const effectiveHealthFilter = healthFilterNeedsSummary && !courseHealthComplete ? 'all' : healthFilter;
     return courses.filter((course) => (
-      courseMatchesHealthFilter(course, healthFilter, courseHealth[course.id])
+      courseMatchesHealthFilter(course, effectiveHealthFilter, courseHealth[courseIdValue(course)])
       && (!normalized
         || course.title.toLowerCase().includes(normalized)
         || (course.courseType ?? '').toLowerCase().includes(normalized)
         || (course.status ?? '').toLowerCase().includes(normalized))
     ));
-  }, [courseHealth, courses, healthFilter, query]);
+  }, [courseHealth, courseHealthComplete, courses, healthFilter, healthFilterNeedsSummary, query]);
 
   useEffect(() => {
+    if (healthFilterNeedsSummary && !courseHealthComplete) {
+      setHealthFilter('all');
+      return;
+    }
     if (!query.trim() && healthFilter === 'all') return;
     if (!filteredCourses.length) return;
-    if (selectedCourseId && filteredCourses.some((course) => course.id === selectedCourseId)) return;
-    setSelectedCourseId(filteredCourses[0].id);
-  }, [filteredCourses, healthFilter, query, selectedCourseId]);
+    if (pendingCreatedCourseIdRef.current) return;
+    if (selectedCourseId && filteredCourses.some((course) => courseIdValue(course) === selectedCourseId)) return;
+    setSelectedCourseId(courseIdValue(filteredCourses[0]));
+  }, [courseHealthComplete, filteredCourses, healthFilter, healthFilterNeedsSummary, query, selectedCourseId]);
 
   const selectedCourse = useMemo(
-    () => courses.find((course) => course.id === selectedCourseId),
+    () => courses.find((course) => courseIdValue(course) === selectedCourseId),
     [courses, selectedCourseId],
   );
   const canEditCourse = Boolean(selectedCourse && canManageCourses);
+  const canDeleteCourse = Boolean(
+    selectedCourse &&
+    ['owner', 'company_admin'].includes(String(activeRole)) &&
+    !selectedCourse.isPublished,
+  );
   const selectedCourseOperational = isCourseWorkflowReady(selectedCourse, false);
   const selectedCourseDeliveryReady = isCourseWorkflowReady(selectedCourse);
   const courseBlockerMessage = workflowBlockerMessage(selectedCourse, false);
   const courseDeliveryBlockerMessage = workflowBlockerMessage(selectedCourse);
+  const selectedCourseHealth = selectedCourse ? courseHealth[courseIdValue(selectedCourse)] : undefined;
+  const selectedGroupCount = loadedCourseDetailId === selectedCourseId ? groups.length : selectedCourseHealth?.groupCount ?? groups.length;
+  const selectedSessionCount = loadedCourseDetailId === selectedCourseId ? sessions.length : selectedCourseHealth?.sessionCount ?? sessions.length;
   const workflowChecklist = useMemo(() => {
     if (!selectedCourse) return [];
     const deliveryTypeReady = ['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''));
@@ -204,16 +246,16 @@ export function CoursesPage() {
       },
       {
         label: t('courses.workflowGroups'),
-        detail: groups.length ? t('courses.workflowCountReady', { count: groups.length }) : t('courses.workflowCreateGroup'),
-        complete: groups.length > 0,
+        detail: selectedGroupCount ? t('courses.workflowCountReady', { count: selectedGroupCount }) : t('courses.workflowCreateGroup'),
+        complete: selectedGroupCount > 0,
       },
       {
         label: t('courses.workflowSessions'),
-        detail: sessions.length ? t('courses.workflowCountReady', { count: sessions.length }) : t('courses.workflowScheduleSession'),
-        complete: sessions.length > 0,
+        detail: selectedSessionCount ? t('courses.workflowCountReady', { count: selectedSessionCount }) : t('courses.workflowScheduleSession'),
+        complete: selectedSessionCount > 0,
       },
     ];
-  }, [groups.length, selectedCourse, sessions.length, t]);
+  }, [selectedCourse, selectedGroupCount, selectedSessionCount, t]);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId),
@@ -223,21 +265,67 @@ export function CoursesPage() {
     courseId: selectedCourse?.id,
     groupId: selectedGroup?.id,
   };
+  const selectCourse = (courseId: number | undefined) => {
+    selectedCourseIdRef.current = courseId;
+    setSelectedCourseId(courseId);
+    setSelectedGroupId(undefined);
+  };
+
+  const loadSelectedCourseDetails = useCallback(async () => {
+    const courseId = selectedCourseIdRef.current;
+    if (!courseId) return;
+    if (loadedCourseDetailId === courseId) return;
+    if (loadingCourseDetailIdRef.current === courseId) return;
+    if (creatingCourseRef.current || pendingCreatedCourseIdRef.current === courseId) {
+      setHomework([]);
+      setLoadedCourseDetailId(courseId);
+      succeedCourseDetailLoad();
+      return;
+    }
+    loadingCourseDetailIdRef.current = courseId;
+    startCourseDetailLoad();
+    try {
+      const [nextGroups, nextHomework] = await Promise.all([
+        listCourseGroups(courseId),
+        listHomework(courseId),
+      ]);
+      if (selectedCourseIdRef.current !== courseId) return;
+      setGroups(nextGroups);
+      setHomework(nextHomework);
+      setLoadedCourseDetailId(courseId);
+      succeedCourseDetailLoad();
+    } catch {
+      if (selectedCourseIdRef.current === courseId) {
+        failCourseDetailLoad();
+        toast.error(t('courses.detailLoadFailed'));
+      }
+    } finally {
+      if (loadingCourseDetailIdRef.current === courseId) {
+        loadingCourseDetailIdRef.current = null;
+      }
+    }
+  }, [failCourseDetailLoad, loadedCourseDetailId, startCourseDetailLoad, succeedCourseDetailLoad, t]);
 
   const searchParamsString = searchParams.toString();
 
   useEffect(() => {
     let cancelled = false;
-    setCourses([]);
-    setGroups([]);
-    setSessions([]);
-    setStudents([]);
-    setHomework([]);
-    setMembers([]);
-    setCourseHealth({});
-    setSelectedCourseId(undefined);
-    setSelectedGroupId(undefined);
+    setCourses((current) => current.length ? [] : current);
+    setGroups((current) => current.length ? [] : current);
+    setSessions((current) => current.length ? [] : current);
+    setStudents((current) => current.length ? [] : current);
+    setUnfilteredStudents((current) => current.length ? [] : current);
+    setHomework((current) => current.length ? [] : current);
+    setMembers((current) => current.length ? [] : current);
+    setCourseHealth((current) => Object.keys(current).length ? {} : current);
+    setLoadedCourseDetailId((current) => current === undefined ? current : undefined);
+    setSelectedCourseId((current) => current === undefined ? current : undefined);
+    setSelectedGroupId((current) => current === undefined ? current : undefined);
     if (!activeTenantId) {
+      succeedCourseLoad();
+      return undefined;
+    }
+    if (creatingCourseRef.current) {
       succeedCourseLoad();
       return undefined;
     }
@@ -248,7 +336,7 @@ export function CoursesPage() {
     ])
       .then(([items, nextMembers]) => {
         if (cancelled) return;
-        setCourses(items);
+        setCourses(uniqueCourses(items));
         setMembers(nextMembers);
         succeedCourseLoad();
       })
@@ -266,103 +354,68 @@ export function CoursesPage() {
   useEffect(() => {
     if (!canManageCourses || !courses.length) {
       setCourseHealth({});
-      setCourseHealthLoading(false);
       return;
     }
     const backendHealthRows = courses
       .filter((course) => course.health || course.groupCount !== undefined || course.sessionCount !== undefined || course.certificateConfigured !== undefined)
       .map((course) => [
-        course.id,
+        courseIdValue(course),
         {
           groupCount: course.health?.groupCount ?? course.groupCount,
           sessionCount: course.health?.sessionCount ?? course.sessionCount,
           certificateConfigured: certificatesEnabled ? course.health?.certificateConfigured ?? course.certificateConfigured : undefined,
         } satisfies CourseHealthSummary,
       ] as const);
-    if (backendHealthRows.length === courses.length) {
-      setCourseHealth(Object.fromEntries(backendHealthRows));
-      setCourseHealthLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setCourseHealthLoading(true);
-
-    Promise.all(courses.map(async (course) => {
-      const courseGroups = await listCourseGroups(course.id).catch(() => [] as CourseGroup[]);
-      const sessionLists = await Promise.all(courseGroups.map((group) => listGroupSessions(group.id).catch(() => [] as CourseSession[])));
-      const certificateSettings = certificatesEnabled
-        ? await getCourseCertificateSettings(course.id).catch(() => null)
-        : null;
-      return {
-        courseId: course.id,
-        summary: {
-          groupCount: courseGroups.length,
-          sessionCount: sessionLists.reduce((count, list) => count + list.length, 0),
-          certificateConfigured: certificatesEnabled ? certificateSettings?.enabled === true : undefined,
-        } satisfies CourseHealthSummary,
+    const nextHealth = Object.fromEntries(backendHealthRows);
+    courses.forEach((course) => {
+      const courseId = courseIdValue(course);
+      if (!knownEmptyCourseIdsRef.current.has(courseId) || nextHealth[courseId]) return;
+      nextHealth[courseId] = {
+        groupCount: 0,
+        sessionCount: 0,
+        certificateConfigured: certificatesEnabled ? false : undefined,
       };
-    }))
-      .then((rows) => {
-        if (cancelled) return;
-        setCourseHealth(Object.fromEntries(rows.map((row) => [row.courseId, row.summary])));
-      })
-      .catch(() => {
-        if (!cancelled) toast.error(t('courses.healthLoadFailed'));
-      })
-      .finally(() => {
-        if (!cancelled) setCourseHealthLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [canManageCourses, certificatesEnabled, courses, t]);
+    });
+    setCourseHealth(nextHealth);
+  }, [canManageCourses, certificatesEnabled, courses]);
 
   useEffect(() => {
     setSelectedCourseId((current) => {
       if (!courses.length) return undefined;
-      if (requestedCourseId && courses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
-      return current && courses.some((course) => course.id === current) ? current : courses[0]?.id;
+      const pendingCreatedCourseId = pendingCreatedCourseIdRef.current;
+      if (pendingCreatedCourseId && courses.some((course) => courseIdValue(course) === pendingCreatedCourseId)) {
+        return pendingCreatedCourseId;
+      }
+      if (current && courses.some((course) => courseIdValue(course) === current)) return current;
+      if (requestedCourseId && courses.some((course) => courseIdValue(course) === requestedCourseId)) return requestedCourseId;
+      return courseIdValue(courses[0]);
     });
   }, [courses, requestedCourseId]);
 
   useEffect(() => {
-    setGroups([]);
-    setSessions([]);
-    setStudents([]);
-    setUnfilteredStudents([]);
-    setHomework([]);
-    setSelectedGroupId(undefined);
-    if (!selectedCourseId) {
-      succeedCourseDetailLoad();
-      return;
-    }
+    selectedCourseIdRef.current = selectedCourseId;
+    loadingCourseDetailIdRef.current = null;
+    setGroups((current) => current.length ? [] : current);
+    setSessions((current) => current.length ? [] : current);
+    setStudents((current) => current.length ? [] : current);
+    setUnfilteredStudents((current) => current.length ? [] : current);
+    setHomework((current) => current.length ? [] : current);
+    setSelectedGroupId((current) => current === undefined ? current : undefined);
+    setLoadedCourseDetailId((current) => current === undefined ? current : undefined);
+    succeedCourseDetailLoad();
+    succeedGroupDetailLoad();
+  }, [selectedCourseId, succeedCourseDetailLoad, succeedGroupDetailLoad]);
 
-    let cancelled = false;
-    startCourseDetailLoad();
-    Promise.all([listCourseGroups(selectedCourseId), listHomework(selectedCourseId)])
-      .then(([nextGroups, nextHomework]) => {
-        if (cancelled) return;
-        setGroups(nextGroups);
-        setHomework(nextHomework);
-        succeedCourseDetailLoad();
-      })
-      .catch(() => {
-        if (!cancelled) {
-          failCourseDetailLoad();
-          toast.error(t('courses.detailLoadFailed'));
-        }
-      })
-    return () => {
-      cancelled = true;
-    };
-  }, [courseDetailReloadToken, failCourseDetailLoad, selectedCourseId, startCourseDetailLoad, succeedCourseDetailLoad, t]);
+  useEffect(() => {
+    if (!selectedCourseId || !requestedGroupId) return;
+    void loadSelectedCourseDetails();
+  }, [loadSelectedCourseDetails, requestedGroupId, selectedCourseId]);
 
   useEffect(() => {
     setSelectedGroupId((current) => {
       if (!groups.length) return undefined;
       if (requestedGroupId && groups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
-      return current && groups.some((group) => group.id === current) ? current : groups[0]?.id;
+      return current && groups.some((group) => group.id === current) ? current : undefined;
     });
   }, [groups, requestedGroupId]);
 
@@ -370,14 +423,20 @@ export function CoursesPage() {
     const next = nextWorkflowSearchParams(searchParamsString, { courseId: selectedCourseId, groupId: selectedGroupId });
     if (next.toString() !== searchParamsString) {
       setSearchParams(next, { replace: true });
+    } else if (pendingCreatedCourseIdRef.current === selectedCourseId) {
+      pendingCreatedCourseIdRef.current = null;
     }
   }, [searchParamsString, selectedCourseId, selectedGroupId, setSearchParams]);
 
   useEffect(() => {
-    setSessions([]);
-    setStudents([]);
-    setUnfilteredStudents([]);
+    setSessions((current) => current.length ? [] : current);
+    setStudents((current) => current.length ? [] : current);
+    setUnfilteredStudents((current) => current.length ? [] : current);
     if (!selectedGroupId) {
+      succeedGroupDetailLoad();
+      return;
+    }
+    if (creatingCourseRef.current) {
       succeedGroupDetailLoad();
       return;
     }
@@ -428,11 +487,11 @@ export function CoursesPage() {
   }, [progressFilter, selectedGroupId, studentQuery, t, unfilteredStudents]);
 
   const stats = useMemo(() => [
-    { label: t('courses.groups'), value: groups.length, hint: selectedCourse?.title ?? t('courses.selectedCourse') },
+    { label: t('courses.groups'), value: selectedGroupCount, hint: selectedCourse?.title ?? t('courses.selectedCourse') },
     { label: t('courses.sessions'), value: sessions.length, hint: selectedGroup?.name ?? t('courses.selectedGroup') },
     { label: t('courses.students'), value: students.length, hint: t('courses.currentRoster') },
     { label: t('courses.homework'), value: homework.length, hint: t('courses.courseAssignments') },
-  ], [groups.length, homework.length, selectedCourse?.title, selectedGroup?.name, sessions.length, students.length, t]);
+  ], [homework.length, selectedCourse?.title, selectedGroup?.name, selectedGroupCount, sessions.length, students.length, t]);
 
   const groupProgressAverage = useMemo(() => {
     if (!students.length) return 0;
@@ -478,6 +537,7 @@ export function CoursesPage() {
   const submitCourse = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activeTenantId) return;
+    if (creatingCourseRef.current) return;
 
     const errors: Record<string, string> = {};
     if (createForm.title.trim().length < 2) errors.title = t('courses.titleRequired');
@@ -489,6 +549,7 @@ export function CoursesPage() {
     setCreateErrors(errors);
     if (Object.keys(errors).length) return;
 
+    creatingCourseRef.current = true;
     setCreatingCourse(true);
     try {
       const created = await createTenantCourse(activeTenantId, {
@@ -497,15 +558,31 @@ export function CoursesPage() {
         courseType: createForm.courseType,
         instructorId: createForm.instructorId,
       });
-      const items = await listTenantCourses(activeTenantId);
-      setCourses(items);
-      setSelectedCourseId(created.id);
+      const createdCourseId = courseIdValue(created);
+      knownEmptyCourseIdsRef.current.add(createdCourseId);
+      pendingCreatedCourseIdRef.current = createdCourseId;
+      selectedCourseIdRef.current = createdCourseId;
+      setCourses((current) => upsertCourse(current, created));
+      setCourseHealth((current) => ({
+        ...current,
+        [createdCourseId]: {
+          groupCount: 0,
+          sessionCount: 0,
+          certificateConfigured: certificatesEnabled ? false : undefined,
+        },
+      }));
+      setQuery('');
+      setHealthFilter('all');
+      setSelectedCourseId(createdCourseId);
+      setSelectedGroupId(undefined);
+      setSearchParams(nextWorkflowSearchParams(searchParamsString, { courseId: createdCourseId }), { replace: true });
       setCreateModalOpen(false);
       toast.success(t('courses.created'));
     } catch (error: unknown) {
       const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error(message || t('courses.createFailed'));
     } finally {
+      creatingCourseRef.current = false;
       setCreatingCourse(false);
     }
   };
@@ -526,13 +603,13 @@ export function CoursesPage() {
 
     setSavingCourse(true);
     try {
-      await updateTenantCourse(selectedCourse.id, {
+      await updateTenantCourse(courseIdValue(selectedCourse), {
         title: createForm.title.trim(),
         description: createForm.description.trim(),
         courseType: createForm.courseType,
         instructorId: createForm.instructorId,
       });
-      await reloadCourses(selectedCourse.id);
+      await reloadCourses(courseIdValue(selectedCourse));
       setEditModalOpen(false);
       toast.success(t('courses.updated'));
     } catch (error: unknown) {
@@ -546,9 +623,10 @@ export function CoursesPage() {
   const reloadCourses = async (preferredCourseId?: number) => {
     if (!activeTenantId) return;
     const items = await listTenantCourses(activeTenantId);
-    setCourses(items);
-    const preferred = preferredCourseId ? items.find((course) => course.id === preferredCourseId) : null;
-    setSelectedCourseId(preferred?.id ?? items[0]?.id);
+    const nextCourses = uniqueCourses(items);
+    setCourses(nextCourses);
+    const preferred = preferredCourseId ? nextCourses.find((course) => courseIdValue(course) === preferredCourseId) : null;
+    setSelectedCourseId(preferred ? courseIdValue(preferred) : nextCourses[0] ? courseIdValue(nextCourses[0]) : undefined);
   };
 
   const changeCourseStatus = async (courseId: number, status: 'pending' | 'approved' | 'rejected') => {
@@ -562,6 +640,22 @@ export function CoursesPage() {
       toast.error(message || t('courses.statusUpdateFailed'));
     } finally {
       setStatusUpdating(false);
+    }
+  };
+
+  const deleteCourse = async (course: Course) => {
+    const courseId = courseIdValue(course);
+    setDeletingCourse(true);
+    try {
+      await deleteTenantCourse(courseId);
+      setCourseDeletePending(null);
+      await reloadCourses();
+      toast.success(t('courses.deleted'));
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || t('courses.deleteFailed'));
+    } finally {
+      setDeletingCourse(false);
     }
   };
 
@@ -593,26 +687,31 @@ export function CoursesPage() {
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t('courses.searchPlaceholder')}
         />
-        <select value={selectedCourseId ?? ''} onChange={(event) => setSelectedCourseId(Number(event.target.value) || undefined)}>
+        <select value={selectedCourseId ?? ''} onChange={(event) => selectCourse(Number(event.target.value) || undefined)}>
           <option value="">{t('courses.selectCourse')}</option>
-          {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+          {courses.map((course) => {
+            const id = courseIdValue(course);
+            return <option key={id} value={id}>{course.title}</option>;
+          })}
         </select>
       </div>
       {canManageCourses && courses.length ? (
         <div className="member-role-chips course-health-filters" aria-label={t('courses.healthFilters')}>
           {courseHealthFilters.map((filter) => (
-            <button
-              key={filter}
-              type="button"
-              className={healthFilter === filter ? 'active' : ''}
-              onClick={() => setHealthFilter(filter)}
-              disabled={courseHealthLoading && ['no_groups', 'no_sessions', 'certificate_missing'].includes(filter)}
-            >
-              {healthFilterLabel(filter)}
-              <strong>{healthCounts[filter] ?? 0}</strong>
-            </button>
-          ))}
-        </div>
+              <button
+                key={filter}
+                type="button"
+                className={healthFilter === filter ? 'active' : ''}
+                disabled={summaryHealthFilters.has(filter) && !courseHealthComplete}
+                title={summaryHealthFilters.has(filter) && !courseHealthComplete ? t('courses.healthSummaryUnavailable') : undefined}
+                onClick={() => setHealthFilter(filter)}
+              >
+                {healthFilterLabel(filter)}
+                <strong>{healthCounts[filter] ?? 0}</strong>
+              </button>
+            ))}
+            {!courseHealthComplete ? <span className="panel-note compact">{t('courses.healthSummaryUnavailable')}</span> : null}
+          </div>
       ) : null}
       {!courses.length ? (
         <EmptyState
@@ -636,9 +735,9 @@ export function CoursesPage() {
                     : courseBlockerMessage}
                 </p>
                 <div className="course-context-metrics">
-                  <span><strong>{groups.length}</strong> {t('courses.groupsLower')}</span>
+                  <span><strong>{selectedGroupCount}</strong> {t('courses.groupsLower')}</span>
                   <span><strong>{selectedCourse.enrolledStudents ?? 0}</strong> {t('courses.enrolledLower')}</span>
-                  <span><strong>{homework.length}</strong> {t('courses.homeworkLower')}</span>
+                  <span><strong>{selectedSessionCount}</strong> {t('courses.sessionsLower')}</span>
                 </div>
               </div>
               <div className="course-context-badges">
@@ -665,25 +764,42 @@ export function CoursesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCourses.map((course) => (
-                      <tr key={course.id} className={course.id === selectedCourseId ? 'selected-row' : ''}>
-                        <td>
-                          <button
-                            type="button"
-                            className="table-row-button"
-                            aria-pressed={course.id === selectedCourseId}
-                            onClick={() => setSelectedCourseId(course.id)}
-                          >
-                            <strong>{course.title}</strong>
-                            {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
-                          </button>
-                        </td>
-                        <td>{courseTypeLabel(course.courseType)}</td>
-                        <td><span className={`status-badge ${course.status || 'draft'}`}>{statusLabel(course.status)}</span></td>
-                        <td><span className="metadata-text">{publishLabel(course.isPublished)}</span></td>
-                        <td>{course.enrolledStudents ?? 0}</td>
-                      </tr>
-                    ))}
+                    {filteredCourses.map((course) => {
+                      const id = courseIdValue(course);
+                      return (
+                        <tr
+                          key={id}
+                          className={`interactive-row ${id === selectedCourseId ? 'selected-row' : ''}`}
+                          tabIndex={0}
+                          onClick={() => selectCourse(id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              selectCourse(id);
+                            }
+                          }}
+                        >
+                          <td>
+                            <button
+                              type="button"
+                              className="table-row-button"
+                              aria-pressed={id === selectedCourseId}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                selectCourse(id);
+                              }}
+                            >
+                              <strong>{course.title}</strong>
+                              {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
+                            </button>
+                          </td>
+                          <td>{courseTypeLabel(course.courseType)}</td>
+                          <td><span className={`status-badge ${course.status || 'draft'}`}>{statusLabel(course.status)}</span></td>
+                          <td><span className="metadata-text">{publishLabel(course.isPublished)}</span></td>
+                          <td>{course.enrolledStudents ?? 0}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -714,7 +830,7 @@ export function CoursesPage() {
                     <button
                       type="button"
                       className="secondary-button"
-                      onClick={courseDetailLoad.failed ? retryCourseDetailLoad : retryGroupDetailLoad}
+                      onClick={courseDetailLoad.failed ? () => void loadSelectedCourseDetails() : retryGroupDetailLoad}
                     >
                       {t('actions.retry')}
                     </button>
@@ -774,7 +890,7 @@ export function CoursesPage() {
                       ) : null}
                       {certificatesEnabled ? (
                         selectedCourseOperational ? (
-                          <Link className="course-action-card" to={workflowPath('/certificates', { courseId: selectedCourse.id, tab: 'rules' })}>
+                          <Link className="course-action-card" to={workflowPath('/certificates', { courseId: courseIdValue(selectedCourse), tab: 'rules' })}>
                             <FiBookOpen />
                             <span>{t('navigation.certificates')}</span>
                           </Link>
@@ -814,7 +930,7 @@ export function CoursesPage() {
                           type="button"
                           className="primary-button"
                           disabled={statusUpdating}
-                          onClick={() => changeCourseStatus(selectedCourse.id, 'approved')}
+                          onClick={() => changeCourseStatus(courseIdValue(selectedCourse), 'approved')}
                         >
                           {t('courses.approve')}
                         </button>
@@ -829,16 +945,35 @@ export function CoursesPage() {
                           {t('courses.reject')}
                         </button>
                       ) : null}
-                      {['draft', 'rejected'].includes(selectedCourse.status || 'draft') && (
-                        canApproveCourses
-                      ) ? (
+                      {canApproveCourses && ['draft', 'rejected'].includes(selectedCourse.status || 'draft') ? (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={statusUpdating}
+                          onClick={() => changeCourseStatus(courseIdValue(selectedCourse), 'approved')}
+                        >
+                          {t('courses.approve')}
+                        </button>
+                      ) : null}
+                      {!canApproveCourses && ['draft', 'rejected'].includes(selectedCourse.status || 'draft') ? (
                         <button
                           type="button"
                           className="secondary-button"
                           disabled={statusUpdating}
-                          onClick={() => changeCourseStatus(selectedCourse.id, 'pending')}
+                          onClick={() => changeCourseStatus(courseIdValue(selectedCourse), 'pending')}
                         >
                           {t('courses.submitForApproval')}
+                        </button>
+                      ) : null}
+                      {canDeleteCourse ? (
+                        <button
+                          type="button"
+                          className="danger-button"
+                          disabled={statusUpdating || deletingCourse}
+                          onClick={() => setCourseDeletePending(selectedCourse)}
+                        >
+                          <FiTrash2 />
+                          {t('courses.deleteCourse')}
                         </button>
                       ) : null}
                     </div>
@@ -848,7 +983,13 @@ export function CoursesPage() {
                     <h3>{t('courses.selectedGroup')}</h3>
                     <label>
                       {t('courses.group')}
-                      <select value={selectedGroupId ?? ''} onChange={(event) => setSelectedGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
+                      <select
+                        value={selectedGroupId ?? ''}
+                        onFocus={() => void loadSelectedCourseDetails()}
+                        onMouseDown={() => void loadSelectedCourseDetails()}
+                        onChange={(event) => setSelectedGroupId(Number(event.target.value) || undefined)}
+                        disabled={!selectedCourse || courseDetailLoad.loading}
+                      >
                         <option value="">{t('courses.selectGroup')}</option>
                         {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                       </select>
@@ -859,6 +1000,7 @@ export function CoursesPage() {
                       <div className="definition-grid">
                         <span>{t('courses.code')}</span><strong>{selectedGroup.code ?? '-'}</strong>
                         <span>{t('courses.groupStatus')}</span><strong><span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{statusLabel(selectedGroup.status)}</span></strong>
+                        <span>{t('groups.deliveryMode')}</span><strong><span className={`status-badge delivery-${selectedGroup.deliveryMode ?? 'group'}`}>{deliveryModeLabel(selectedGroup.deliveryMode)}</span></strong>
                         <span>{t('courses.dates')}</span><strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : '-'}</strong>
                       </div>
                       <div className="course-group-metrics">
@@ -883,7 +1025,10 @@ export function CoursesPage() {
                             <strong>{session.title}</strong>
                             <span>{formatDate(session.startsAt)}</span>
                           </div>
-                          <strong><span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span></strong>
+                          <strong>
+                            <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
+                            {' '}<span className={`status-badge delivery-${session.groupDeliveryMode ?? selectedGroup?.deliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode ?? selectedGroup?.deliveryMode)}</span>
+                          </strong>
                         </article>
                       ))}
                       {!sessions.length ? <span className="muted-text">{t('courses.noSessions')}</span> : null}
@@ -1141,12 +1286,32 @@ export function CoursesPage() {
               className="danger-button"
               disabled={statusUpdating}
               onClick={() => {
-                const courseId = courseRejectPending.id;
+                const courseId = courseIdValue(courseRejectPending);
                 setCourseRejectPending(null);
                 void changeCourseStatus(courseId, 'rejected');
               }}
             >
               {statusUpdating ? t('auth.working') : t('courses.reject')}
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+      {courseDeletePending ? (
+        <Modal labelledBy="delete-course-title" onClose={() => setCourseDeletePending(null)}>
+          <div className="modal-header-block">
+            <span>{t('courses.deleteCourse')}</span>
+            <h2 id="delete-course-title">{t('courses.deleteCourseTitle')}</h2>
+            <p>{t('courses.deleteCourseDetail', { title: courseDeletePending.title })}</p>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={() => setCourseDeletePending(null)} disabled={deletingCourse}>{t('courses.cancel')}</button>
+            <button
+              type="button"
+              className="danger-button"
+              disabled={deletingCourse}
+              onClick={() => void deleteCourse(courseDeletePending)}
+            >
+              {deletingCourse ? t('courses.deleting') : t('courses.deleteCourse')}
             </button>
           </div>
         </Modal>

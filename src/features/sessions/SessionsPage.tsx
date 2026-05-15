@@ -263,6 +263,9 @@ export function SessionsPage() {
   const statusLabel = (value: string | undefined | null) => {
     return enumLabel(value || 'scheduled', commonStatusLabelKeys, t);
   };
+  const deliveryModeLabel = (value?: CourseGroup['deliveryMode'] | CourseSession['groupDeliveryMode'] | string | null) => (
+    value === 'individual' ? t('groups.deliveryIndividual') : t('groups.deliveryGroup')
+  );
   const materialFallback = (index: number) => t('sessions.materialFallback', { number: index + 1 });
   const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const instructorFallback = (id: number) => t('groups.instructorFallback', { id });
@@ -1203,6 +1206,7 @@ export function SessionsPage() {
                   <strong>{session.title}</strong>
                   <span>
                     {formatDate(session.startsAt)} · <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
+                    {' '}<span className={`status-badge delivery-${session.groupDeliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode)}</span>
                   </span>
                 </div>
                 <button type="button" className="link-button" onClick={() => openAssignedSession(session)}>
@@ -1280,6 +1284,7 @@ export function SessionsPage() {
           </div>
           <div className="group-summary-grid">
             <section><span>{t('courses.status')}</span><strong>{statusLabel(selectedGroup.status)}</strong></section>
+            <section><span>{t('groups.deliveryMode')}</span><strong>{deliveryModeLabel(selectedGroup.deliveryMode)}</strong></section>
             <section><span>{t('groups.dates')}</span><strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : t('groups.notScheduled')}</strong></section>
             <section><span>{t('groups.schedule')}</span><strong>{savedScheduleReady ? t('groups.scheduleBlockCount', { count: selectedGroup.scheduleBlocks?.filter((block) => block.startTime && block.endTime).length ?? 0 }) : t('groups.needsSetup')}</strong></section>
             <section><span>{t('courses.students')}</span><strong>{students.length}</strong></section>
@@ -1436,7 +1441,10 @@ export function SessionsPage() {
                         </button>
                       </td>
                       <td>{formatDate(session.startsAt)}</td>
-                      <td><span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span></td>
+                      <td>
+                        <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
+                        {' '}<span className={`status-badge delivery-${session.groupDeliveryMode ?? selectedGroup?.deliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode ?? selectedGroup?.deliveryMode)}</span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

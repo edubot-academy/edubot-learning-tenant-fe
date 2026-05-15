@@ -16,30 +16,40 @@ export function useAsyncLoadState(initialLoading = false) {
   });
 
   const start = useCallback(() => {
-    setState((current) => ({
-      ...current,
-      loading: true,
-      failed: false,
-      failureCount: 0,
-    }));
+    setState((current) => {
+      if (current.loading && !current.failed && current.failureCount === 0) return current;
+      return {
+        ...current,
+        loading: true,
+        failed: false,
+        failureCount: 0,
+      };
+    });
   }, []);
 
   const succeed = useCallback((failureCount = 0) => {
-    setState((current) => ({
-      ...current,
-      loading: false,
-      failed: failureCount > 0,
-      failureCount,
-    }));
+    setState((current) => {
+      const failed = failureCount > 0;
+      if (!current.loading && current.failed === failed && current.failureCount === failureCount) return current;
+      return {
+        ...current,
+        loading: false,
+        failed,
+        failureCount,
+      };
+    });
   }, []);
 
   const fail = useCallback((failureCount = 1) => {
-    setState((current) => ({
-      ...current,
-      loading: false,
-      failed: true,
-      failureCount,
-    }));
+    setState((current) => {
+      if (!current.loading && current.failed && current.failureCount === failureCount) return current;
+      return {
+        ...current,
+        loading: false,
+        failed: true,
+        failureCount,
+      };
+    });
   }, []);
 
   const retry = useCallback(() => {

@@ -85,3 +85,26 @@ export function getAttendanceSaveBlocker({
   if (!changedCount) return i18n.t('attendance.saveBlockerNoChanges');
   return '';
 }
+
+export function getAttendanceSessionDetail({
+  groupDeliveryMode,
+  students,
+  marked,
+  total,
+  studentFallback,
+}: {
+  groupDeliveryMode?: string | null;
+  students: GroupStudent[];
+  marked: number;
+  total: number;
+  studentFallback: (id: number) => string;
+}) {
+  if (groupDeliveryMode === 'individual' && students.length === 1) {
+    const student = students[0];
+    return i18n.t('attendance.oneStudentSession', {
+      name: student.fullName || student.email || studentFallback(student.userId),
+    });
+  }
+
+  return i18n.t('attendance.markedOfTotal', { marked, total });
+}

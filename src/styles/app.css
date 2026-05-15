@@ -564,6 +564,164 @@ a {
   color: color-mix(in srgb, var(--brand-primary) 82%, #ffffff);
 }
 
+.shell-notification-control {
+  position: relative;
+}
+
+.shell-notification-control > button {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  justify-content: flex-start;
+  border: 1px solid rgba(203, 213, 225, 0.11);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.24);
+  color: #d7dee9;
+  padding: 0 12px;
+  box-shadow: none;
+}
+
+.shell-notification-control > button:hover,
+.shell-notification-control > button.active {
+  border-color: rgba(241, 126, 34, 0.42);
+  background: rgba(241, 126, 34, 0.14);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.shell-notification-control > button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.shell-notification-control > button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-notification-control > button strong,
+.mobile-more-count {
+  min-width: 20px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--brand-primary-dark);
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.shell-notification-menu {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  width: min(320px, calc(100vw - 28px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+}
+
+.shell-notification-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px;
+}
+
+.shell-notification-heading strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.shell-notification-heading a {
+  color: var(--brand-primary-dark);
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.shell-notification-empty {
+  color: var(--text-muted);
+  padding: 14px 12px;
+  font-size: 13px;
+}
+
+.shell-notification-list {
+  display: grid;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.shell-notification-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text);
+  padding: 11px 12px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.shell-notification-item:last-child {
+  border-bottom: 0;
+}
+
+.shell-notification-item:hover:not(:disabled),
+.shell-notification-item.unread {
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.shell-notification-item.read {
+  color: var(--text-muted);
+}
+
+.shell-notification-item span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.shell-notification-item strong,
+.shell-notification-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-notification-item strong {
+  font-size: 13px;
+}
+
+.shell-notification-item small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shell-notification-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--brand-primary);
+}
+
 .sidebar-section-label {
   margin: 2px 0 -8px;
   padding: 0 10px;
@@ -648,6 +806,19 @@ a {
   border-radius: 999px;
   background: #ffffff;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+}
+
+.nav-unread-badge {
+  min-width: 20px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--brand-primary-dark);
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
 }
 
 .ghost-button {
@@ -752,6 +923,7 @@ a {
 }
 
 .mobile-tabbar-icon {
+  position: relative;
   display: grid;
   place-items: center;
   width: 28px;
@@ -767,6 +939,21 @@ a {
 .mobile-tabbar svg {
   width: 18px;
   height: 18px;
+}
+
+.mobile-unread-badge {
+  position: absolute;
+  top: -3px;
+  right: -7px;
+  min-width: 17px;
+  border: 1px solid var(--surface);
+  border-radius: 999px;
+  background: var(--danger);
+  color: #ffffff;
+  padding: 1px 4px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .mobile-tabbar-label {
@@ -800,7 +987,7 @@ a {
 .mobile-more-menu .mobile-more-action {
   display: grid;
   flex: none;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   justify-content: flex-start;
@@ -857,6 +1044,17 @@ a {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mobile-more-menu .mobile-more-count {
+  margin-left: 0;
+}
+
+.mobile-more-menu .shell-notification-menu {
+  position: static;
+  width: 100%;
+  margin: 2px 0 4px;
+  box-shadow: none;
 }
 
 .page-actions {
@@ -1467,6 +1665,10 @@ td small {
   gap: 16px;
 }
 
+.student-workspace-grid > .full {
+  grid-column: 1 / -1;
+}
+
 .student-stat-grid {
   margin-bottom: 14px;
 }
@@ -1552,6 +1754,27 @@ td small {
   line-height: 1.45;
 }
 
+.student-detail-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.student-detail-header h2 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1.16;
+}
+
+.student-detail-header p {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .student-focus-card > .secondary-button,
 .student-focus-card > .status-badge,
 .student-focus-actions,
@@ -1595,6 +1818,143 @@ td small {
 .student-attendance-summary span {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.student-help-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.student-help-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 150px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+.student-help-card strong {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.student-help-card span {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.student-help-card .secondary-link-button,
+.student-help-card .status-badge {
+  justify-self: start;
+}
+
+.student-support-form {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+.student-reminder-section,
+.student-notification-section {
+  margin-bottom: 18px;
+}
+
+.student-reminder-item .student-material-actions,
+.student-notification-item .student-material-actions {
+  align-items: center;
+}
+
+.student-notification-item.unread {
+  border-color: var(--brand-primary);
+  background: var(--surface-hover);
+}
+
+.student-notification-item.read {
+  opacity: 0.78;
+}
+
+.student-load-more-row {
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.student-pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.student-filter-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.student-filter-row button {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 9px;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: left;
+}
+
+.student-filter-row button:hover:not(:disabled),
+.student-filter-row button.active {
+  border-color: var(--brand-primary);
+  background: var(--surface-hover);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.student-filter-row strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.student-filter-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.student-filter-toolbar label {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.student-course-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .settings-grid.embedded {
@@ -2561,12 +2921,46 @@ button.stack-list-item.active {
   line-height: 1.35;
 }
 
+.student-milestone-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.student-milestone {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.student-milestone.complete {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--line));
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  color: var(--success);
+}
+
 .student-submit-panel {
   margin-top: 16px;
 }
 
 .student-submit-panel textarea {
   min-height: 130px;
+}
+
+.student-submission-history {
+  display: grid;
+  gap: 10px;
+}
+
+.student-submission-history > strong {
+  color: var(--text);
+  font-size: 13px;
 }
 
 .quiz-question {
@@ -5007,6 +5401,43 @@ button.stack-list-item.active {
   color: var(--text);
 }
 
+.settings-form.compact-form {
+  display: grid;
+  gap: 12px;
+}
+
+.checkbox-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.checkbox-card input {
+  margin-top: 3px;
+}
+
+.checkbox-card span {
+  display: grid;
+  gap: 3px;
+}
+
+.checkbox-card strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.checkbox-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .profile-actions {
   display: flex;
   justify-content: flex-end;
@@ -5354,6 +5785,9 @@ html[data-theme='dark'] textarea {
   .three-col,
   .definition-grid,
   .student-focus-grid,
+  .student-filter-row,
+  .student-filter-toolbar,
+  .student-help-grid,
   .student-workspace-grid,
   .tenant-logo-row,
   .theme-settings-row {
@@ -5374,6 +5808,7 @@ html[data-theme='dark'] textarea {
   }
 
   .student-focus-card.primary,
+  .student-detail-header,
   .overview-next-action {
     grid-column: auto;
     grid-template-columns: 1fr;
@@ -5434,6 +5869,7 @@ html[data-theme='dark'] textarea {
   }
 
   .student-material-actions,
+  .student-course-actions,
   .student-certificate-actions {
     justify-content: flex-start;
   }

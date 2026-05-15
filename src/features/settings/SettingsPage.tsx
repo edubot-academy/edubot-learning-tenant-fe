@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { FiActivity, FiCreditCard, FiGlobe, FiLock, FiSliders, FiUserCheck } from 'react-icons/fi';
+import { FiActivity, FiBell, FiCreditCard, FiGlobe, FiLock, FiSliders, FiUserCheck } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import { EmptyState, LoadingState } from '../../components/DataState';
@@ -11,7 +11,15 @@ import { useTenant } from '../tenant/TenantProvider';
 import { useTheme } from '../theme/themeContext';
 import { useAuth } from '../auth/AuthProvider';
 import { useLocale } from '../../i18n/LocaleProvider';
-import { listTenantActivity, updateTenant, updateTenantBranding, updateTenantSettings, uploadTenantLogo } from '../../services/api';
+import {
+  getStudentNotificationSettings,
+  listTenantActivity,
+  updateStudentNotificationSettings,
+  updateTenant,
+  updateTenantBranding,
+  updateTenantSettings,
+  uploadTenantLogo,
+} from '../../services/api';
 import {
   canManageTenantBranding,
   canManageTenantOwners,
@@ -19,6 +27,7 @@ import {
   canManageTenantSettings,
   canViewTenantReports,
   getEffectiveTenantRole,
+  isTenantStudent,
   isTenantAdmin,
 } from '../tenant/tenantRoles';
 import type { Tenant, TenantActivityLog } from '../../types/domain';
@@ -68,6 +77,14 @@ const emptyTenantSettingsForm = {
   defaultCourseVisibility: 'PRIVATE' as 'PUBLIC' | 'PRIVATE' | 'TENANT_ONLY',
   allowSelfEnrollment: false,
   requireEnrollmentApproval: false,
+};
+
+const emptyNotificationSettings = {
+  notifyByEmail: true,
+  notifyByWhatsApp: false,
+  notifyByTelegram: false,
+  language: null as string | null,
+  timezone: null as string | null,
 };
 
 function isHttpUrl(value: string) {
@@ -155,6 +172,7 @@ export function SettingsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { tenants, activeTenant, reloadTenants } = useTenant();
+  const learnerView = isTenantStudent(user, activeTenant);
   const { preference, resolvedTheme, setPreference } = useTheme();
   const { locale, setLocale } = useLocale();
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
@@ -166,8 +184,11 @@ export function SettingsPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingBranding, setSavingBranding] = useState(false);
   const [savingPolicies, setSavingPolicies] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState(emptyNotificationSettings);
+  const [notificationSettingsLoading, setNotificationSettingsLoading] = useState(false);
+  const [savingNotificationSettings, setSavingNotificationSettings] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile');
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>(() => (learnerView ? 'personal' : 'profile'));
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
   const [brandingErrors, setBrandingErrors] = useState<Record<string, string>>({});
   const [policyErrors, setPolicyErrors] = useState<Record<string, string>>({});
@@ -357,6 +378,32 @@ export function SettingsPage() {
     setBrandingForm(brandingFormFromTenant(activeTenant));
     setTenantSettingsForm(settingsFormFromTenant(activeTenant));
   }, [activeTenant]);
+
+  useEffect(() => {
+    if (!learnerView) return;
+    let cancelled = false;
+    setNotificationSettingsLoading(true);
+    getStudentNotificationSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setNotificationSettings({
+          notifyByEmail: settings?.notifyByEmail !== false,
+          notifyByWhatsApp: settings?.notifyByWhatsApp === true,
+          notifyByTelegram: settings?.notifyByTelegram === true,
+          language: typeof settings?.language === 'string' ? settings.language : null,
+          timezone: typeof settings?.timezone === 'string' ? settings.timezone : null,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) toast.error(t('settings.notificationSettingsLoadFailed'));
+      })
+      .finally(() => {
+        if (!cancelled) setNotificationSettingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenant?.id, learnerView, t]);
 
   useEffect(() => {
     if (!settingsTabs.some((tab) => tab.key === settingsTab)) {
@@ -553,21 +600,42 @@ export function SettingsPage() {
     }
   };
 
+  const saveNotificationSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingNotificationSettings(true);
+    try {
+      const saved = await updateStudentNotificationSettings(notificationSettings);
+      setNotificationSettings((current) => ({
+        ...current,
+        notifyByEmail: saved?.notifyByEmail ?? current.notifyByEmail,
+        notifyByWhatsApp: saved?.notifyByWhatsApp ?? current.notifyByWhatsApp,
+        notifyByTelegram: saved?.notifyByTelegram ?? current.notifyByTelegram,
+      }));
+      toast.success(t('settings.notificationSettingsSaved'));
+    } catch {
+      toast.error(t('settings.notificationSettingsSaveFailed'));
+    } finally {
+      setSavingNotificationSettings(false);
+    }
+  };
+
   return (
     <>
       <PageHeader
         title={t('navigation.settings')}
         eyebrow={activeTenant?.name}
-        actions={<button type="button" className="secondary-button" onClick={() => void reloadTenants()}>{t('settings.refreshTenant')}</button>}
+        actions={learnerView ? null : <button type="button" className="secondary-button" onClick={() => void reloadTenants()}>{t('settings.refreshTenant')}</button>}
       />
 
-      <WorkspaceTabs
+      {settingsTabs.length > 1 ? (
+        <WorkspaceTabs
         tabs={settingsTabs}
         activeTab={settingsTab}
         onChange={setSettingsTab}
         ariaLabel={t('settings.workspace')}
         className="settings-workspace-tabs"
       />
+      ) : null}
 
       {settingsTab === 'access' ? (
       <div className="settings-grid">
@@ -647,6 +715,62 @@ export function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {learnerView ? (
+        <section className="settings-panel">
+          <div className="settings-panel-heading">
+            <FiBell />
+            <div>
+              <h2>{t('settings.notificationPreferences')}</h2>
+              <span>{t('settings.notificationPreferencesDetail')}</span>
+            </div>
+          </div>
+          {notificationSettingsLoading ? (
+            <LoadingState label={t('settings.notificationSettingsLoading')} />
+          ) : (
+            <form className="settings-form compact-form" onSubmit={saveNotificationSettings}>
+              <label className="checkbox-card">
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.notifyByEmail}
+                  onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByEmail: event.target.checked }))}
+                />
+                <span>
+                  <strong>{t('settings.notifyByEmail')}</strong>
+                  <small>{t('settings.notifyByEmailDetail')}</small>
+                </span>
+              </label>
+              <label className="checkbox-card">
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.notifyByWhatsApp}
+                  onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByWhatsApp: event.target.checked }))}
+                />
+                <span>
+                  <strong>{t('settings.notifyByWhatsApp')}</strong>
+                  <small>{t('settings.notifyByWhatsAppDetail')}</small>
+                </span>
+              </label>
+              <label className="checkbox-card">
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.notifyByTelegram}
+                  onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByTelegram: event.target.checked }))}
+                />
+                <span>
+                  <strong>{t('settings.notifyByTelegram')}</strong>
+                  <small>{t('settings.notifyByTelegramDetail')}</small>
+                </span>
+              </label>
+              <div className="modal-actions">
+                <button type="submit" disabled={savingNotificationSettings}>
+                  {savingNotificationSettings ? t('settings.saving') : t('settings.saveNotificationPreferences')}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+        ) : null}
 
         <section className="settings-panel">
           <div className="settings-panel-heading">

@@ -1,5 +1,5 @@
-import { Component, lazy, Suspense, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Component, lazy, Suspense, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n/config';
 import { AppLayout } from '../components/AppLayout';
@@ -7,6 +7,7 @@ import { useAuth } from '../features/auth/AuthProvider';
 import { useTenant } from '../features/tenant/TenantProvider';
 import { EmptyState, LoadingState } from '../components/DataState';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
+import { getStudentAccess } from '../services/api';
 import {
   canManageTenantBranding,
   canManageAssignedAttendance,
@@ -57,7 +58,14 @@ const routeTitles: Record<string, string> = {
   '/': 'navigation.overview',
   '/forgot-password': 'titles.passwordReset',
   '/setup-account': 'titles.accountSetup',
-  '/student': 'navigation.myLearning',
+  '/student': 'student.today',
+  '/student/today': 'student.today',
+  '/student/todo': 'student.toDo',
+  '/student/courses': 'navigation.courses',
+  '/student/sessions': 'student.sessionDetail',
+  '/student/materials': 'student.materials',
+  '/student/progress': 'student.progress',
+  '/student/help': 'student.help',
   '/courses': 'navigation.courses',
   '/groups': 'navigation.groups',
   '/sessions': 'navigation.sessions',
@@ -164,7 +172,7 @@ function DocumentMetadata() {
 function HomeRoute() {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return isTenantStudent(user, activeTenant) ? <Navigate to="/student" replace /> : <OverviewPage />;
+  return isTenantStudent(user, activeTenant) ? <Navigate to="/student/today" replace /> : <OverviewPage />;
 }
 
 function AccessDeniedState({
@@ -221,9 +229,50 @@ function CourseAdminRoute({ children }: { children: React.ReactNode }) {
 function StudentRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return isTenantStudent(user, activeTenant)
-    ? children
-    : <AccessDeniedState detailKey="errors.studentOnlyDetail" to="/" actionKey="actions.goToOverview" />;
+  const [accessState, setAccessState] = useState<'loading' | 'allowed' | 'denied'>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isTenantStudent(user, activeTenant)) {
+      setAccessState('denied');
+      return;
+    }
+
+    setAccessState('loading');
+    getStudentAccess()
+      .then(() => {
+        if (!cancelled) setAccessState('allowed');
+      })
+      .catch(() => {
+        if (!cancelled) setAccessState('denied');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenant?.id, user]);
+
+  if (!isTenantStudent(user, activeTenant) || accessState === 'denied') {
+    return <AccessDeniedState detailKey="errors.studentOnlyDetail" to="/" actionKey="actions.goToOverview" />;
+  }
+
+  return accessState === 'allowed' ? children : <LoadingState label="Loading" />;
+}
+
+function StudentCourseDetailRoute() {
+  const { courseId } = useParams();
+  const numericCourseId = Number(courseId);
+  return Number.isFinite(numericCourseId)
+    ? <StudentDashboardPage view="courseDetail" courseId={numericCourseId} />
+    : <Navigate to="/student/courses" replace />;
+}
+
+function StudentSessionDetailRoute() {
+  const { sessionId } = useParams();
+  const numericSessionId = Number(sessionId);
+  return Number.isFinite(numericSessionId)
+    ? <StudentDashboardPage view="sessionDetail" sessionId={numericSessionId} />
+    : <Navigate to="/student/today" replace />;
 }
 
 function TenantAdminRoute({ children }: { children: React.ReactNode }) {
@@ -401,7 +450,15 @@ function AppRoutes() {
         <Route path="/setup-account" element={<SetupAccountPage />} />
         <Route element={<ProtectedRoutes />}>
           <Route index element={<HomeRoute />} />
-          <Route path="/student" element={<StudentRoute><StudentDashboardPage /></StudentRoute>} />
+          <Route path="/student" element={<StudentRoute><Navigate to="/student/today" replace /></StudentRoute>} />
+          <Route path="/student/today" element={<StudentRoute><StudentDashboardPage view="today" /></StudentRoute>} />
+          <Route path="/student/todo" element={<StudentRoute><StudentDashboardPage view="todo" /></StudentRoute>} />
+          <Route path="/student/courses" element={<StudentRoute><StudentDashboardPage view="courses" /></StudentRoute>} />
+          <Route path="/student/courses/:courseId" element={<StudentRoute><StudentCourseDetailRoute /></StudentRoute>} />
+          <Route path="/student/sessions/:sessionId" element={<StudentRoute><StudentSessionDetailRoute /></StudentRoute>} />
+          <Route path="/student/materials" element={<StudentRoute><StudentDashboardPage view="materials" /></StudentRoute>} />
+          <Route path="/student/progress" element={<StudentRoute><StudentDashboardPage view="progress" /></StudentRoute>} />
+          <Route path="/student/help" element={<StudentRoute><StudentDashboardPage view="help" /></StudentRoute>} />
           <Route path="/courses" element={<CourseAdminRoute><CoursesPage /></CourseAdminRoute>} />
           <Route path="/groups" element={<StaffRoute><GroupsPage /></StaffRoute>} />
           <Route path="/sessions" element={<StaffRoute><SessionsPage /></StaffRoute>} />

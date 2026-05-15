@@ -30,7 +30,22 @@ import type {
   SessionInsights,
   SessionHomework,
   StudentGuardian,
+  StudentAccessState,
+  StudentCertificateSummary,
+  StudentCourseDetail,
+  StudentCourseSummary,
+  StudentHomeworkItem,
+  StudentMaterialItem,
+  StudentNotification,
+  StudentNotificationPage,
+  StudentProgressSummary,
+  StudentReminder,
+  StudentSessionDetail,
+  StudentSessionSummary,
+  StudentSupportOptions,
+  StudentSupportRequest,
   StudentSupportNote,
+  StudentTaskItem,
   Tenant,
   TenantActivityLog,
   TenantOverview,
@@ -51,6 +66,20 @@ declare module 'axios' {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 const TOKEN_KEY = 'edubot_tenant_token';
 const TENANT_KEY = 'edubot_active_tenant_id';
+
+export type StudentPagedResponse<T> = {
+  items: T[];
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+};
+
+function toStudentPage<T>(data: T[] | StudentPagedResponse<T>): StudentPagedResponse<T> {
+  return Array.isArray(data)
+    ? { items: data, total: data.length, page: 1, limit: data.length, totalPages: 1 }
+    : { ...data, items: data.items ?? [], totalPages: data.totalPages ?? (data.total && data.limit ? Math.ceil(data.total / data.limit) : undefined) };
+}
 
 export const tokenStore = {
   get: () => sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY),
@@ -1023,34 +1052,72 @@ export async function getStudentDashboard(params: { courseId?: number; groupId?:
   return data;
 }
 
+export async function getStudentHome(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
+  const { data } = await api.get('/student/home', { params });
+  return data;
+}
+
+export async function getStudentAccess() {
+  const { data } = await api.get<StudentAccessState>('/student/access');
+  return data;
+}
+
 export async function listStudentCourses() {
-  const { data } = await api.get('/student/courses');
+  const { data } = await api.get<StudentCourseSummary[] | { items?: StudentCourseSummary[]; courses?: StudentCourseSummary[] }>('/student/courses');
   return Array.isArray(data) ? data : data?.items ?? data?.courses ?? [];
 }
 
+export async function getStudentCourseDetail(courseId: number) {
+  const { data } = await api.get<StudentCourseDetail | null>(`/student/courses/${courseId}`);
+  return data;
+}
+
 export async function listStudentUpcomingSessions(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
-  const { data } = await api.get('/student/sessions/upcoming', { params });
+  const { data } = await api.get<StudentSessionSummary[] | { items?: StudentSessionSummary[] }>('/student/sessions/upcoming', { params });
   return Array.isArray(data) ? data : data?.items ?? [];
 }
 
-export async function listStudentResources(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
-  const { data } = await api.get('/student/resources', { params });
-  return Array.isArray(data) ? data : data?.items ?? [];
+export async function getStudentSessionDetail(sessionId: number) {
+  const { data } = await api.get<StudentSessionDetail | null>(`/student/sessions/${sessionId}`);
+  return data;
 }
 
-export async function listStudentRecordings(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
-  const { data } = await api.get('/student/recordings', { params });
-  return Array.isArray(data) ? data : data?.items ?? [];
+export async function listStudentResources(params: { courseId?: number; groupId?: number; limit?: number; page?: number; type?: string; from?: string; to?: string } = {}) {
+  const page = await getStudentResourcesPage(params);
+  return page.items;
+}
+
+export async function getStudentResourcesPage(params: { courseId?: number; groupId?: number; limit?: number; page?: number; type?: string; from?: string; to?: string } = {}) {
+  const { data } = await api.get<Array<StudentSessionSummary | StudentMaterialItem> | StudentPagedResponse<StudentSessionSummary | StudentMaterialItem>>('/student/resources', { params });
+  return toStudentPage(data);
+}
+
+export async function listStudentRecordings(params: { courseId?: number; groupId?: number; limit?: number; page?: number; from?: string; to?: string } = {}) {
+  const page = await getStudentRecordingsPage(params);
+  return page.items;
+}
+
+export async function getStudentRecordingsPage(params: { courseId?: number; groupId?: number; limit?: number; page?: number; from?: string; to?: string } = {}) {
+  const { data } = await api.get<Array<StudentSessionSummary | StudentMaterialItem> | StudentPagedResponse<StudentSessionSummary | StudentMaterialItem>>('/student/recordings', { params });
+  return toStudentPage(data);
 }
 
 export async function listStudentHomework(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
-  const { data } = await api.get('/student/homework', { params });
+  const { data } = await api.get<StudentHomeworkItem[] | { items?: StudentHomeworkItem[] }>('/student/homework', { params });
   return Array.isArray(data) ? data : data?.items ?? [];
 }
 
-export async function listStudentCertificates() {
-  const { data } = await api.get('/student/certificates');
-  return Array.isArray(data) ? data : data?.items ?? data?.certificates ?? [];
+export async function listStudentCertificates(params: { courseId?: number; groupId?: number; limit?: number; page?: number; status?: string; from?: string; to?: string } = {}) {
+  const page = await getStudentCertificatesPage(params);
+  return page.items;
+}
+
+export async function getStudentCertificatesPage(params: { courseId?: number; groupId?: number; limit?: number; page?: number; status?: string; from?: string; to?: string } = {}) {
+  const { data } = await api.get<StudentCertificateSummary[] | (StudentPagedResponse<StudentCertificateSummary> & { certificates?: StudentCertificateSummary[] })>('/student/certificates', { params });
+  if (!Array.isArray(data) && data.certificates && !data.items) {
+    return toStudentPage({ ...data, items: data.certificates });
+  }
+  return toStudentPage(data);
 }
 
 export async function listStudentAttendance(params: { courseId?: number; groupId?: number; limit?: number; from?: string; to?: string } = {}) {
@@ -1058,9 +1125,86 @@ export async function listStudentAttendance(params: { courseId?: number; groupId
   return Array.isArray(data) ? data : data?.items ?? [];
 }
 
-export async function listStudentTasks(params: { courseId?: number; groupId?: number; limit?: number } = {}) {
-  const { data } = await api.get('/student/tasks', { params });
+export async function getStudentProgressSummary(params: { courseId?: number; groupId?: number; limit?: number; from?: string; to?: string } = {}) {
+  const { data } = await api.get<StudentProgressSummary | null>('/student/progress/summary', { params });
+  return data;
+}
+
+export async function listStudentTasks(params: { courseId?: number; groupId?: number; limit?: number; page?: number; status?: string; from?: string; to?: string } = {}) {
+  const page = await getStudentTasksPage(params);
+  return page.items;
+}
+
+export async function getStudentTasksPage(params: { courseId?: number; groupId?: number; limit?: number; page?: number; status?: string; from?: string; to?: string } = {}) {
+  const { data } = await api.get<StudentTaskItem[] | StudentPagedResponse<StudentTaskItem>>('/student/tasks', { params });
+  return toStudentPage(data);
+}
+
+export async function getStudentSupportOptions() {
+  const { data } = await api.get<StudentSupportOptions | null>('/student/support/options');
+  return data;
+}
+
+export async function getStudentNotificationSettings() {
+  const { data } = await api.get('/student/notification-settings');
+  return data;
+}
+
+export async function updateStudentNotificationSettings(payload: {
+  notifyByEmail: boolean;
+  notifyByWhatsApp: boolean;
+  notifyByTelegram: boolean;
+  language?: string | null;
+  timezone?: string | null;
+}) {
+  const { data } = await api.patch('/student/notification-settings', payload);
+  return data;
+}
+
+export async function listStudentNotifications(params: { page?: number; limit?: number } = {}) {
+  const { data } = await api.get<StudentNotification[] | { items?: StudentNotification[] }>('/student/notifications', { params });
   return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function getStudentNotificationsPage(params: { page?: number; limit?: number } = {}) {
+  const { data } = await api.get<StudentNotificationPage>('/student/notifications', { params });
+  return data;
+}
+
+export async function getStudentNotificationUnreadCount() {
+  const { data } = await api.get('/student/notifications/unread-count');
+  return data;
+}
+
+export async function markStudentNotificationRead(notificationId: number) {
+  const { data } = await api.post(`/student/notifications/${notificationId}/read`);
+  return data;
+}
+
+export async function markAllStudentNotificationsRead() {
+  const { data } = await api.post('/student/notifications/read-all');
+  return data;
+}
+
+export async function listStudentReminders(params: { courseId?: number; groupId?: number; page?: number; limit?: number; from?: string; to?: string } = {}) {
+  const { data } = await api.get<StudentReminder[] | { items?: StudentReminder[] }>('/student/reminders', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function listStudentSupportRequests(params: { page?: number; limit?: number; status?: string } = {}) {
+  const { data } = await api.get<StudentSupportRequest[] | { items?: StudentSupportRequest[] }>('/student/support/requests', { params });
+  return Array.isArray(data) ? data : data?.items ?? [];
+}
+
+export async function createStudentSupportRequest(payload: {
+  category?: string;
+  priority?: 'high' | 'medium' | 'low';
+  message: string;
+  courseId?: number;
+  sessionId?: number;
+}) {
+  const { data } = await api.post<StudentSupportRequest>('/student/support/requests', payload);
+  return data;
 }
 
 export async function submitStudentHomework(
@@ -1068,21 +1212,21 @@ export async function submitStudentHomework(
   homeworkId: number,
   payload: { answerText?: string; attachmentUrl?: string },
 ) {
-  const { data } = await api.post(`/group-sessions/${sessionId}/homework/${homeworkId}/submissions`, payload);
+  const { data } = await api.post(`/student/sessions/${sessionId}/homework/${homeworkId}/submissions`, payload);
   return data;
 }
 
 export async function uploadStudentHomeworkAttachment(sessionId: number, homeworkId: number, file: File) {
   const form = new FormData();
   form.append('file', file);
-  const { data } = await api.post(`/group-sessions/${sessionId}/homework/${homeworkId}/submissions/upload`, form);
+  const { data } = await api.post(`/student/sessions/${sessionId}/homework/${homeworkId}/submissions/upload`, form);
   return data as { key: string; url: string; fileName: string; contentType: string; size: number };
 }
 
 export async function submitStudentActivity(
   sessionId: number,
   activityId: number,
-  payload: { text?: string; link?: string },
+  payload: { text?: string; link?: string; attachmentUrl?: string; attachmentKey?: string },
 ) {
   const { data } = await api.post(`/student/sessions/${sessionId}/activities/${activityId}/submit`, payload);
   return data;

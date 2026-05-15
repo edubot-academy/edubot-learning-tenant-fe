@@ -23,6 +23,12 @@ vi.mock('../features/tenant/TenantProvider', () => ({
   }),
 }));
 
+vi.mock('../services/api', () => ({
+  getStudentNotificationUnreadCount: vi.fn(() => Promise.resolve({ count: 0, hasUnread: false })),
+  listStudentNotifications: vi.fn(() => Promise.resolve([])),
+  markStudentNotificationRead: vi.fn(() => Promise.resolve({ ok: true })),
+}));
+
 vi.mock('./LanguageMenu', () => ({
   LanguageMenu: () => <button type="button">Language</button>,
 }));

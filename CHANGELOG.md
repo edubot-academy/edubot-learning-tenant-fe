@@ -19,6 +19,43 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.8.0 - 2026-05-15
+
+### Added
+
+- Added a multi-page learner portal with Today, To do, Courses, course detail, session detail, Materials, Progress, and Help routes.
+- Added student access pre-checks, student-specific navigation, and learner route titles.
+- Added learner notifications in the app shell, unread badges, mark-read behavior, notification list paging, and learner notification preferences in Settings.
+- Added typed student DTOs and frontend API helpers for student home, access, courses, sessions, tasks, materials, recordings, progress, certificates, reminders, notifications, and support requests.
+- Added task submission UX for text, link, file, and quiz tasks, including submission requirements, file validation, upload state, submission history, review comments, and scores.
+- Added materials and recordings library filters with backend pagination and load-more behavior.
+- Added Progress certificate filters and paged certificate loading.
+- Added localized learner portal copy in English, Russian, and Kyrgyz.
+- Added regression coverage for student navigation, task filters, quiz validation, submission history, submission requirements, file uploads, material filters, feature flags, and shell notification behavior.
+
+### Changed
+
+- Redirect student home access from `/student` to `/student/today`.
+- Updated student submissions to use student-scoped homework endpoints and activity submission payloads that preserve uploaded attachment keys.
+- Updated learner Settings so student notification settings reload when the active tenant changes.
+- Package version updated to `1.8.0`.
+
+### Fixed
+
+- Fixed material filtering so the frontend no longer sends an invalid `type=resource` query to `/student/resources`.
+- Fixed homework link-only submissions so links are submitted instead of being dropped.
+- Fixed empty non-quiz task submissions by requiring at least one allowed submission value before enabling Submit.
+- Fixed frontend tests for the new paged student materials API helpers.
+
+### Tests
+
+- `npm test` passes with 24 test files and 115 tests.
+- `npm run build` passes with the existing Vite large chunk warning.
+
+### Migration Notes
+
+- Release this frontend with the matching backend student portal endpoints, including `/student/access`, `/student/home`, student course/session detail, paged materials/recordings/certificates, student notifications/reminders, student support requests, student-scoped homework submission endpoints, and activity submission attachment handling.
+
 ## 1.7.0 - 2026-05-14
 
 ### Added

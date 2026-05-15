@@ -1,4 +1,4 @@
-import { FiAward, FiBarChart2, FiBookOpen, FiCalendar, FiCheckSquare, FiClipboard, FiGrid, FiHome, FiLifeBuoy, FiSettings, FiUsers } from 'react-icons/fi';
+import { FiAward, FiBarChart2, FiBookOpen, FiCalendar, FiCheckSquare, FiClipboard, FiGrid, FiHelpCircle, FiHome, FiLifeBuoy, FiPlayCircle, FiSettings, FiUsers } from 'react-icons/fi';
 import type { AuthUser, Tenant } from '../types/domain';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
 import {
@@ -65,8 +65,12 @@ export const adminNavItems = [
 ] satisfies NavItem[];
 
 export const studentNavItems = [
-  { to: '/student', labelKey: 'navigation.myLearning', icon: FiHome },
-  { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
+  { to: '/student/today', labelKey: 'student.today', icon: FiHome },
+  { to: '/student/todo', labelKey: 'student.toDo', icon: FiCheckSquare },
+  { to: '/student/courses', labelKey: 'navigation.courses', icon: FiBookOpen },
+  { to: '/student/materials', labelKey: 'student.materials', icon: FiPlayCircle },
+  { to: '/student/progress', labelKey: 'student.progress', icon: FiBarChart2 },
+  { to: '/student/help', labelKey: 'student.help', icon: FiHelpCircle },
 ] satisfies NavItem[];
 
 export const assistantNavItems = [
@@ -89,6 +93,7 @@ const mobileRoutePriorityByRole: Record<string, string[]> = {
   assistant: ['/', '/support', '/groups', '/sessions'],
   owner: ['/', '/operations', '/members', '/settings'],
   company_admin: ['/', '/operations', '/members', '/settings'],
+  student: ['/student/today', '/student/todo', '/student/courses', '/student/materials'],
 };
 
 export function getVisibleOperationalNavItems(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
@@ -188,9 +193,8 @@ export function getMobileNavGroups(
     .map((route) => visibleNavItems.find((item) => item.to === route))
     .filter((item): item is NavItem => Boolean(item));
   const overflowPrimaryItems = visibleNavItems.filter((item) => !preferredPrimaryItems.some((primaryItem) => primaryItem.to === item.to));
-  const primaryMobileNavItems = learnerView
-    ? visibleNavItems
-    : [...preferredPrimaryItems, ...overflowPrimaryItems].slice(0, 4);
+  const primaryMobileItemLimit = learnerView ? Math.min(4, visibleNavItems.length) : 4;
+  const primaryMobileNavItems = [...preferredPrimaryItems, ...overflowPrimaryItems].slice(0, primaryMobileItemLimit);
   const secondaryMobileNavItems = visibleNavItems.filter((item) => !primaryMobileNavItems.some((primaryItem) => primaryItem.to === item.to));
 
   return { primaryMobileNavItems, secondaryMobileNavItems };

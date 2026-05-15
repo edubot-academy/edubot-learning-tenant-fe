@@ -955,3 +955,215 @@ export type CourseCertificate = {
   downloadUrl?: string | null;
   verificationUrl?: string | null;
 };
+
+export type StudentSubmission = {
+  id?: number;
+  answerText?: string | null;
+  attachmentUrl?: string | null;
+  attachmentKey?: string | null;
+  status?: string | null;
+  score?: number | null;
+  reviewComment?: string | null;
+  submittedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type StudentTaskSubmissionRequirements = {
+  allowText?: boolean;
+  allowFile?: boolean;
+  allowLink?: boolean;
+  maxFileSize?: number | null;
+  allowedFileTypes?: string[] | null;
+};
+
+export type StudentCourseSummary = {
+  id?: number;
+  courseId?: number;
+  title?: string;
+  courseTitle?: string;
+  progress?: number;
+  progressPercent?: number;
+  attendanceRate?: number | null;
+  status?: string;
+  groupName?: string;
+};
+
+export type StudentSessionSummary = {
+  id?: number;
+  sessionId?: number;
+  courseId?: number | null;
+  groupId?: number | null;
+  title?: string;
+  sessionTitle?: string;
+  courseTitle?: string;
+  groupName?: string | null;
+  startsAt?: string;
+  liveJoinUrl?: string | null;
+  url?: string | null;
+  materials?: Array<{ title?: string; url?: string | null; type?: string }>;
+};
+
+export type StudentMaterialItem = {
+  id?: string | number;
+  title?: string;
+  type?: string;
+  url?: string | null;
+  sessionId?: number;
+  sessionTitle?: string;
+  courseId?: number | null;
+  courseTitle?: string | null;
+  groupId?: number | null;
+  groupName?: string | null;
+  createdAt?: string;
+};
+
+export type StudentHomeworkItem = StudentTaskSubmissionRequirements & {
+  id?: number;
+  sessionId?: number;
+  kind?: string;
+  title?: string;
+  description?: string | null;
+  courseTitle?: string;
+  sessionTitle?: string;
+  deadline?: string | null;
+  dueAt?: string | null;
+  status?: string;
+  reviewState?: string;
+  mySubmission?: StudentSubmission | null;
+  submissions?: StudentSubmission[];
+  submissionHistory?: StudentSubmission[];
+  submissionRequirements?: StudentTaskSubmissionRequirements | null;
+};
+
+export type StudentTaskItem = StudentTaskSubmissionRequirements & {
+  id?: number;
+  sessionId?: number;
+  courseId?: number | null;
+  groupId?: number | null;
+  kind?: string;
+  taskType?: string;
+  activityType?: string;
+  title?: string;
+  description?: string | null;
+  type?: string;
+  status?: string;
+  dueAt?: string | null;
+  courseTitle?: string;
+  sessionTitle?: string | null;
+  mySubmission?: StudentSubmission | null;
+  submission?: StudentSubmission | null;
+  submissions?: StudentSubmission[];
+  submissionHistory?: StudentSubmission[];
+  submissionRequirements?: StudentTaskSubmissionRequirements | null;
+  myAttempt?: { score?: number; passed?: boolean; createdAt?: string } | null;
+  attempt?: { score?: number; passed?: boolean; createdAt?: string } | null;
+  questions?: Array<{
+    id: number;
+    prompt: string;
+    questionMode?: 'single_choice' | 'multiple_choice';
+    options: Array<{ id: number; text: string }>;
+  }>;
+};
+
+export type StudentCertificateSummary = {
+  id?: number;
+  publicId?: string;
+  courseId?: number;
+  courseTitle?: string;
+  groupId?: number | null;
+  groupName?: string | null;
+  status?: string;
+  issuedAt?: string | null;
+  downloadUrl?: string | null;
+  verificationUrl?: string | null;
+};
+
+export type StudentCourseDetail = {
+  course?: StudentCourseSummary & { courseId?: number; coverImageUrl?: string | null; instructor?: { name?: string | null } | null };
+  progress?: { progressPercent?: number; status?: string; completedAt?: string | null } | null;
+  sessions?: StudentSessionSummary[];
+  materials?: Array<StudentSessionSummary | StudentMaterialItem>;
+  recordings?: Array<StudentSessionSummary | StudentMaterialItem>;
+  tasks?: StudentTaskItem[];
+  certificate?: unknown;
+};
+
+export type StudentSessionDetail = StudentSessionSummary & {
+  recordingUrl?: string | null;
+  materials?: Array<{ index?: number; title?: string; url?: string | null; storageKey?: string | null; type?: string }>;
+  attendance?: AttendanceRecord | null;
+  homework?: StudentHomeworkItem[];
+  tasks?: StudentTaskItem[];
+};
+
+export type StudentProgressSummary = {
+  courses?: Array<StudentCourseSummary & { courseTitle?: string; attendanceRate?: number | null; certificate?: unknown }>;
+  attendance?: { total?: number; presentOrLate?: number; rate?: number | null; recent?: AttendanceRecord[] };
+  gradedTasks?: StudentTaskItem[];
+  certificates?: StudentCertificateSummary[];
+  recentFeedback?: StudentTaskItem[];
+};
+
+export type StudentSupportOptions = {
+  categories?: Array<string | { id?: string; value?: string; label?: string }>;
+  priorities?: Array<string | { id?: string; value?: 'high' | 'medium' | 'low'; label?: string }>;
+  supportEmail?: string | null;
+  contactPolicy?: Record<string, unknown> | null;
+};
+
+export type StudentSupportRequest = {
+  id?: number;
+  category?: string;
+  priority?: 'high' | 'medium' | 'low';
+  status?: string;
+  message?: string;
+  createdAt?: string;
+};
+
+export type StudentAccessState = {
+  hasActiveAccess?: boolean;
+  activeEnrollmentCount?: number;
+  pendingEnrollmentCount?: number;
+  latestEnrollment?: {
+    enrollmentId?: number;
+    courseId?: number | null;
+    courseName?: string | null;
+    groupId?: number | null;
+    groupName?: string | null;
+    enrollmentStatus?: string | null;
+    accessStatus?: string | null;
+    enrolledAt?: string | null;
+  } | null;
+  message?: string | null;
+};
+
+export type StudentNotification = {
+  id?: number;
+  title?: string;
+  body?: string;
+  type?: string;
+  isRead?: boolean;
+  createdAt?: string;
+};
+
+export type StudentNotificationPage = {
+  items?: StudentNotification[];
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+};
+
+export type StudentReminder = {
+  id?: string;
+  kind?: 'session' | 'task';
+  title?: string;
+  message?: string;
+  dueAt?: string | null;
+  status?: string;
+  priority?: 'low' | 'medium' | 'high';
+  courseTitle?: string | null;
+  groupName?: string | null;
+  actionUrl?: string | null;
+};

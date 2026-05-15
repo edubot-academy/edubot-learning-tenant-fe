@@ -18,7 +18,14 @@ const tenant = (role: string, featureFlags: Tenant['featureFlags'] = {}, permiss
 
 describe('app navigation visibility', () => {
   it('keeps learners in the learner navigation surface', () => {
-    expect(getVisibleNavItems(user('student'), tenant('student')).map((item) => item.to)).toEqual(['/student', '/settings']);
+    expect(getVisibleNavItems(user('student'), tenant('student')).map((item) => item.to)).toEqual([
+      '/student/today',
+      '/student/todo',
+      '/student/courses',
+      '/student/materials',
+      '/student/progress',
+      '/student/help',
+    ]);
   });
 
   it('keeps instructor navigation focused on teaching work', () => {
@@ -169,6 +176,14 @@ describe('app navigation visibility', () => {
     expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/', '/support', '/groups', '/sessions']);
     expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/operations');
     expect(groups.secondaryMobileNavItems.map((item) => item.to)).toContain('/settings');
+  });
+
+  it('keeps student mobile navigation focused on daily learner actions', () => {
+    const visible = getVisibleNavItems(user('student'), tenant('student'));
+    const groups = getMobileNavGroups(visible, true, user('student'), tenant('student'));
+
+    expect(groups.primaryMobileNavItems.map((item) => item.to)).toEqual(['/student/today', '/student/todo', '/student/courses', '/student/materials']);
+    expect(groups.secondaryMobileNavItems.map((item) => item.to)).toEqual(['/student/progress', '/student/help']);
   });
 
   it('counts enabled staff tools from current feature flags', () => {

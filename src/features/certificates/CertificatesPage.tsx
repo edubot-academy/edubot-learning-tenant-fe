@@ -29,6 +29,7 @@ import {
 import type { CertificateBranding, Course, CourseCertificate, CourseCertificateSettings, GroupStudent } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate } from '../../lib/format';
+import { getApiErrorMessage } from '../../lib/apiErrors';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAuth } from '../auth/AuthProvider';
 import { canApproveAssignedCertificates, canManageTenantCertificates } from '../tenant/tenantRoles';
@@ -349,8 +350,7 @@ export function CertificatesPage() {
       })
       .catch((error) => {
         if (cancelled) return;
-        const message = error?.response?.data?.message || t('certificates.courseSettingsLoadFailed');
-        toast.error(message);
+        toast.error(getApiErrorMessage(error, t('certificates.courseSettingsLoadFailed')));
       })
       .finally(() => {
         if (!cancelled) setCourseLoading(false);

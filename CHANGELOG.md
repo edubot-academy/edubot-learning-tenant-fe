@@ -19,6 +19,26 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.9.2 - 2026-05-21
+
+### Changed
+
+- Hardened tenant API error localization to support nested backend error payloads, `errorCode`, `messageKey`, `labelKey`, main-app `errors.*` keys, and stable category fallbacks.
+- Added `apiMessages.*` locale resources for backend success message keys so password reset responses render frontend-owned localized copy.
+- Package version updated to `1.9.2`.
+
+### Fixed
+
+- Prevented backend prose from leaking into login, password reset, course, and certificate error states when stable backend keys or codes are available.
+- Preserved CSRF retry compatibility while keeping backend message parsing out of user-facing error rendering.
+
+### Tests
+
+- Added API error helper coverage for nested error codes, alternate `errorCode`, translation keys, label keys, mirrored API message keys, category fallback, and no-backend-prose fallback.
+- `npm test` passes with 26 test files and 137 tests.
+- `npm run lint` passes.
+- `npm run build` passes with the existing Vite large chunk warning.
+
 ## 1.9.1 - 2026-05-15
 
 ### Changed

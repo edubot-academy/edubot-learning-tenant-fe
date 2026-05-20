@@ -130,17 +130,17 @@ Required behavior:
 
 ## Cross-App Language Resolution
 
-Use the same language resolution policy in both frontend apps:
+Use the same shared language contract in both frontend apps, with different tenant-default behavior by app:
 
 - User-selected language from `edubot_locale`.
-- Tenant or company locale when the current view is tenant-scoped.
+- Tenant locale as a runtime fallback in the tenant learning frontend.
 - Browser language when it is one of `ky`, `ru`, or `en`.
 - Default fallback: `ky`.
 
 Main platform details:
 
 - Public marketing, catalog, auth, cart, favorites, profile, and generic dashboard pages use user-selected language first, then browser language, then `ky`.
-- Company admin pages use user-selected language first, then `company.locale`, then `ky`.
+- Company admin pages use the main app user's UI language. They display and edit `company.locale` as tenant settings data, but `company.locale` does not decide or change the main app UI language.
 - Course content language (`course.languageCode`) must not override UI language.
 
 Tenant frontend details:
@@ -243,7 +243,7 @@ Tasks:
 
 - Add the shared language store key `edubot_locale`.
 - Add a `useLocale` or `LocaleProvider` helper.
-- Resolve language from user override, tenant/company locale when available, browser language, then `ky`.
+- Resolve tenant app language from user override, tenant locale when available, browser language, then `ky`. Main platform language does not use `company.locale` as a fallback.
 - Sync `document.documentElement.lang` with the active language.
 - Send `Accept-Language` from both Axios request interceptors.
 - Keep existing auth token storage separate: main app uses `auth_token`, tenant app uses `edubot_tenant_token`.
@@ -251,7 +251,7 @@ Tasks:
 Acceptance criteria:
 
 - Manual language choice persists across reloads.
-- Tenant or company locale is used when the user has not selected a language.
+- Tenant locale is used by the tenant learning frontend when the user has not selected a language.
 - API requests include the selected language.
 
 ### 4. Add Language Switcher
@@ -425,7 +425,7 @@ Tasks:
 - Replace hardcoded header navigation labels, search copy, dashboard labels, and shared UI labels first.
 - Replace mixed-language text in company, admin, instructor, student, course, cart, favorite, profile, and certificate pages incrementally.
 - Treat `course.languageCode` as content metadata only.
-- Treat `company.locale` as the tenant/company default UI language only when the user has not selected a language.
+- Treat `company.locale` as tenant settings data in the main app. Do not use it to decide main app UI language.
 
 Acceptance criteria:
 

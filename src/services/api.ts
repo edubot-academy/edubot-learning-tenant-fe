@@ -202,7 +202,7 @@ export async function logout() {
 }
 
 export async function requestPasswordReset(payload: { identifier: string; method: 'email' | 'whatsapp' | 'telegram' }) {
-  const { data } = await api.post<{ message?: string }>('/auth/forgot-password', payload);
+  const { data } = await api.post<{ message?: string; messageKey?: string; labelKey?: string }>('/auth/forgot-password', payload);
   return data;
 }
 
@@ -212,7 +212,7 @@ export async function resetPassword(payload: {
   otp: string;
   newPassword: string;
 }) {
-  const { data } = await api.post<{ message?: string }>('/auth/reset-password', payload);
+  const { data } = await api.post<{ message?: string; messageKey?: string; labelKey?: string }>('/auth/reset-password', payload);
   return data;
 }
 

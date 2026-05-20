@@ -13,6 +13,7 @@ import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { canApproveTenantCourses, canManageTenantCourses, getEffectiveTenantRole } from '../tenant/tenantRoles';
 import { formatDate } from '../../lib/format';
+import { getApiErrorMessage } from '../../lib/apiErrors';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
@@ -579,8 +580,7 @@ export function CoursesPage() {
       setCreateModalOpen(false);
       toast.success(t('courses.created'));
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(message || t('courses.createFailed'));
+      toast.error(getApiErrorMessage(error, t('courses.createFailed')));
     } finally {
       creatingCourseRef.current = false;
       setCreatingCourse(false);
@@ -613,8 +613,7 @@ export function CoursesPage() {
       setEditModalOpen(false);
       toast.success(t('courses.updated'));
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(message || t('courses.updateFailed'));
+      toast.error(getApiErrorMessage(error, t('courses.updateFailed')));
     } finally {
       setSavingCourse(false);
     }
@@ -636,8 +635,7 @@ export function CoursesPage() {
       await reloadCourses(courseId);
       toast.success(status === 'approved' ? t('courses.approved') : status === 'rejected' ? t('courses.rejected') : t('courses.submitted'));
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(message || t('courses.statusUpdateFailed'));
+      toast.error(getApiErrorMessage(error, t('courses.statusUpdateFailed')));
     } finally {
       setStatusUpdating(false);
     }
@@ -652,8 +650,7 @@ export function CoursesPage() {
       await reloadCourses();
       toast.success(t('courses.deleted'));
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(message || t('courses.deleteFailed'));
+      toast.error(getApiErrorMessage(error, t('courses.deleteFailed')));
     } finally {
       setDeletingCourse(false);
     }

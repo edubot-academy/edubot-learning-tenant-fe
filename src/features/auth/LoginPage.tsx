@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from './AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { LanguageMenu } from '../../components/LanguageMenu';
+import { getApiErrorMessage } from '../../lib/apiErrors';
 
 const edubotLearningUrl = 'https://learning.edubot.it.com';
 const edubotLearningName = 'EduBot Learning';
@@ -51,7 +52,7 @@ export function LoginPage() {
     try {
       await signIn(email, password);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('auth.loginFailed');
+      const message = getApiErrorMessage(error, t('auth.loginFailed'));
       setErrorMessage(message);
       toast.error(message);
     } finally {

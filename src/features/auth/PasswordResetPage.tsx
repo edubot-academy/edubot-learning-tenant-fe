@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { FiCheckCircle, FiMail } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { requestPasswordReset, resetPassword } from '../../services/api';
-import { getApiErrorMessage } from '../../lib/apiErrors';
+import { getApiErrorMessage, getApiResponseMessage } from '../../lib/apiErrors';
 import { useTenant } from '../tenant/TenantProvider';
 import { getPasswordSetupError } from './authPassword';
 
@@ -39,7 +39,7 @@ export function PasswordResetPage() {
     setSubmitting(true);
     try {
       const response = await requestPasswordReset({ identifier: identifier.trim(), method: 'email' });
-      setMessage(response.message || t('auth.resetCodeSent'));
+      setMessage(getApiResponseMessage(response, t('auth.resetCodeSent')));
       setStep('reset');
       toast.success(t('auth.resetCodeRequested'));
     } catch (requestError) {
@@ -79,7 +79,7 @@ export function PasswordResetPage() {
         otp: otp.trim(),
         newPassword: password,
       });
-      setMessage(response.message || t('auth.passwordResetCompleteDetail'));
+      setMessage(getApiResponseMessage(response, t('auth.passwordResetCompleteDetail')));
       setOtp('');
       setPassword('');
       setConfirmPassword('');

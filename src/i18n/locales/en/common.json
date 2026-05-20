@@ -23,6 +23,14 @@
     "toolsEnabled": "{{count}} tools enabled",
     "workspace": "Workspace"
   },
+  "apiMessages": {
+    "auth": {
+      "passwordReset": {
+        "requested": "If the account exists, a reset code was sent.",
+        "success": "Password reset complete. You can sign in with your new password."
+      }
+    }
+  },
   "attendance": {
     "allStatuses": "All statuses",
     "changed": "Changed",
@@ -1212,7 +1220,25 @@
     "TENANT_CONTEXT_MISMATCH": "The selected workspace does not match this request.",
     "TENANT_INACTIVE": "This workspace is inactive.",
     "TENANT_NOT_CONFIGURED": "This workspace is not configured yet.",
-    "USER_NOT_FOUND": "User not found."
+    "USER_NOT_FOUND": "User not found.",
+    "categories": {
+      "ai": "The AI request could not be completed.",
+      "attendance": "The attendance request could not be completed.",
+      "auth": "The authentication request could not be completed.",
+      "certificate": "The certificate request could not be completed.",
+      "company": "The workspace request could not be completed.",
+      "course": "The course request could not be completed.",
+      "enrollment": "The enrollment request could not be completed.",
+      "group": "The group request could not be completed.",
+      "homework": "The homework request could not be completed.",
+      "language": "This language is not supported.",
+      "media": "The media request could not be completed.",
+      "notification": "The notification request could not be completed.",
+      "session": "The session request could not be completed.",
+      "student": "The student request could not be completed.",
+      "tenant": "The workspace request could not be completed.",
+      "user": "The user request could not be completed."
+    }
   },
   "language": {
     "current": "Current language",

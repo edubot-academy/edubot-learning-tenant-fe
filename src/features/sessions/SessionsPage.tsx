@@ -156,6 +156,16 @@ const emptyActivityForm = {
   quizCorrectOption: 'a' as 'a' | 'b',
 };
 
+function upsertSessionList(items: CourseSession[], nextSession: CourseSession) {
+  return [nextSession, ...items.filter((session) => session.id !== nextSession.id)]
+    .sort((first, second) => {
+      const firstIndex = first.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+      const secondIndex = second.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+      if (firstIndex !== secondIndex) return firstIndex - secondIndex;
+      return String(first.startsAt ?? '').localeCompare(String(second.startsAt ?? ''));
+    });
+}
+
 type SessionOperationTab = 'overview' | 'activities' | 'meeting' | 'materials' | 'insights';
 type PendingRemoval =
   | { type: 'student'; student: GroupStudent }
@@ -716,7 +726,7 @@ export function SessionsPage() {
         status: 'scheduled',
         notes: sessionForm.notes.trim() || undefined,
       });
-      await reloadSessions(activeGroupId);
+      setSessions((current) => upsertSessionList(current, saved));
       setSessionId(saved.id);
       setSessionForm(emptySessionForm);
       setCreateModal(null);

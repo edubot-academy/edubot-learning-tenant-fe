@@ -19,6 +19,23 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.9.3 - 2026-05-21
+
+### Changed
+
+- Package version updated to `1.9.3`.
+
+### Fixed
+
+- Reduced session creation API fan-out by inserting the created session into local state instead of refetching the full group session and student roster immediately after create.
+
+### Tests
+
+- Added regression coverage to verify session creation does not repeat group session or student roster fetches.
+- `npm test` passes with 27 test files and 138 tests.
+- `npm run lint` passes.
+- `npm run build` passes with the existing Vite large chunk warning.
+
 ## 1.9.2 - 2026-05-21
 
 ### Changed

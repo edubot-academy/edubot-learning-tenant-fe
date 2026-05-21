@@ -513,6 +513,11 @@ export async function updateTenantCourse(courseId: number, payload: {
   return data;
 }
 
+export async function publishTenantCourse(courseId: number) {
+  const { data } = await api.patch<Course>(`/courses/${courseId}/publish`);
+  return data;
+}
+
 export async function deleteTenantCourse(courseId: number) {
   const { data } = await api.delete<{ message?: string }>(`/courses/${courseId}`);
   return data;
@@ -867,7 +872,13 @@ export async function listTenantMembers(tenantId: number) {
 }
 
 export async function addTenantMember(tenantId: number, payload: { userId: number; role: string }) {
-  const { data } = await api.post(`/companies/${tenantId}/members`, payload);
+  const { data } = await api.post<{
+    userId: number;
+    companyId: number;
+    role: string;
+    messageKey?: string;
+    onboarding?: { setupLink?: string; expiresAt?: string; emailSent?: boolean } | null;
+  }>(`/companies/${tenantId}/members`, payload);
   return data;
 }
 
@@ -891,7 +902,13 @@ export async function resendTenantInvitation(
   userId: number,
   payload: { sendEmail?: boolean } = {},
 ) {
-  const { data } = await api.post(`/companies/${tenantId}/invitations/${userId}/resend`, payload);
+  const { data } = await api.post<{
+    ok: true;
+    messageKey?: string;
+    user?: { id: number; email: string; fullName?: string };
+    roles?: string[];
+    onboarding?: { setupLink?: string; expiresAt?: string; emailSent?: boolean } | null;
+  }>(`/companies/${tenantId}/invitations/${userId}/resend`, payload);
   return data;
 }
 

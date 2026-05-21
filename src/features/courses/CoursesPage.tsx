@@ -2,25 +2,37 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { FiBookOpen, FiCalendar, FiCheckSquare, FiEdit2, FiFileText, FiPlus, FiTrash2, FiUsers } from 'react-icons/fi';
+import { FiEdit2, FiPlus } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
-import { FormModal, Modal } from '../../components/Modal';
-import { createTenantCourse, deleteTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, updateCourseStatus, updateTenantCourse } from '../../services/api';
+import { createTenantCourse, deleteTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, publishTenantCourse, updateCourseStatus, updateTenantCourse } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { canApproveTenantCourses, canManageTenantCourses, getEffectiveTenantRole } from '../tenant/tenantRoles';
-import { formatDate } from '../../lib/format';
 import { getApiErrorMessage } from '../../lib/apiErrors';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 import { courseRosterFilterParams, isDefaultCourseRosterFilter, type CourseProgressFilter } from './courseRosterFilters';
-import { courseHealthFilters, courseMatchesHealthFilter, getCourseHealthCounts, type CourseHealthFilter, type CourseHealthSummary } from './courseHealth';
-
-type TenantCourseType = 'offline' | 'online_live' | 'video';
+import { courseMatchesHealthFilter, getCourseHealthCounts, type CourseHealthFilter, type CourseHealthSummary } from './courseHealth';
+import { getCourseReadiness, type CourseNextAction } from './courseReadiness';
+import {
+  CourseCatalogTable,
+  CourseEmptyOnboarding,
+  CourseHealthFilterBar,
+  CourseOperationsGrid,
+  CourseStatePanel,
+  CourseSummaryBanner,
+  CourseToolbar,
+  CourseWorkflowChecklist,
+  GroupRosterSection,
+  RecentSessionsPanel,
+  SelectedGroupPanel,
+  type TenantCourseType,
+} from './courseComponents';
+import { CourseCreateModal, CourseDeleteDialog, CourseEditModal, CourseRejectDialog } from './courseModals';
 
 const courseIdValue = (course: Pick<Course, 'id'>) => Number(course.id);
 const summaryHealthFilters = new Set<CourseHealthFilter>(['no_groups', 'no_sessions', 'certificate_missing']);
@@ -110,7 +122,9 @@ export function CoursesPage() {
   const canManageCourses = canManageTenantCourses(user, activeTenant);
   const canApproveCourses = canApproveTenantCourses(user, activeTenant);
   const canCreateCourse = canManageCourses;
-  const canAssignInstructor = canApproveCourses;
+  const canAssignInstructor = canManageCourses;
+  const showCourseHealthFilters = canApproveCourses;
+  const isInstructorCreator = activeRole === 'instructor' && canCreateCourse && !canApproveCourses;
   const featureEnabled = (key: string) => activeTenant?.featureFlags?.[key] !== false;
   const attendanceEnabled = featureEnabled('attendance.enabled');
   const homeworkEnabled = featureEnabled('homework.enabled');
@@ -137,6 +151,11 @@ export function CoursesPage() {
   const deliveryModeLabel = (value?: CourseGroup['deliveryMode'] | CourseSession['groupDeliveryMode'] | string | null) => (
     value === 'individual' ? t('groups.deliveryIndividual') : t('groups.deliveryGroup')
   );
+  const courseTypeDetail = (value: TenantCourseType) => {
+    if (value === 'online_live') return t('courses.typeOnlineLiveDetail');
+    if (value === 'video') return t('courses.typeVideoDetail');
+    return t('courses.typeOfflineDetail');
+  };
   const workflowBlockerMessage = (course: Course | undefined, requireDelivery = true) => {
     if (!course) return t('courses.blockerChooseCourse');
     if (requireDelivery && !['offline', 'online_live'].includes(String(course.courseType ?? ''))) {
@@ -147,23 +166,25 @@ export function CoursesPage() {
     return '';
   };
 
-  const instructorMembers = useMemo(
+  const instructorMembers = useMemo<CompanyMember[]>(
     () => {
-      if (canAssignInstructor) {
-        return members.filter((member) => String(member.role).toLowerCase() === 'instructor');
-      }
+      const tenantInstructors = canAssignInstructor
+        ? members.filter((member) => String(member.role).toLowerCase() === 'instructor')
+        : [];
       if (activeRole === 'instructor' && user?.id) {
-        return [{
+        const self = {
           userId: user.id,
           role: 'instructor',
           fullName: user.fullName,
           email: user.email,
-        } satisfies CompanyMember];
+        } satisfies CompanyMember;
+        return [self, ...tenantInstructors.filter((member) => member.userId !== user.id)];
       }
-      return [];
+      return tenantInstructors;
     },
     [activeRole, canAssignInstructor, members, user?.email, user?.fullName, user?.id],
   );
+  const createInstructorUnavailable = canCreateCourse && instructorMembers.length === 0;
 
   const healthCounts = useMemo(() => getCourseHealthCounts(courses, courseHealth), [courseHealth, courses]);
   const courseHealthComplete = courses.length > 0 && courses.every((course) => Boolean(courseHealth[courseIdValue(course)]));
@@ -223,40 +244,80 @@ export function CoursesPage() {
   const selectedCourseHealth = selectedCourse ? courseHealth[courseIdValue(selectedCourse)] : undefined;
   const selectedGroupCount = loadedCourseDetailId === selectedCourseId ? groups.length : selectedCourseHealth?.groupCount ?? groups.length;
   const selectedSessionCount = loadedCourseDetailId === selectedCourseId ? sessions.length : selectedCourseHealth?.sessionCount ?? sessions.length;
+  const translateCourseReadiness = useCallback((course: Course, groupCount?: number, sessionCount?: number) => {
+    const readiness = getCourseReadiness(course, {
+      canApproveCourses,
+      canEditCourse,
+      groupCount,
+      sessionCount,
+    });
+    return {
+      ...readiness,
+      label: t(readiness.labelKey),
+      detail: t(readiness.detailKey),
+    };
+  }, [canApproveCourses, canEditCourse, t]);
+  const selectedCourseReadiness = useMemo(() => (
+    selectedCourse ? translateCourseReadiness(selectedCourse, selectedGroupCount, selectedSessionCount) : null
+  ), [selectedCourse, selectedGroupCount, selectedSessionCount, translateCourseReadiness]);
+  const getCatalogCourseReadiness = (course: Course) => {
+    const courseId = courseIdValue(course);
+    const summary = courseHealth[courseId];
+    const groupCount = summary?.groupCount ?? course.health?.groupCount ?? course.groupCount;
+    const sessionCount = summary?.sessionCount ?? course.health?.sessionCount ?? course.sessionCount;
+    return translateCourseReadiness(course, groupCount, sessionCount);
+  };
   const workflowChecklist = useMemo(() => {
     if (!selectedCourse) return [];
     const deliveryTypeReady = ['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''));
     const deliveryTypeLabel = enumLabel(selectedCourse.courseType, courseTypeLabelKeys, t);
     const approved = selectedCourse.status === 'approved';
     const published = selectedCourse.isPublished === true;
-    return [
+    const approvalAction = approved
+      ? null
+      : canApproveCourses
+        ? { type: 'approve' as CourseNextAction, label: t('courses.approveAndPublish') }
+        : { type: 'submit' as CourseNextAction, label: t('courses.submitForApproval') };
+    const steps = [
       {
         label: t('courses.workflowApproval'),
         detail: approved ? t('courses.workflowReady') : t('courses.workflowSubmitApprove'),
         complete: approved,
+        action: approvalAction,
       },
       {
         label: t('courses.workflowPublish'),
-        detail: published ? t('courses.workflowReady') : t('courses.workflowPublishDetail'),
+        detail: published ? t('courses.workflowReady') : approved ? t('courses.workflowPublishDetail') : t('courses.workflowPublishAutoDetail'),
         complete: published,
+        action: !published && approved && canApproveCourses ? { type: 'publish' as CourseNextAction, label: t('courses.publishCourse') } : null,
       },
       {
         label: t('courses.workflowDeliveryType'),
         detail: deliveryTypeReady ? deliveryTypeLabel : t('courses.blockerDeliveryType'),
         complete: deliveryTypeReady,
+        action: !deliveryTypeReady && canEditCourse ? { type: 'edit' as CourseNextAction, label: t('courses.editCourse') } : null,
       },
       {
         label: t('courses.workflowGroups'),
         detail: selectedGroupCount ? t('courses.workflowCountReady', { count: selectedGroupCount }) : t('courses.workflowCreateGroup'),
         complete: selectedGroupCount > 0,
+        action: selectedGroupCount === 0 && selectedCourseDeliveryReady ? { type: 'groups' as CourseNextAction, label: t('courses.createGroup') } : null,
       },
       {
         label: t('courses.workflowSessions'),
         detail: selectedSessionCount ? t('courses.workflowCountReady', { count: selectedSessionCount }) : t('courses.workflowScheduleSession'),
         complete: selectedSessionCount > 0,
+        action: selectedSessionCount === 0 && selectedGroupCount > 0 && selectedCourseDeliveryReady
+          ? { type: 'sessions' as CourseNextAction, label: t('courses.scheduleSession') }
+          : null,
       },
     ];
-  }, [selectedCourse, selectedGroupCount, selectedSessionCount, t]);
+    const currentIndex = steps.findIndex((step) => !step.complete);
+    return steps.map((step, index) => ({
+      ...step,
+      state: step.complete ? 'complete' as const : index === currentIndex ? 'current' as const : 'upcoming' as const,
+    }));
+  }, [canApproveCourses, canEditCourse, selectedCourse, selectedCourseDeliveryReady, selectedGroupCount, selectedSessionCount, t]);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId),
@@ -546,7 +607,7 @@ export function CoursesPage() {
     if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
       errors.courseType = t('courses.courseTypeDisabled');
     }
-    if (!createForm.instructorId) errors.instructorId = t('courses.instructorRequired');
+    if (!createForm.instructorId) errors.instructorId = createInstructorUnavailable ? t('courses.noInstructorsTitle') : t('courses.instructorRequired');
     setCreateErrors(errors);
     if (Object.keys(errors).length) return;
 
@@ -641,6 +702,19 @@ export function CoursesPage() {
     }
   };
 
+  const publishCourse = async (courseId: number) => {
+    setStatusUpdating(true);
+    try {
+      await publishTenantCourse(courseId);
+      await reloadCourses(courseId);
+      toast.success(t('courses.published'));
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, t('courses.updateFailed')));
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
   const deleteCourse = async (course: Course) => {
     const courseId = courseIdValue(course);
     setDeletingCourse(true);
@@ -666,6 +740,65 @@ export function CoursesPage() {
     );
   }
 
+  const renderCourseAction = (action: CourseNextAction, label: string, className = 'primary-button') => {
+    if (!selectedCourse || !action) return null;
+    const courseId = courseIdValue(selectedCourse);
+    if (action === 'approve') {
+      return (
+        <button type="button" className={className} disabled={statusUpdating} onClick={() => changeCourseStatus(courseId, 'approved')}>
+          {label}
+        </button>
+      );
+    }
+    if (action === 'submit') {
+      return (
+        <button type="button" className={className} disabled={statusUpdating} onClick={() => changeCourseStatus(courseId, 'pending')}>
+          {label}
+        </button>
+      );
+    }
+    if (action === 'publish') {
+      return (
+        <button type="button" className={className} disabled={statusUpdating} onClick={() => publishCourse(courseId)}>
+          {label}
+        </button>
+      );
+    }
+    if (action === 'edit') {
+      return (
+        <button type="button" className={className} onClick={openEditModal}>
+          <FiEdit2 />
+          {label}
+        </button>
+      );
+    }
+    if (action === 'groups') {
+      return <Link className={className} to={workflowPath('/groups', selectedScope)}>{label}</Link>;
+    }
+    if (action === 'sessions') {
+      return <Link className={className} to={workflowPath('/sessions', selectedScope)}>{label}</Link>;
+    }
+    if (action === 'openSessions') {
+      return <Link className={className} to={workflowPath('/sessions', selectedScope)}>{label}</Link>;
+    }
+    return null;
+  };
+
+  const renderReadinessAction = () => {
+    if (!selectedCourseReadiness?.nextAction) return null;
+    const labels: Record<Exclude<CourseNextAction, null>, string> = {
+      approve: t('courses.approveAndPublish'),
+      submit: t('courses.submitForApproval'),
+      publish: t('courses.publishCourse'),
+      edit: t('courses.editCourse'),
+      groups: t('courses.createGroup'),
+      sessions: t('courses.scheduleSession'),
+      openSessions: t('courses.openSessions'),
+    };
+    const className = selectedCourseReadiness.nextAction === 'openSessions' ? 'secondary-link-button' : 'primary-button';
+    return renderCourseAction(selectedCourseReadiness.nextAction, labels[selectedCourseReadiness.nextAction], className);
+  };
+
   return (
     <>
       <PageHeader
@@ -678,128 +811,52 @@ export function CoursesPage() {
           </button>
         ) : null}
       />
-      <div className="filters-row">
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t('courses.searchPlaceholder')}
+      <CourseToolbar
+        query={query}
+        setQuery={setQuery}
+        courses={courses}
+        selectedCourseId={selectedCourseId}
+        selectCourse={selectCourse}
+      />
+      {showCourseHealthFilters && courses.length ? (
+        <CourseHealthFilterBar
+          healthFilter={healthFilter}
+          healthCounts={healthCounts}
+          courseHealthComplete={courseHealthComplete}
+          setHealthFilter={setHealthFilter}
+          healthFilterLabel={healthFilterLabel}
         />
-        <select value={selectedCourseId ?? ''} onChange={(event) => selectCourse(Number(event.target.value) || undefined)}>
-          <option value="">{t('courses.selectCourse')}</option>
-          {courses.map((course) => {
-            const id = courseIdValue(course);
-            return <option key={id} value={id}>{course.title}</option>;
-          })}
-        </select>
-      </div>
-      {canManageCourses && courses.length ? (
-        <div className="member-role-chips course-health-filters" aria-label={t('courses.healthFilters')}>
-          {courseHealthFilters.map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                className={healthFilter === filter ? 'active' : ''}
-                disabled={summaryHealthFilters.has(filter) && !courseHealthComplete}
-                title={summaryHealthFilters.has(filter) && !courseHealthComplete ? t('courses.healthSummaryUnavailable') : undefined}
-                onClick={() => setHealthFilter(filter)}
-              >
-                {healthFilterLabel(filter)}
-                <strong>{healthCounts[filter] ?? 0}</strong>
-              </button>
-            ))}
-            {!courseHealthComplete ? <span className="panel-note compact">{t('courses.healthSummaryUnavailable')}</span> : null}
-          </div>
       ) : null}
       {!courses.length ? (
-        <EmptyState
-          title={t('courses.emptyTitle')}
-          detail={canCreateCourse ? t('courses.emptyCreateDetail') : t('courses.emptyAssignedDetail')}
-          action={canCreateCourse ? (
-            <button type="button" className="secondary-button" onClick={openCreateModal} disabled={!courseTypeOptions.length}>{t('courses.createCourse')}</button>
-          ) : <Link className="secondary-link-button" to="/settings">{t('courses.reviewSettings')}</Link>}
+        <CourseEmptyOnboarding
+          canCreateCourse={canCreateCourse}
+          courseTypeOptionsAvailable={Boolean(courseTypeOptions.length)}
+          openCreateModal={openCreateModal}
         />
       ) : (
         <>
           <StatGrid items={stats} />
           {selectedCourse ? (
-            <section className="course-context-strip workflow-context-panel" aria-label={t('courses.selectedSummary')}>
-              <div>
-                <span className="ui-kicker">{t('courses.selectedCourse')}</span>
-                <h2>{selectedCourse.title}</h2>
-                <p>
-                  {selectedCourseOperational
-                    ? t('courses.operationalDetail')
-                    : courseBlockerMessage}
-                </p>
-                <div className="course-context-metrics">
-                  <span><strong>{selectedGroupCount}</strong> {t('courses.groupsLower')}</span>
-                  <span><strong>{selectedCourse.enrolledStudents ?? 0}</strong> {t('courses.enrolledLower')}</span>
-                  <span><strong>{selectedSessionCount}</strong> {t('courses.sessionsLower')}</span>
-                </div>
-              </div>
-              <div className="course-context-badges">
-                <span className="muted-text">{courseTypeLabel(selectedCourse.courseType)}</span>
-                <span className={`status-badge ${selectedCourse.status || 'draft'}`}>{statusLabel(selectedCourse.status)}</span>
-                <span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>
-                  {publishLabel(selectedCourse.isPublished)}
-                </span>
-              </div>
-            </section>
+            <CourseSummaryBanner
+              course={selectedCourse}
+              courseType={courseTypeLabel(selectedCourse.courseType)}
+              readiness={selectedCourseReadiness}
+              fallbackDetail={selectedCourseOperational ? t('courses.operationalDetail') : courseBlockerMessage}
+              groupCount={selectedGroupCount}
+              sessionCount={selectedSessionCount}
+              action={renderReadinessAction()}
+            />
           ) : null}
           <div className="workspace-grid">
             <section className="content-section">
               <h2>{t('courses.tenantCatalog')}</h2>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t('courses.course')}</th>
-                      <th>{t('courses.type')}</th>
-                      <th>{t('courses.status')}</th>
-                      <th>{t('courses.publishedColumn')}</th>
-                      <th>{t('courses.students')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredCourses.map((course) => {
-                      const id = courseIdValue(course);
-                      return (
-                        <tr
-                          key={id}
-                          className={`interactive-row ${id === selectedCourseId ? 'selected-row' : ''}`}
-                          tabIndex={0}
-                          onClick={() => selectCourse(id)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              selectCourse(id);
-                            }
-                          }}
-                        >
-                          <td>
-                            <button
-                              type="button"
-                              className="table-row-button"
-                              aria-pressed={id === selectedCourseId}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                selectCourse(id);
-                              }}
-                            >
-                              <strong>{course.title}</strong>
-                              {course.instructor?.fullName ? <small>{course.instructor.fullName}</small> : null}
-                            </button>
-                          </td>
-                          <td>{courseTypeLabel(course.courseType)}</td>
-                          <td><span className={`status-badge ${course.status || 'draft'}`}>{statusLabel(course.status)}</span></td>
-                          <td><span className="metadata-text">{publishLabel(course.isPublished)}</span></td>
-                          <td>{course.enrolledStudents ?? 0}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <CourseCatalogTable
+                courses={filteredCourses}
+                selectedCourseId={selectedCourseId}
+                selectCourse={selectCourse}
+                courseTypeLabel={courseTypeLabel}
+                getReadiness={getCatalogCourseReadiness}
+              />
               {!filteredCourses.length ? (
                 <EmptyState
                   title={t('courses.noMatchesTitle')}
@@ -837,65 +894,23 @@ export function CoursesPage() {
                 <div className="course-operations-stack">
                   <section className="course-panel-block">
                     <h3>{t('courses.nextActions')}</h3>
-                    <div className="course-workflow-checklist" aria-label={t('courses.workflowChecklist')}>
-                      {workflowChecklist.map((step) => (
-                        <article className={step.complete ? 'complete' : 'current'} key={step.label}>
-                          <FiCheckSquare aria-hidden="true" />
-                          <span>
-                            <strong>{step.label}</strong>
-                            <small>{step.detail}</small>
-                          </span>
-                        </article>
-                      ))}
-                    </div>
-                    <div className="course-action-grid">
-                      {selectedCourseDeliveryReady ? (
-                        <Link className="course-action-card" to={workflowPath('/groups', selectedScope)}>
-                          <FiUsers />
-                          <span>{t('courses.groups')}</span>
-                        </Link>
-                      ) : (
-                        <span className="course-action-card disabled"><FiUsers /><span>{t('courses.groups')}</span></span>
-                      )}
-                      {selectedCourseDeliveryReady ? (
-                        <Link className="course-action-card" to={workflowPath('/sessions', selectedScope)}>
-                          <FiCalendar />
-                          <span>{t('courses.sessions')}</span>
-                        </Link>
-                      ) : (
-                        <span className="course-action-card disabled"><FiCalendar /><span>{t('courses.sessions')}</span></span>
-                      )}
-                      {attendanceEnabled ? (
-                        selectedCourseDeliveryReady ? (
-                          <Link className="course-action-card" to={workflowPath('/attendance', selectedScope)}>
-                            <FiCheckSquare />
-                            <span>{t('navigation.attendance')}</span>
-                          </Link>
-                        ) : (
-                          <span className="course-action-card disabled"><FiCheckSquare /><span>{t('navigation.attendance')}</span></span>
-                        )
-                      ) : null}
-                      {homeworkEnabled ? (
-                        selectedCourseOperational ? (
-                          <Link className="course-action-card" to={workflowPath('/homework', selectedScope)}>
-                            <FiFileText />
-                            <span>{t('courses.homework')}</span>
-                          </Link>
-                        ) : (
-                          <span className="course-action-card disabled"><FiFileText /><span>{t('courses.homework')}</span></span>
-                        )
-                      ) : null}
-                      {certificatesEnabled ? (
-                        selectedCourseOperational ? (
-                          <Link className="course-action-card" to={workflowPath('/certificates', { courseId: courseIdValue(selectedCourse), tab: 'rules' })}>
-                            <FiBookOpen />
-                            <span>{t('navigation.certificates')}</span>
-                          </Link>
-                        ) : (
-                          <span className="course-action-card disabled"><FiBookOpen /><span>{t('navigation.certificates')}</span></span>
-                        )
-                      ) : null}
-                    </div>
+                    <CourseWorkflowChecklist steps={workflowChecklist} renderAction={renderCourseAction} />
+                    {canApproveCourses && selectedCourse.status === 'pending' ? (
+                      <div className="course-review-actions" aria-label={t('courses.reviewActions')}>
+                        <button type="button" className="secondary-button" disabled={statusUpdating} onClick={() => setCourseRejectPending(selectedCourse)}>
+                          {t('courses.reject')}
+                        </button>
+                      </div>
+                    ) : null}
+                    <CourseOperationsGrid
+                      courseId={courseIdValue(selectedCourse)}
+                      scope={selectedScope}
+                      deliveryReady={selectedCourseDeliveryReady}
+                      operationalReady={selectedCourseOperational}
+                      attendanceEnabled={attendanceEnabled}
+                      homeworkEnabled={homeworkEnabled}
+                      certificatesEnabled={certificatesEnabled}
+                    />
                     {!selectedCourseOperational ? (
                       <p className="panel-note">
                         {courseBlockerMessage}
@@ -907,411 +922,114 @@ export function CoursesPage() {
                     ) : null}
                   </section>
 
-                  <section className="course-panel-block">
-                    <h3>{t('courses.courseState')}</h3>
-                    <div className="definition-grid">
-                      <span>{t('courses.course')}</span><strong>{selectedCourse.title}</strong>
-                      <span>{t('courses.type')}</span><strong>{courseTypeLabel(selectedCourse.courseType)}</strong>
-                      <span>{t('courses.status')}</span><strong><span className={`status-badge ${selectedCourse.status || 'draft'}`}>{statusLabel(selectedCourse.status)}</span></strong>
-                      <span>{t('courses.publishedColumn')}</span><strong><span className={`status-badge ${selectedCourse.isPublished ? 'published' : 'draft'}`}>{publishLabel(selectedCourse.isPublished)}</span></strong>
-                    </div>
-                    <div className="modal-actions">
-                      {canEditCourse ? (
-                        <button type="button" className="secondary-button" onClick={openEditModal}>
-                          <FiEdit2 />
-                          {t('courses.editCourse')}
-                        </button>
-                      ) : null}
-                      {canApproveCourses && selectedCourse.status === 'pending' ? (
-                        <button
-                          type="button"
-                          className="primary-button"
-                          disabled={statusUpdating}
-                          onClick={() => changeCourseStatus(courseIdValue(selectedCourse), 'approved')}
-                        >
-                          {t('courses.approve')}
-                        </button>
-                      ) : null}
-                      {canApproveCourses && selectedCourse.status === 'pending' ? (
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          disabled={statusUpdating}
-                          onClick={() => setCourseRejectPending(selectedCourse)}
-                        >
-                          {t('courses.reject')}
-                        </button>
-                      ) : null}
-                      {canApproveCourses && ['draft', 'rejected'].includes(selectedCourse.status || 'draft') ? (
-                        <button
-                          type="button"
-                          className="primary-button"
-                          disabled={statusUpdating}
-                          onClick={() => changeCourseStatus(courseIdValue(selectedCourse), 'approved')}
-                        >
-                          {t('courses.approve')}
-                        </button>
-                      ) : null}
-                      {!canApproveCourses && ['draft', 'rejected'].includes(selectedCourse.status || 'draft') ? (
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          disabled={statusUpdating}
-                          onClick={() => changeCourseStatus(courseIdValue(selectedCourse), 'pending')}
-                        >
-                          {t('courses.submitForApproval')}
-                        </button>
-                      ) : null}
-                      {canDeleteCourse ? (
-                        <button
-                          type="button"
-                          className="danger-button"
-                          disabled={statusUpdating || deletingCourse}
-                          onClick={() => setCourseDeletePending(selectedCourse)}
-                        >
-                          <FiTrash2 />
-                          {t('courses.deleteCourse')}
-                        </button>
-                      ) : null}
-                    </div>
-                  </section>
+                  <CourseStatePanel
+                    course={selectedCourse}
+                    canEditCourse={canEditCourse}
+                    canApproveCourses={canApproveCourses}
+                    canDeleteCourse={canDeleteCourse}
+                    statusUpdating={statusUpdating}
+                    deletingCourse={deletingCourse}
+                    courseTypeLabel={courseTypeLabel}
+                    statusLabel={statusLabel}
+                    publishLabel={publishLabel}
+                    openEditModal={openEditModal}
+                    changeCourseStatus={(courseId, status) => void changeCourseStatus(courseId, status)}
+                    setCourseRejectPending={setCourseRejectPending}
+                    setCourseDeletePending={setCourseDeletePending}
+                  />
 
-                  <section className="course-panel-block">
-                    <h3>{t('courses.selectedGroup')}</h3>
-                    <label>
-                      {t('courses.group')}
-                      <select
-                        value={selectedGroupId ?? ''}
-                        onFocus={() => void loadSelectedCourseDetails()}
-                        onMouseDown={() => void loadSelectedCourseDetails()}
-                        onChange={(event) => setSelectedGroupId(Number(event.target.value) || undefined)}
-                        disabled={!selectedCourse || courseDetailLoad.loading}
-                      >
-                        <option value="">{t('courses.selectGroup')}</option>
-                        {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                      </select>
-                    </label>
+                  <SelectedGroupPanel
+                    groups={groups}
+                    selectedGroupId={selectedGroupId}
+                    selectedGroup={selectedGroup}
+                    courseDetailLoading={courseDetailLoad.loading}
+                    loadCourseDetails={() => void loadSelectedCourseDetails()}
+                    setSelectedGroupId={setSelectedGroupId}
+                    statusLabel={statusLabel}
+                    deliveryModeLabel={deliveryModeLabel}
+                    studentCount={students.length}
+                    sessionCount={sessions.length}
+                    completedStudents={completedStudents}
+                    groupProgressAverage={groupProgressAverage}
+                  />
 
-                  {selectedGroup ? (
-                    <div className="course-group-summary workflow-context-panel compact">
-                      <div className="definition-grid">
-                        <span>{t('courses.code')}</span><strong>{selectedGroup.code ?? '-'}</strong>
-                        <span>{t('courses.groupStatus')}</span><strong><span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{statusLabel(selectedGroup.status)}</span></strong>
-                        <span>{t('groups.deliveryMode')}</span><strong><span className={`status-badge delivery-${selectedGroup.deliveryMode ?? 'group'}`}>{deliveryModeLabel(selectedGroup.deliveryMode)}</span></strong>
-                        <span>{t('courses.dates')}</span><strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : '-'}</strong>
-                      </div>
-                      <div className="course-group-metrics">
-                        <span><FiUsers /><strong>{students.length}</strong> {t('courses.studentsLower')}</span>
-                        <span><FiCalendar /><strong>{sessions.length}</strong> {t('courses.sessionsLower')}</span>
-                        <span><FiCheckSquare /><strong>{completedStudents}</strong> {t('courses.completedLower')}</span>
-                      </div>
-                      <div className="progress-cell course-progress-cell">
-                        <span style={{ width: `${groupProgressAverage}%` }} />
-                        <strong>{t('courses.averageProgress', { percent: groupProgressAverage })}</strong>
-                      </div>
-                    </div>
-                  ) : null}
-                  </section>
-
-                  <section className="course-panel-block">
-                    <h3>{t('courses.recentSessions')}</h3>
-                    <div className="stack-list">
-                      {sessions.slice(0, 5).map((session) => (
-                        <article className="stack-list-item" key={session.id}>
-                          <div>
-                            <strong>{session.title}</strong>
-                            <span>{formatDate(session.startsAt)}</span>
-                          </div>
-                          <strong>
-                            <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
-                            {' '}<span className={`status-badge delivery-${session.groupDeliveryMode ?? selectedGroup?.deliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode ?? selectedGroup?.deliveryMode)}</span>
-                          </strong>
-                        </article>
-                      ))}
-                      {!sessions.length ? <span className="muted-text">{t('courses.noSessions')}</span> : null}
-                    </div>
-                  </section>
+                  <RecentSessionsPanel
+                    sessions={sessions}
+                    selectedGroup={selectedGroup}
+                    statusLabel={statusLabel}
+                    deliveryModeLabel={deliveryModeLabel}
+                  />
                 </div>
               )}
             </aside>
           </div>
 
           {selectedGroup ? (
-            <section className="content-section course-roster-section">
-              <div className="section-heading-row">
-                <div>
-                  <h2>{t('courses.groupRoster')}</h2>
-                  <span>{selectedGroup.name}</span>
-                </div>
-                <strong className="muted-count">{t('courses.shownCount', { count: students.length })}</strong>
-              </div>
-              <div className="filters-row three roster-filters">
-                <input
-                  value={studentQuery}
-                  onChange={(event) => setStudentQuery(event.target.value)}
-                  placeholder={t('courses.searchStudent')}
-                />
-                <select value={progressFilter} onChange={(event) => setProgressFilter(event.target.value as CourseProgressFilter)}>
-                  <option value="all">{t('courses.allProgress')}</option>
-                  <option value="not_started">{t('courses.progressNotStarted')}</option>
-                  <option value="in_progress">{t('courses.progressInProgress')}</option>
-                  <option value="completed">{t('courses.completed')}</option>
-                </select>
-                <button type="button" className="secondary-button" onClick={() => {
-                  setStudentQuery('');
-                  setProgressFilter('all');
-                }}>
-                  {t('courses.clearFilters')}
-                </button>
-              </div>
-              {!students.length ? (
-                <EmptyState
-                  title={studentQuery.trim() || progressFilter !== 'all' ? t('courses.noMatchingStudents') : t('courses.noStudentsTitle')}
-                  detail={studentQuery.trim() || progressFilter !== 'all'
-                    ? t('courses.noMatchingStudentsDetail')
-                    : t('courses.noStudentsDetail')}
-                  action={studentQuery.trim() || progressFilter !== 'all' ? (
-                    <button type="button" className="secondary-button" onClick={() => {
-                      setStudentQuery('');
-                      setProgressFilter('all');
-                    }}>
-                      {t('courses.clearFilters')}
-                    </button>
-                  ) : null}
-                />
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{t('courses.student')}</th>
-                        <th>{t('courses.email')}</th>
-                        <th>{t('courses.progress')}</th>
-                        <th>{t('courses.completed')}</th>
-                        <th>{t('courses.enrolled')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {students.map((student) => (
-                        <tr key={student.userId}>
-                          <td>
-                            <strong>{student.fullName || t('courses.studentFallback', { id: student.userId })}</strong>
-                            {student.phoneNumber ? <small>{student.phoneNumber}</small> : null}
-                          </td>
-                          <td>{student.email ?? '-'}</td>
-                          <td>
-                            <div className="progress-cell">
-                              <span style={{ width: `${Math.min(100, Math.max(0, student.progressPercent ?? 0))}%` }} />
-                              <strong>{student.progressPercent ?? 0}%</strong>
-                            </div>
-                          </td>
-                          <td>{student.completed ? t('courses.completed') : t('courses.progressInProgress')}</td>
-                          <td>{formatDate(student.enrolledAt)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+            <GroupRosterSection
+              selectedGroup={selectedGroup}
+              students={students}
+              studentQuery={studentQuery}
+              progressFilter={progressFilter}
+              setStudentQuery={setStudentQuery}
+              setProgressFilter={setProgressFilter}
+              clearFilters={() => {
+                setStudentQuery('');
+                setProgressFilter('all');
+              }}
+            />
           ) : null}
         </>
       )}
       {createModalOpen ? (
-        <FormModal labelledBy="create-course-title" onClose={() => setCreateModalOpen(false)} onSubmit={submitCourse}>
-          <div className="modal-header-block">
-            <span>{t('courses.createModalEyebrow')}</span>
-            <h2 id="create-course-title">{t('courses.newCourse')}</h2>
-          </div>
-          <label>
-            {t('courses.title')}
-            <input
-              className={createErrors.title ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.title)}
-              aria-describedby={createErrors.title ? 'create-course-title-error' : undefined}
-              value={createForm.title}
-              onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
-              placeholder={t('courses.titlePlaceholder')}
-              autoFocus
-            />
-            {createErrors.title ? <small className="field-error" id="create-course-title-error">{createErrors.title}</small> : null}
-          </label>
-          <label>
-            {t('courses.type')}
-            <select
-              className={createErrors.courseType ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.courseType)}
-              aria-describedby={createErrors.courseType ? 'create-course-type-error' : undefined}
-              value={createForm.courseType}
-              onChange={(event) => setCreateForm((current) => ({ ...current, courseType: event.target.value as TenantCourseType }))}
-            >
-              {courseTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            {createErrors.courseType ? <small className="field-error" id="create-course-type-error">{createErrors.courseType}</small> : null}
-          </label>
-          <label>
-            {t('courses.description')}
-            <textarea
-              className={createErrors.description ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.description)}
-              aria-describedby={createErrors.description ? 'create-course-description-error' : undefined}
-              value={createForm.description}
-              onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
-              placeholder={t('courses.descriptionPlaceholder')}
-              rows={4}
-            />
-            {createErrors.description ? <small className="field-error" id="create-course-description-error">{createErrors.description}</small> : null}
-          </label>
-          <label>
-            {t('courses.instructor')}
-            <select
-              className={createErrors.instructorId ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.instructorId)}
-              aria-describedby={createErrors.instructorId ? 'create-course-instructor-error' : undefined}
-              value={createForm.instructorId ?? ''}
-              onChange={(event) => setCreateForm((current) => ({ ...current, instructorId: Number(event.target.value) || undefined }))}
-              disabled={activeRole === 'instructor'}
-            >
-              <option value="">{t('courses.selectInstructor')}</option>
-              {instructorMembers.map((member) => (
-                <option key={`${member.userId}-${member.role}`} value={member.userId}>
-                  {member.fullName || member.user?.fullName || member.email || member.user?.email || t('courses.userFallback', { id: member.userId })}
-                </option>
-              ))}
-            </select>
-            {createErrors.instructorId ? <small className="field-error" id="create-course-instructor-error">{createErrors.instructorId}</small> : null}
-          </label>
-          {activeTenant?.featureFlags?.['courses.video.enabled'] !== true ? (
-            <p className="muted-text">{t('courses.videoControlled')}</p>
-          ) : null}
-          <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setCreateModalOpen(false)}>{t('courses.cancel')}</button>
-            <button type="submit" className="primary-button" disabled={creatingCourse || !courseTypeOptions.length}>
-              {creatingCourse ? t('courses.creating') : t('courses.createCourse')}
-            </button>
-          </div>
-        </FormModal>
+        <CourseCreateModal
+          form={createForm}
+          errors={createErrors}
+          courseTypeOptions={courseTypeOptions}
+          instructorMembers={instructorMembers}
+          activeRole={activeRole}
+          isInstructorCreator={isInstructorCreator}
+          createInstructorUnavailable={createInstructorUnavailable}
+          creatingCourse={creatingCourse}
+          videoEnabled={activeTenant?.featureFlags?.['courses.video.enabled'] === true}
+          setForm={setCreateForm}
+          courseTypeDetail={courseTypeDetail}
+          onClose={() => setCreateModalOpen(false)}
+          onSubmit={submitCourse}
+        />
       ) : null}
       {editModalOpen && selectedCourse ? (
-        <FormModal labelledBy="edit-course-title" onClose={() => { setEditModalOpen(false); setCreateErrors({}); }} onSubmit={saveCourse}>
-          <div className="modal-header-block">
-            <span>{t('courses.privateTenantCourse')}</span>
-            <h2 id="edit-course-title">{t('courses.editCourse')}</h2>
-          </div>
-          <label>
-            {t('courses.title')}
-            <input
-              className={createErrors.title ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.title)}
-              aria-describedby={createErrors.title ? 'edit-course-title-error' : undefined}
-              value={createForm.title}
-              onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
-              placeholder={t('courses.titlePlaceholder')}
-              autoFocus
-            />
-            {createErrors.title ? <small className="field-error" id="edit-course-title-error">{createErrors.title}</small> : null}
-          </label>
-          <label>
-            {t('courses.type')}
-            <select
-              className={createErrors.courseType ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.courseType)}
-              aria-describedby={createErrors.courseType ? 'edit-course-type-error' : undefined}
-              value={createForm.courseType}
-              onChange={(event) => setCreateForm((current) => ({ ...current, courseType: event.target.value as TenantCourseType }))}
-            >
-              {courseTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            {createErrors.courseType ? <small className="field-error" id="edit-course-type-error">{createErrors.courseType}</small> : null}
-          </label>
-          <label>
-            {t('courses.description')}
-            <textarea
-              className={createErrors.description ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.description)}
-              aria-describedby={createErrors.description ? 'edit-course-description-error' : undefined}
-              value={createForm.description}
-              onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
-              placeholder={t('courses.descriptionPlaceholder')}
-              rows={4}
-            />
-            {createErrors.description ? <small className="field-error" id="edit-course-description-error">{createErrors.description}</small> : null}
-          </label>
-          <label>
-            {t('courses.instructor')}
-            <select
-              className={createErrors.instructorId ? 'input-error' : undefined}
-              aria-invalid={Boolean(createErrors.instructorId)}
-              aria-describedby={createErrors.instructorId ? 'edit-course-instructor-error' : undefined}
-              value={createForm.instructorId ?? ''}
-              onChange={(event) => setCreateForm((current) => ({ ...current, instructorId: Number(event.target.value) || undefined }))}
-              disabled={activeRole === 'instructor'}
-            >
-              <option value="">{t('courses.selectInstructor')}</option>
-              {instructorMembers.map((member) => (
-                <option key={`${member.userId}-${member.role}`} value={member.userId}>
-                  {member.fullName || member.user?.fullName || member.email || member.user?.email || t('courses.userFallback', { id: member.userId })}
-                </option>
-              ))}
-            </select>
-            {createErrors.instructorId ? <small className="field-error" id="edit-course-instructor-error">{createErrors.instructorId}</small> : null}
-          </label>
-          <p className="muted-text">{t('courses.privateScopeNote')}</p>
-          <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setEditModalOpen(false)} disabled={savingCourse}>{t('courses.cancel')}</button>
-            <button type="submit" className="primary-button" disabled={savingCourse || !courseTypeOptions.length}>
-              {savingCourse ? t('courses.saving') : t('courses.saveCourse')}
-            </button>
-          </div>
-        </FormModal>
+        <CourseEditModal
+          form={createForm}
+          errors={createErrors}
+          courseTypeOptions={courseTypeOptions}
+          instructorMembers={instructorMembers}
+          activeRole={activeRole}
+          savingCourse={savingCourse}
+          setForm={setCreateForm}
+          courseTypeDetail={courseTypeDetail}
+          onClose={() => { setEditModalOpen(false); setCreateErrors({}); }}
+          onSubmit={saveCourse}
+        />
       ) : null}
       {courseRejectPending ? (
-        <Modal labelledBy="reject-course-title" onClose={() => setCourseRejectPending(null)}>
-          <div className="modal-header-block">
-            <span>{t('courses.reject')}</span>
-            <h2 id="reject-course-title">{t('courses.rejectCourseTitle')}</h2>
-            <p>{t('courses.rejectCourseDetail', { title: courseRejectPending.title })}</p>
-          </div>
-          <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setCourseRejectPending(null)} disabled={statusUpdating}>{t('courses.cancel')}</button>
-            <button
-              type="button"
-              className="danger-button"
-              disabled={statusUpdating}
-              onClick={() => {
-                const courseId = courseIdValue(courseRejectPending);
-                setCourseRejectPending(null);
-                void changeCourseStatus(courseId, 'rejected');
-              }}
-            >
-              {statusUpdating ? t('auth.working') : t('courses.reject')}
-            </button>
-          </div>
-        </Modal>
+        <CourseRejectDialog
+          course={courseRejectPending}
+          statusUpdating={statusUpdating}
+          onClose={() => setCourseRejectPending(null)}
+          onConfirm={() => {
+            const courseId = courseIdValue(courseRejectPending);
+            setCourseRejectPending(null);
+            void changeCourseStatus(courseId, 'rejected');
+          }}
+        />
       ) : null}
       {courseDeletePending ? (
-        <Modal labelledBy="delete-course-title" onClose={() => setCourseDeletePending(null)}>
-          <div className="modal-header-block">
-            <span>{t('courses.deleteCourse')}</span>
-            <h2 id="delete-course-title">{t('courses.deleteCourseTitle')}</h2>
-            <p>{t('courses.deleteCourseDetail', { title: courseDeletePending.title })}</p>
-          </div>
-          <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={() => setCourseDeletePending(null)} disabled={deletingCourse}>{t('courses.cancel')}</button>
-            <button
-              type="button"
-              className="danger-button"
-              disabled={deletingCourse}
-              onClick={() => void deleteCourse(courseDeletePending)}
-            >
-              {deletingCourse ? t('courses.deleting') : t('courses.deleteCourse')}
-            </button>
-          </div>
-        </Modal>
+        <CourseDeleteDialog
+          course={courseDeletePending}
+          deletingCourse={deletingCourse}
+          onClose={() => setCourseDeletePending(null)}
+          onConfirm={() => void deleteCourse(courseDeletePending)}
+        />
       ) : null}
     </>
   );

@@ -210,13 +210,17 @@ export function MembersPage() {
     }
     setWorking(true);
     try {
-      await addTenantMember(activeTenantId, { userId: selectedUserId, role: addRole });
+      const result = await addTenantMember(activeTenantId, { userId: selectedUserId, role: addRole });
+      setInviteResult(result);
       await reloadMembers();
       setMemberModal(null);
       setUserSearch('');
       setUserResults([]);
       setUserSearchRan(false);
       setSelectedUserId(undefined);
+      if (result?.onboarding?.setupLink) {
+        setInviteLinkModalOpen(true);
+      }
       toast.success(t('members.added'));
     } catch {
       toast.error(t('members.addFailed'));

@@ -1,7 +1,7 @@
 import type { AxiosAdapter } from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearCurrentLocale } from '../i18n/locale';
-import { api, createIndividualCourseGroup, searchUsers, tenantStore, tokenStore } from './api';
+import { api, createIndividualCourseGroup, createTenantCourse, publishTenantCourse, searchUsers, tenantStore, tokenStore } from './api';
 
 describe('api browser stores', () => {
   const defaultAdapter = api.defaults.adapter;
@@ -223,5 +223,58 @@ describe('api browser stores', () => {
     expect(requestBody).not.toHaveProperty('code');
     expect(requestBody).not.toHaveProperty('status');
     expect(requestBody).not.toHaveProperty('scheduleNote');
+  });
+
+  it('posts tenant-scoped private fields for course creation', async () => {
+    let requestBody: Record<string, unknown> | null = null;
+    api.defaults.adapter = async (config) => {
+      requestBody = JSON.parse(String(config.data || '{}')) as Record<string, unknown>;
+      return {
+        data: { id: 501, title: 'Math' },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    await createTenantCourse(42, {
+      title: 'Math',
+      description: 'Algebra basics',
+      courseType: 'offline',
+      instructorId: 7,
+    });
+
+    expect(requestBody).toMatchObject({
+      title: 'Math',
+      description: 'Algebra basics',
+      price: 0,
+      isPaid: false,
+      visibility: 'PRIVATE',
+      companyId: 42,
+      courseType: 'offline',
+      instructorId: 7,
+    });
+  });
+
+  it('publishes courses through the dedicated backend endpoint', async () => {
+    let requestUrl = '';
+    let requestMethod = '';
+    api.defaults.adapter = async (config) => {
+      requestUrl = config.url ?? '';
+      requestMethod = String(config.method ?? '');
+      return {
+        data: { id: 501, title: 'Math', isPublished: true },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    await publishTenantCourse(501);
+
+    expect(requestUrl).toBe('/courses/501/publish');
+    expect(requestMethod).toBe('patch');
   });
 });

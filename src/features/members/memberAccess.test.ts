@@ -76,7 +76,7 @@ describe('member access helpers', () => {
 
     expect(getMemberInviteState({
       userId: 5,
-      role: 'student',
+      role: 'instructor',
       invitation: { status: 'pending', expiresAt: '2026-05-13T08:00:00.000Z', setupLink: 'https://setup.test' },
     }, now)).toEqual({
       status: 'expired',

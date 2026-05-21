@@ -19,6 +19,39 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.10.0 - 2026-05-21
+
+### Added
+
+- Added a guided course setup experience with readiness states, lifecycle checklist actions, selected-course summary, first-course onboarding, and pending review actions.
+- Added dedicated course publish API usage through `PATCH /courses/:courseId/publish`.
+- Added existing-member setup-link handling so tenant admins can copy onboarding links when adding platform users who still need account setup.
+- Added regression coverage for course readiness, course setup flows, course API payloads, member setup links, and localization keys.
+
+### Changed
+
+- Moved course health filters into a secondary admin diagnostics disclosure so setup actions stay primary.
+- Split course page UI into focused course components and modal components for maintainability.
+- Updated course creation UX with delivery-type guidance, description guidance, no-instructor messaging, and instructor self-assignment behavior when instructors are allowed to create courses.
+- Updated member invitation copy so setup-link states are role-neutral instead of student-only.
+- Package version updated to `1.10.0`.
+
+### Fixed
+
+- Fixed mobile course catalog layout so catalog cards scroll horizontally and show a visible next-card affordance.
+- Fixed mobile overflow around course operations, course tables, modal layering, and the language switcher dropdown.
+- Fixed approved course publishing flow so the frontend uses the backend publish contract instead of a generic course update payload.
+
+### Tests
+
+- `npm test -- --run` passes with 30 test files and 153 tests.
+- `npm run build` passes with the existing Vite large chunk warning.
+
+### Migration Notes
+
+- Release this frontend with backend support for `PATCH /courses/:courseId/publish`.
+- Owner and company admin approval continues to rely on backend auto-publish behavior.
+
 ## 1.9.3 - 2026-05-21
 
 ### Changed

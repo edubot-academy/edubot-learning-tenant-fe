@@ -5,7 +5,6 @@ export type CourseHealthFilter =
   | 'draft'
   | 'pending'
   | 'approved_unpublished'
-  | 'no_instructor'
   | 'no_groups'
   | 'no_sessions'
   | 'certificate_missing';
@@ -21,7 +20,6 @@ export const courseHealthFilters: CourseHealthFilter[] = [
   'draft',
   'pending',
   'approved_unpublished',
-  'no_instructor',
   'no_groups',
   'no_sessions',
   'certificate_missing',
@@ -36,7 +34,6 @@ export function courseMatchesHealthFilter(
   if (filter === 'draft') return (course.status ?? 'draft') === 'draft';
   if (filter === 'pending') return course.status === 'pending';
   if (filter === 'approved_unpublished') return course.status === 'approved' && course.isPublished !== true;
-  if (filter === 'no_instructor') return !course.instructor?.id;
   if (filter === 'no_groups') return summary?.groupCount === 0;
   if (filter === 'no_sessions') return (summary?.groupCount ?? 0) > 0 && summary?.sessionCount === 0;
   if (filter === 'certificate_missing') return summary?.certificateConfigured === false;

@@ -516,7 +516,7 @@ export type Course = {
     enrolledStudents?: number;
   };
   coverImageUrl?: string | null;
-  instructor?: { id: number; fullName?: string };
+  instructor?: { id: number; fullName?: string } | null;
 };
 
 export type CourseGroup = {

@@ -485,7 +485,7 @@ export async function createTenantCourse(tenantId: number, payload: {
   title: string;
   description: string;
   courseType: 'offline' | 'online_live' | 'video';
-  instructorId?: number;
+  instructorId?: number | null;
 }) {
   const { data } = await api.post<Course>('/courses', {
     title: payload.title,
@@ -504,7 +504,7 @@ export async function updateTenantCourse(courseId: number, payload: {
   title?: string;
   description?: string;
   courseType?: 'offline' | 'online_live' | 'video';
-  instructorId?: number;
+  instructorId?: number | null;
 }) {
   const { data } = await api.patch<Course>(`/courses/${courseId}`, {
     ...payload,

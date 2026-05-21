@@ -76,6 +76,14 @@ const unpublishedCourse = {
   isPublished: false,
 };
 
+const offlineCourse = {
+  id: 103,
+  title: 'Offline Math',
+  courseType: 'offline',
+  status: 'approved',
+  isPublished: true,
+};
+
 const individualGroup = {
   id: 301,
   courseId: 101,
@@ -93,9 +101,9 @@ const studentMember = {
   email: 'aida@example.test',
 };
 
-function renderPage() {
+function renderPage(initialEntry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <GroupsPage />
     </MemoryRouter>,
   );
@@ -136,6 +144,7 @@ describe('GroupsPage individual delivery', () => {
     api.listCourseGroups.mockResolvedValue([]);
     api.listGroupSessions.mockResolvedValue([]);
     api.listGroupStudents.mockResolvedValue([]);
+    api.searchUsers.mockResolvedValue([]);
     api.createIndividualCourseGroup.mockResolvedValue({ group: individualGroup, enrollment: { id: 701 }, firstSession: null });
   });
 
@@ -162,6 +171,30 @@ describe('GroupsPage individual delivery', () => {
 
     expect(await screen.findByText('Live Math')).toBeInTheDocument();
     expect(screen.queryByText('Draft Math')).not.toBeInTheDocument();
+  });
+
+  it('hides meeting fields for offline group creation', async () => {
+    api.listTenantCourses.mockResolvedValue([offlineCourse]);
+    api.listCourseGroups.mockResolvedValue([]);
+    api.createCourseGroup.mockResolvedValue({ id: 401, courseId: 103, name: 'Offline group' });
+
+    renderPage();
+
+    const courseTitle = await screen.findByText('Offline Math');
+    fireEvent.click(courseTitle.closest('button') as HTMLButtonElement);
+    await waitFor(() => expect(api.listCourseGroups).toHaveBeenCalledWith(103));
+    fireEvent.click(getPrimaryCreateButton());
+
+    await screen.findByRole('heading', { name: /create group/i });
+    expect(screen.queryByLabelText(/meeting provider/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/meeting url/i)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Offline group' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /create group/i }).at(-1) as HTMLElement);
+
+    await waitFor(() => expect(api.createCourseGroup).toHaveBeenCalled());
+    expect(api.createCourseGroup.mock.calls[0][0]).not.toHaveProperty('meetingProvider');
+    expect(api.createCourseGroup.mock.calls[0][0]).not.toHaveProperty('meetingUrl');
   });
 
   it('keeps the groups page usable when tenant member loading is forbidden', async () => {
@@ -221,6 +254,81 @@ describe('GroupsPage individual delivery', () => {
     expect(api.createIndividualCourseGroup).not.toHaveBeenCalled();
   });
 
+  it('shows inline validation when the end date is before the start date', async () => {
+    renderPage();
+    await selectCourse();
+
+    await openCreateGroupModal();
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Weekend group' } });
+    fireEvent.change(screen.getByLabelText(/start date/i), { target: { value: '2026-05-20' } });
+    fireEvent.change(screen.getByLabelText(/end date/i), { target: { value: '2026-05-18' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /create group/i }).at(-1) as HTMLElement);
+
+    expect(await screen.findByText('End date must be after the start date')).toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalledWith('End date must be after the start date');
+    expect(api.createCourseGroup).not.toHaveBeenCalled();
+  });
+
+  it('prevents duplicate create submissions while saving', async () => {
+    api.createCourseGroup.mockResolvedValueOnce({
+      id: 401,
+      courseId: 101,
+      name: 'Weekend group',
+      status: 'active',
+      deliveryMode: 'group',
+    });
+    api.listCourseGroups
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 401, courseId: 101, name: 'Weekend group', status: 'active', deliveryMode: 'group' }]);
+
+    renderPage();
+    await selectCourse();
+
+    await openCreateGroupModal();
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Weekend group' } });
+
+    const submitButton = screen.getAllByRole('button', { name: /create group/i }).at(-1) as HTMLElement;
+    fireEvent.click(submitButton);
+    fireEvent.click(submitButton);
+
+    await waitFor(() => expect(api.createCourseGroup).toHaveBeenCalledTimes(1));
+  });
+
+  it('creates and uses a new student for individual group creation', async () => {
+    api.inviteTenantMember.mockResolvedValueOnce({
+      userId: 202,
+      role: 'student',
+      fullName: 'Bek Student',
+      email: 'bek@example.test',
+      onboarding: { emailSent: false },
+    });
+    api.listCourseGroups
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...individualGroup, id: 302, name: 'Bek individual' }]);
+
+    renderPage();
+    await selectCourse();
+
+    await openCreateGroupModal();
+    fireEvent.click(screen.getByRole('button', { name: 'Individual' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New student' }));
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Bek individual' } });
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Bek Student' } });
+    fireEvent.change(screen.getByPlaceholderText('student@example.com'), { target: { value: 'bek@example.test' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /create group/i }).at(-1) as HTMLElement);
+
+    await waitFor(() => expect(api.inviteTenantMember).toHaveBeenCalledWith(42, expect.objectContaining({
+      fullName: 'Bek Student',
+      email: 'bek@example.test',
+      role: 'student',
+    })));
+    expect(api.createIndividualCourseGroup).toHaveBeenCalledWith(expect.objectContaining({
+      courseId: 101,
+      studentId: 202,
+      name: 'Bek individual',
+    }));
+  });
+
   it('searches individual students when pressing Enter in the create modal search field', async () => {
     renderPage();
     await selectCourse();
@@ -231,7 +339,7 @@ describe('GroupsPage individual delivery', () => {
     fireEvent.keyDown(screen.getByLabelText(/individual student/i), { key: 'Enter' });
 
     expect(await screen.findByRole('option', { name: /aida student/i })).toBeInTheDocument();
-    expect(api.searchUsers).not.toHaveBeenCalled();
+    expect(api.searchUsers).toHaveBeenCalledWith({ search: 'aida', role: 'student', limit: 12 });
     expect(api.createIndividualCourseGroup).not.toHaveBeenCalled();
   });
 
@@ -287,9 +395,40 @@ describe('GroupsPage individual delivery', () => {
     api.listCourseGroups.mockResolvedValue([individualGroup]);
 
     renderPage();
-    await selectCourse();
 
+    await waitFor(() => expect(api.listCourseGroups).toHaveBeenCalledWith(101));
     await waitFor(() => expect(screen.getAllByText('Live Math - Aida').length).toBeGreaterThan(0));
     expect(screen.getAllByText('Individual').length).toBeGreaterThan(0);
+  });
+
+  it('opens the requested group workspace tab from the URL', async () => {
+    api.listCourseGroups.mockResolvedValue([{
+      id: 401,
+      courseId: 101,
+      name: 'Scheduled group',
+      status: 'planned',
+      deliveryMode: 'group',
+      startDate: '2026-05-21',
+      endDate: '2026-06-19',
+      scheduleBlocks: [{ day: 'mon', startTime: '10:00', endTime: '11:00' }],
+    }]);
+
+    renderPage('/?courseId=101&groupId=401&tab=sessions');
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Sessions' })).toHaveAttribute('aria-selected', 'true'));
+    expect(await screen.findByText('Generate sessions')).toBeInTheDocument();
+    expect(screen.getByText('Monday 10:00-11:00')).toBeInTheDocument();
+  });
+
+  it('switches between group workspace tabs', async () => {
+    api.listCourseGroups.mockResolvedValue([individualGroup]);
+
+    renderPage('/?courseId=101&groupId=301&tab=overview');
+
+    expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Overview' }), { key: 'ArrowRight' });
+
+    expect(await screen.findByRole('tab', { name: 'Students' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { name: 'Roster' })).toBeInTheDocument();
   });
 });

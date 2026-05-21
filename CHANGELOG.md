@@ -19,6 +19,44 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.11.0 - 2026-05-21
+
+### Added
+
+- Added a focused group workspace with overview, students, sessions, and settings tabs, deep-link support, keyboard tab navigation, and next-best-action guidance.
+- Added modal-based student enrollment from group workflows with existing-student search, new-student invite-and-enroll, and backend search fallback for individual group creation.
+- Added shared group form helpers for defaults, payload shaping, timezone/URL/date/schedule validation, and reuse across Groups and Sessions.
+- Added schedule-aware session creation defaults so new sessions prefill from the selected group's saved dates and recurring schedule.
+- Added support for creating individual groups with new students from both Groups and Sessions workflows.
+
+### Changed
+
+- Moved group enrollment into a modal and reorganized the group detail page into task-focused workspace tabs.
+- Updated group and session creation modals with required-field states, inline validation, clearer disabled states, and offline/live-online conditional fields.
+- Made course leads optional during course creation and editing, and removed the no-instructor health filter from course diagnostics.
+- Updated removal copy to match the current course-level unenrollment API behavior.
+- Package version updated to `1.11.0`.
+
+### Fixed
+
+- Prevented duplicate group create/update submissions from rapid double-clicks or repeated Enter submits.
+- Reduced duplicate group detail reloads after group refresh by separating form hydration from group roster/session loading.
+- Fixed group workspace tab URL synchronization for direct links such as `?tab=sessions`.
+- Fixed checkbox visibility and disabled button contrast across light and dark themes.
+- Fixed backend API error handling in group and session operations so stable backend messages surface consistently.
+
+### Tests
+
+- Added regression coverage for group form validation, offline meeting-field omission, duplicate create submission guards, workspace tab deep links and keyboard navigation, session prefill from group schedules, and individual/new-student group creation.
+- `npm test -- --run` passes with 31 test files and 169 tests.
+- `npm run lint` passes.
+- `npm run build` passes with the existing Vite large chunk warning.
+
+### Migration Notes
+
+- Student removal in group/session rosters still uses the existing course-level unenrollment endpoint: `DELETE /enrollments/:courseId/unenroll/:userId`.
+- Release with backend support already used by prior versions for individual groups and generated sessions.
+
 ## 1.10.0 - 2026-05-21
 
 ### Added

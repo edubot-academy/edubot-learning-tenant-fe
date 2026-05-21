@@ -15,7 +15,6 @@ describe('course health helpers', () => {
     expect(courseMatchesHealthFilter(course({ status: 'draft' }), 'draft', {})).toBe(true);
     expect(courseMatchesHealthFilter(course({ status: 'pending' }), 'pending', {})).toBe(true);
     expect(courseMatchesHealthFilter(course({ status: 'approved', isPublished: false }), 'approved_unpublished', {})).toBe(true);
-    expect(courseMatchesHealthFilter(course({ instructor: undefined }), 'no_instructor', {})).toBe(true);
     expect(courseMatchesHealthFilter(course({ status: 'approved' }), 'no_groups', { groupCount: 0 })).toBe(true);
     expect(courseMatchesHealthFilter(course({ status: 'approved' }), 'no_sessions', { groupCount: 1, sessionCount: 0 })).toBe(true);
     expect(courseMatchesHealthFilter(course({ status: 'approved' }), 'certificate_missing', { certificateConfigured: false })).toBe(true);
@@ -37,7 +36,6 @@ describe('course health helpers', () => {
       draft: 1,
       pending: 1,
       approved_unpublished: 1,
-      no_instructor: 1,
       no_groups: 1,
       no_sessions: 1,
       certificate_missing: 2,

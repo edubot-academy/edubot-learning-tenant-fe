@@ -182,6 +182,14 @@ button:disabled {
   opacity: 0.62;
 }
 
+button.primary-button:disabled,
+button:not(.secondary-button):disabled {
+  border-color: var(--line-strong);
+  background: var(--surface-muted);
+  color: var(--text-soft);
+  box-shadow: none;
+}
+
 button:disabled,
 select:disabled,
 input:disabled,
@@ -319,6 +327,57 @@ textarea {
     box-shadow var(--transition-ui);
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 72%, var(--text));
+  opacity: 1;
+}
+
+input[type='checkbox'] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  border: 2px solid color-mix(in srgb, var(--text-muted) 78%, var(--line-strong));
+  border-radius: 5px;
+  background: var(--surface);
+  padding: 0;
+  cursor: pointer;
+}
+
+input[type='checkbox']::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: #ffffff;
+  clip-path: polygon(14% 44%, 0 58%, 38% 96%, 100% 18%, 84% 4%, 36% 68%);
+  transform: scale(0);
+  transition: transform var(--transition-ui);
+}
+
+input[type='checkbox']:checked {
+  border-color: var(--brand-primary);
+  background: var(--brand-primary);
+}
+
+input[type='checkbox']:checked::before {
+  transform: scale(1);
+}
+
+input[type='checkbox']:focus-visible {
+  border-color: var(--brand-primary);
+  box-shadow: var(--focus-shadow);
+}
+
+input[type='checkbox']:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 textarea {
   min-height: 96px;
   padding-top: 10px;
@@ -357,6 +416,17 @@ label {
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 800;
+}
+
+.inline-check {
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: fit-content;
+  color: var(--text);
+  font-weight: 850;
 }
 
 a {
@@ -2821,6 +2891,11 @@ details[open] > summary .disclosure-chevron {
   box-shadow: none;
 }
 
+.modal-close-button:focus-visible {
+  outline: 2px solid rgba(245, 124, 32, 0.32);
+  outline-offset: 2px;
+}
+
 .modal-close-button svg {
   width: 18px;
   height: 18px;
@@ -2833,8 +2908,28 @@ details[open] > summary .disclosure-chevron {
   overscroll-behavior: contain;
 }
 
+.decision-modal.form-modal.group-form-modal {
+  width: min(760px, 100%);
+  gap: 12px;
+  padding: 18px 20px 0;
+}
+
+.decision-modal.form-modal.enrollment-form-modal {
+  width: min(680px, 100%);
+  gap: 14px;
+}
+
+.decision-modal.form-modal.session-form-modal {
+  width: min(680px, 100%);
+  gap: 14px;
+}
+
 .decision-modal.form-modal textarea {
   min-height: 132px;
+}
+
+.decision-modal.form-modal.group-form-modal textarea {
+  min-height: 88px;
 }
 
 .support-detail-modal {
@@ -2871,7 +2966,7 @@ details[open] > summary .disclosure-chevron {
 }
 
 .modal-header-block > span {
-  color: var(--brand-primary);
+  color: var(--brand-primary-strong);
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
@@ -2886,7 +2981,7 @@ details[open] > summary .disclosure-chevron {
 
 .decision-modal p {
   margin: 0;
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 72%, var(--text));
   line-height: 1.45;
 }
 
@@ -2897,6 +2992,83 @@ details[open] > summary .disclosure-chevron {
   gap: 8px;
   min-width: 0;
   padding-top: 4px;
+}
+
+.group-form-modal .modal-actions {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  margin: 0 -20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: 12px 20px 16px;
+}
+
+.group-form-modal .modal-actions button {
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.enrollment-form-modal .modal-header-block {
+  gap: 8px;
+}
+
+.enrollment-form-modal .modal-header-block > span {
+  font-size: 12px;
+}
+
+.enrollment-form-modal .modal-header-block p {
+  max-width: 520px;
+}
+
+.enrollment-form-modal label,
+.group-form-modal label,
+.session-form-modal label {
+  color: color-mix(in srgb, var(--text-muted) 58%, var(--text));
+}
+
+.enrollment-form-modal .enrollment-tabs {
+  margin-bottom: 0;
+}
+
+.enrollment-form-modal .student-search-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.enrollment-form-modal .modal-actions button {
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.session-form-modal .modal-header-block {
+  gap: 8px;
+}
+
+.session-form-modal .modal-header-block p {
+  max-width: 720px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.session-form-modal label {
+  gap: 6px;
+}
+
+.session-form-modal input,
+.session-form-modal select,
+.session-form-modal textarea {
+  min-height: 38px;
+}
+
+.session-form-modal .required-field > span:first-child::after {
+  content: " *";
+  color: var(--danger);
+}
+
+.session-form-modal .modal-actions button {
+  min-height: 38px;
+  font-size: 14px;
 }
 
 .stack-list {
@@ -4836,7 +5008,7 @@ button.stack-list-item.active {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: color-mix(in srgb, var(--brand-primary) 46%, var(--line-strong));
+  background: color-mix(in srgb, var(--brand-primary) 34%, var(--line-strong));
 }
 
 .workflow-context-panel.compact::before {
@@ -4987,10 +5159,10 @@ button.stack-list-item.active {
 
 .form-section {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   border-top: 1px solid var(--line);
-  padding-top: 14px;
+  padding-top: 12px;
 }
 
 .form-section:first-of-type {
@@ -5003,6 +5175,21 @@ button.stack-list-item.active {
   color: var(--text);
   font-size: 14px;
   font-weight: 900;
+}
+
+.group-form-modal label {
+  gap: 6px;
+}
+
+.group-form-modal input,
+.group-form-modal select,
+.group-form-modal textarea {
+  min-height: 38px;
+}
+
+.group-form-modal .required-field > span:first-child::after {
+  content: " *";
+  color: var(--danger);
 }
 
 .group-summary-grid {
@@ -5032,6 +5219,245 @@ button.stack-list-item.active {
   color: var(--text);
   font-size: 14px;
   overflow-wrap: anywhere;
+}
+
+.group-workspace-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.group-context-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  padding: 12px 14px;
+}
+
+.group-context-strip > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.group-context-strip span,
+.group-overview-secondary span,
+.group-schedule-preview span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.group-context-strip strong,
+.group-overview-secondary strong,
+.group-schedule-preview strong {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.context-collapse-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.group-workspace-panel > .section-heading-row,
+.group-workspace-panel .group-summary-grid {
+  margin-bottom: 0;
+}
+
+.group-detail-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.group-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.group-title-row h2 {
+  margin: 0;
+}
+
+.group-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.group-action-bar .secondary-button,
+.group-action-bar .secondary-link-button {
+  min-height: 36px;
+  border-radius: 7px;
+  box-shadow: none;
+}
+
+.group-workspace-panel .group-summary-grid {
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+}
+
+.group-workspace-panel .group-summary-grid section {
+  background: color-mix(in srgb, var(--surface-muted) 68%, var(--surface));
+}
+
+.group-workspace-panel .group-summary-grid strong {
+  font-size: 13px;
+}
+
+.group-next-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.group-next-action > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.group-next-action strong {
+  color: var(--text);
+}
+
+.group-next-action span {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.group-next-action.warning {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+}
+
+.group-next-action.info {
+  border-color: var(--status-info-border);
+  background: var(--status-info-bg);
+}
+
+.group-next-action.success {
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+}
+
+.group-workspace-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 4px;
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 4px;
+}
+
+.group-workspace-tabs button {
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--text-muted) 70%, var(--text));
+  box-shadow: none;
+  padding: 0 12px;
+}
+
+.group-workspace-tabs button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.group-workspace-tabs button.active {
+  border-color: var(--brand-primary);
+  background: var(--brand-primary-soft);
+  color: var(--brand-primary-dark);
+  box-shadow: var(--shadow-xs);
+}
+
+.group-overview-secondary,
+.group-schedule-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.group-overview-secondary section,
+.group-schedule-preview {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 68%, var(--surface));
+  padding: 12px;
+}
+
+.group-generation-panel {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  box-shadow: none;
+}
+
+.group-generation-panel .three-col {
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  align-items: end;
+}
+
+.group-generation-panel .generation-actions {
+  min-width: 300px;
+}
+
+.group-detail-grid {
+  grid-template-columns: minmax(0, 2.2fr) minmax(280px, 0.9fr);
+  gap: 12px;
+}
+
+.group-settings-panel {
+  display: grid;
+  gap: 14px;
+  box-shadow: none;
+}
+
+.group-roster-panel,
+.upcoming-sessions-panel {
+  box-shadow: none;
+}
+
+.upcoming-sessions-panel::before {
+  background: color-mix(in srgb, var(--brand-primary) 24%, var(--line-strong));
+}
+
+.enrollment-search-form {
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr) auto;
+  align-items: end;
+  margin: 8px 0 12px;
+}
+
+.enrollment-search-form .field-note {
+  grid-column: 1 / -1;
+}
+
+.group-roster-panel .state-panel,
+.upcoming-sessions-panel .state-panel {
+  min-height: 180px;
+  padding: 18px;
 }
 
 .enrollment-tabs {
@@ -5765,13 +6191,24 @@ button.stack-list-item.active {
   padding: 4px;
 }
 
+.segmented-control.delivery-mode-tabs,
+.segmented-control.enrollment-tabs {
+  grid-template-columns: repeat(2, minmax(88px, 1fr));
+  justify-self: start;
+}
+
+.student-search-row.compact {
+  grid-template-columns: minmax(180px, 1fr) auto minmax(160px, 0.8fr);
+}
+
 .segmented-control button {
-  min-height: 34px;
+  min-height: 32px;
   border-color: transparent;
   background: transparent;
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 70%, var(--text));
   box-shadow: none;
-  padding: 0 12px;
+  padding: 0 11px;
+  font-size: 13px;
 }
 
 .segmented-control button:hover:not(:disabled) {
@@ -5781,10 +6218,32 @@ button.stack-list-item.active {
 }
 
 .segmented-control button.active {
-  border-color: var(--line-strong);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-xs);
+  border-color: var(--brand-primary);
+  background: var(--brand-primary-soft);
+  color: var(--brand-primary-dark);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 18%, transparent),
+    var(--shadow-xs);
+}
+
+.group-form-modal .schedule-block-list {
+  display: grid;
+  gap: 8px;
+}
+
+.group-form-modal .schedule-block-list .three-col {
+  grid-template-columns: minmax(150px, 1fr) minmax(112px, 0.72fr) minmax(112px, 0.72fr) auto;
+  align-items: end;
+}
+
+.group-form-modal .schedule-block-list > .secondary-button {
+  justify-self: start;
+  width: auto;
+}
+
+.group-form-modal .schedule-block-list .three-col > .secondary-button {
+  min-width: 92px;
+  padding: 0 12px;
 }
 
 html[data-theme='dark'] .sidebar {
@@ -5929,6 +6388,40 @@ html[data-theme='dark'] textarea {
 
   .workspace-grid {
     grid-template-columns: 1fr;
+  }
+
+  .group-workspace-panel .group-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .group-generation-panel .three-col,
+  .group-detail-grid,
+  .enrollment-search-form,
+  .group-context-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .group-generation-panel .generation-actions {
+    min-width: 0;
+  }
+
+  .group-action-bar {
+    justify-content: flex-start;
+  }
+
+  .group-workspace-tabs {
+    display: flex;
+    justify-self: stretch;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .group-workspace-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .group-workspace-tabs button {
+    flex: 0 0 min(180px, 46vw);
   }
 
   .workspace-grid .settings-panel {
@@ -6111,7 +6604,8 @@ html[data-theme='dark'] textarea {
     align-items: stretch;
   }
 
-  .student-search-row {
+  .student-search-row,
+  .student-search-row.compact {
     grid-template-columns: 1fr;
   }
 
@@ -6155,6 +6649,19 @@ html[data-theme='dark'] textarea {
 
   .course-action-card {
     min-height: 42px;
+  }
+
+  .group-workspace-panel .group-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .group-overview-secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .group-action-bar .secondary-button,
+  .group-action-bar .secondary-link-button {
+    width: 100%;
   }
 
   .workflow-context-panel::before {
@@ -6388,6 +6895,19 @@ html[data-theme='dark'] textarea {
   .modal-actions a {
     width: 100%;
   }
+
+  .group-form-modal .schedule-block-list .three-col {
+    grid-template-columns: 1fr;
+  }
+
+  .group-form-modal .schedule-block-list .three-col > .secondary-button,
+  .group-form-modal .schedule-block-list > .secondary-button {
+    width: 100%;
+  }
+
+  .enrollment-form-modal .student-search-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 560px) {
@@ -6573,6 +7093,15 @@ html[data-theme='dark'] textarea {
     width: 100%;
     max-height: calc(100dvh - 20px - env(safe-area-inset-bottom));
     padding: 16px;
+  }
+
+  .decision-modal.form-modal.group-form-modal {
+    padding: 16px 16px 0;
+  }
+
+  .group-form-modal .modal-actions {
+    margin: 0 -16px;
+    padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
   }
 
   .certificate-preview-modal {

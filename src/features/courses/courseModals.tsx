@@ -90,7 +90,7 @@ function CourseFormFields({
         ) : null}
       </label>
       <label>
-        {t('courses.instructor')}
+        {t('courses.courseLeadOptional')}
         <select
           className={errors.instructorId ? 'input-error' : undefined}
           aria-invalid={Boolean(errors.instructorId)}
@@ -99,7 +99,7 @@ function CourseFormFields({
           onChange={(event) => setForm((current) => ({ ...current, instructorId: Number(event.target.value) || undefined }))}
           disabled={instructorDisabled}
         >
-          <option value="">{t('courses.selectInstructor')}</option>
+          <option value="">{t('courses.noCourseLead')}</option>
           {instructorMembers.map((member) => (
             <option key={`${member.userId}-${member.role}`} value={member.userId}>
               {memberDisplayName(member, t('courses.userFallback', { id: member.userId }))}

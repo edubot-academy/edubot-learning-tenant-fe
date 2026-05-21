@@ -15,7 +15,7 @@ export type CourseFormState = {
   title: string;
   description: string;
   courseType: TenantCourseType;
-  instructorId: number | undefined;
+  instructorId: number | null | undefined;
 };
 export type CourseTypeOption = { value: TenantCourseType; label: string };
 export type TranslatedCourseReadiness = {

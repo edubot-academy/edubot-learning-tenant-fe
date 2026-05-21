@@ -30,6 +30,7 @@ import {
   GroupRosterSection,
   RecentSessionsPanel,
   SelectedGroupPanel,
+  type CourseFormState,
   type TenantCourseType,
 } from './courseComponents';
 import { CourseCreateModal, CourseDeleteDialog, CourseEditModal, CourseRejectDialog } from './courseModals';
@@ -106,11 +107,11 @@ export function CoursesPage() {
   const [deletingCourse, setDeletingCourse] = useState(false);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [loadedCourseDetailId, setLoadedCourseDetailId] = useState<number | undefined>();
-  const [createForm, setCreateForm] = useState({
+  const [createForm, setCreateForm] = useState<CourseFormState>({
     title: '',
     description: '',
     courseType: 'offline' as TenantCourseType,
-    instructorId: undefined as number | undefined,
+    instructorId: undefined,
   });
   const knownEmptyCourseIdsRef = useRef(new Set<number>());
   const pendingCreatedCourseIdRef = useRef<number | null>(null);
@@ -184,7 +185,7 @@ export function CoursesPage() {
     },
     [activeRole, canAssignInstructor, members, user?.email, user?.fullName, user?.id],
   );
-  const createInstructorUnavailable = canCreateCourse && instructorMembers.length === 0;
+  const createInstructorUnavailable = activeRole === 'instructor' && !user?.id;
 
   const healthCounts = useMemo(() => getCourseHealthCounts(courses, courseHealth), [courseHealth, courses]);
   const courseHealthComplete = courses.length > 0 && courses.every((course) => Boolean(courseHealth[courseIdValue(course)]));
@@ -195,7 +196,6 @@ export function CoursesPage() {
       draft: t('courses.healthDraft'),
       pending: t('courses.healthPending'),
       approved_unpublished: t('courses.healthApprovedUnpublished'),
-      no_instructor: t('courses.healthNoInstructor'),
       no_groups: t('courses.healthNoGroups'),
       no_sessions: t('courses.healthNoSessions'),
       certificate_missing: t('courses.healthCertificateMissing'),
@@ -579,7 +579,7 @@ export function CoursesPage() {
       title: '',
       description: '',
       courseType: courseTypeOptions[0]?.value ?? 'offline',
-      instructorId: activeRole === 'instructor' ? user?.id : instructorMembers[0]?.userId,
+      instructorId: activeRole === 'instructor' ? user?.id : undefined,
     });
     setCreateModalOpen(true);
   };
@@ -591,7 +591,7 @@ export function CoursesPage() {
       title: selectedCourse.title ?? '',
       description: selectedCourse.description ?? '',
       courseType: (selectedCourse.courseType ?? courseTypeOptions[0]?.value ?? 'offline') as TenantCourseType,
-      instructorId: selectedCourse.instructor?.id ?? (activeRole === 'instructor' ? user?.id : instructorMembers[0]?.userId),
+      instructorId: selectedCourse.instructor?.id ?? (activeRole === 'instructor' ? user?.id : null),
     });
     setEditModalOpen(true);
   };
@@ -607,7 +607,6 @@ export function CoursesPage() {
     if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
       errors.courseType = t('courses.courseTypeDisabled');
     }
-    if (!createForm.instructorId) errors.instructorId = createInstructorUnavailable ? t('courses.noInstructorsTitle') : t('courses.instructorRequired');
     setCreateErrors(errors);
     if (Object.keys(errors).length) return;
 
@@ -618,7 +617,7 @@ export function CoursesPage() {
         title: createForm.title.trim(),
         description: createForm.description.trim(),
         courseType: createForm.courseType,
-        instructorId: createForm.instructorId,
+        ...(createForm.instructorId ? { instructorId: createForm.instructorId } : {}),
       });
       const createdCourseId = courseIdValue(created);
       knownEmptyCourseIdsRef.current.add(createdCourseId);
@@ -658,7 +657,6 @@ export function CoursesPage() {
     if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
       errors.courseType = t('courses.courseTypeDisabled');
     }
-    if (!createForm.instructorId) errors.instructorId = t('courses.instructorRequired');
     setCreateErrors(errors);
     if (Object.keys(errors).length) return;
 
@@ -668,7 +666,7 @@ export function CoursesPage() {
         title: createForm.title.trim(),
         description: createForm.description.trim(),
         courseType: createForm.courseType,
-        instructorId: createForm.instructorId,
+        instructorId: createForm.instructorId ?? null,
       });
       await reloadCourses(courseIdValue(selectedCourse));
       setEditModalOpen(false);

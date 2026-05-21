@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -9,6 +9,7 @@ import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import {
   createSessionActivity,
   createCourseGroup,
+  createIndividualCourseGroup,
   createGroupSession,
   createLiveMeeting,
   deleteLiveMeeting,
@@ -39,36 +40,23 @@ import {
 import type { AttendanceRecord, CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
 import { formatDate } from '../../lib/format';
 import { activityTypeLabelKeys, commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
+import { getApiErrorMessage } from '../../lib/apiErrors';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { canCoordinateTenantLearning, canEnrollTenantStudents, canTeachAssignedSessions, isTenantAdmin } from '../tenant/tenantRoles';
 import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
-
-type GroupStatus = 'planned' | 'open' | 'active' | 'completed' | 'cancelled';
-type ScheduleDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
-type ScheduleBlockForm = { day: ScheduleDay; startTime: string; endTime: string };
-
-const emptyScheduleBlock = (): ScheduleBlockForm => ({
-  day: 'mon',
-  startTime: '',
-  endTime: '',
-});
-
-const emptyGroupForm = {
-  name: '',
-  code: '',
-  status: 'active' as GroupStatus,
-  startDate: '',
-  endDate: '',
-  seatLimit: '',
-  timezone: 'Asia/Bishkek',
-  location: '',
-  meetingProvider: '',
-  meetingUrl: '',
-  scheduleNote: '',
-  scheduleBlocks: [emptyScheduleBlock()],
-  instructorId: '',
-};
+import {
+  emptyGroupForm,
+  emptyScheduleBlock,
+  groupToForm,
+  positiveNumber,
+  scheduleBlocksPayload,
+  validateGroupForm as validateSharedGroupForm,
+  type GroupForm,
+  type GroupStatus,
+  type GroupValidationErrors,
+  type ScheduleDay,
+} from '../groups/groupForm';
 
 const emptySessionForm = {
   title: '',
@@ -77,20 +65,29 @@ const emptySessionForm = {
   notes: '',
 };
 
-const emptyEditGroupForm = {
-  name: '',
-  code: '',
-  status: 'active' as GroupStatus,
-  startDate: '',
-  endDate: '',
-  seatLimit: '',
-  timezone: 'Asia/Bishkek',
-  location: '',
-  meetingProvider: '',
-  meetingUrl: '',
-  scheduleNote: '',
-  scheduleBlocks: [emptyScheduleBlock()],
-  instructorId: '',
+const scheduleDayIndex: Record<ScheduleDay, number> = {
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+};
+
+const dateInputValue = (date: Date) => {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+};
+
+const dateOnly = (value?: string | null) => {
+  if (!value) return undefined;
+  return value.slice(0, 10);
+};
+
+const combineDateTime = (dateValue: string, timeValue: string) => {
+  const candidate = new Date(`${dateValue}T${timeValue}`);
+  return Number.isNaN(candidate.getTime()) ? undefined : candidate;
 };
 
 const emptyStudentInviteForm = {
@@ -98,34 +95,6 @@ const emptyStudentInviteForm = {
   email: '',
   sendEmail: false,
 };
-
-function groupToForm(group?: CourseGroup | null) {
-  if (!group) return emptyEditGroupForm;
-  const scheduleBlocks = Array.isArray(group.scheduleBlocks) && group.scheduleBlocks.length
-    ? group.scheduleBlocks.map((block) => ({
-      day: (['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].includes(String(block.day)) ? block.day : 'mon') as ScheduleDay,
-      startTime: block.startTime ?? '',
-      endTime: block.endTime ?? '',
-    }))
-    : [emptyScheduleBlock()];
-  return {
-    name: group.name ?? '',
-    code: group.code ?? '',
-    status: ['planned', 'open', 'active', 'completed', 'cancelled'].includes(String(group.status))
-      ? group.status as GroupStatus
-      : 'active',
-    startDate: group.startDate ? group.startDate.slice(0, 10) : '',
-    endDate: group.endDate ? group.endDate.slice(0, 10) : '',
-    seatLimit: group.seatLimit ? String(group.seatLimit) : '',
-    timezone: group.timezone ?? 'Asia/Bishkek',
-    location: group.location ?? '',
-    meetingProvider: group.meetingProvider ?? '',
-    meetingUrl: group.meetingUrl ?? '',
-    scheduleNote: group.scheduleNote ?? '',
-    scheduleBlocks,
-    instructorId: group.instructorId ? String(group.instructorId) : '',
-  };
-}
 
 const emptyEditSessionForm = {
   title: '',
@@ -217,8 +186,8 @@ export function SessionsPage() {
   const [generationLoading, setGenerationLoading] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [removingStudentId, setRemovingStudentId] = useState<number | undefined>();
-  const [groupForm, setGroupForm] = useState(emptyGroupForm);
-  const [editGroupForm, setEditGroupForm] = useState(emptyEditGroupForm);
+  const [groupForm, setGroupForm] = useState<GroupForm>(() => emptyGroupForm());
+  const [editGroupForm, setEditGroupForm] = useState<GroupForm>(() => emptyGroupForm());
   const [sessionForm, setSessionForm] = useState(emptySessionForm);
   const [editSessionForm, setEditSessionForm] = useState(emptyEditSessionForm);
   const [meetingForm, setMeetingForm] = useState(emptyMeetingForm);
@@ -238,13 +207,17 @@ export function SessionsPage() {
   const [enrollmentMode, setEnrollmentMode] = useState<'existing' | 'new'>('existing');
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const [editGroupErrors, setEditGroupErrors] = useState<GroupValidationErrors>({});
   const [sessionEditErrors, setSessionEditErrors] = useState<Record<string, string>>({});
   const [meetingErrors, setMeetingErrors] = useState<Record<string, string>>({});
   const [materialError, setMaterialError] = useState('');
   const [sessionOperationTab, setSessionOperationTab] = useState<SessionOperationTab>('overview');
+  const savingGroupRef = useRef(false);
 
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
   const selectedCourseReady = isCourseWorkflowReady(selectedCourse);
+  const selectedCourseLiveOnline = selectedCourse?.courseType === 'online_live';
+  const selectedCourseOffline = selectedCourse?.courseType === 'offline';
   const selectedCourseBlocker = (() => {
     if (!selectedCourse) return t('courses.blockerChooseCourse');
     if (!['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''))) return t('courses.blockerDeliveryType');
@@ -262,10 +235,65 @@ export function SessionsPage() {
     () => tenantMembers.filter((member) => String(member.role).toLowerCase() === 'instructor'),
     [tenantMembers],
   );
+  const tenantStudentOptions = useMemo(
+    () => tenantMembers
+      .filter((member) => String(member.role).toLowerCase() === 'student')
+      .map((member) => ({
+        id: member.userId,
+        email: member.email ?? '',
+        fullName: member.fullName,
+        role: member.role,
+      })),
+    [tenantMembers],
+  );
+  const sessionPlaceholder = useCallback((index: number) => t('sessions.sessionPlaceholder', { index }), [t]);
   const nextSessionIndex = useMemo(
     () => Math.max(0, ...sessions.map((session) => session.sessionIndex ?? 0)) + 1,
     [sessions],
   );
+  const defaultSessionForm = useMemo(() => {
+    const title = sessionPlaceholder(nextSessionIndex);
+    const completeBlocks = selectedGroup?.scheduleBlocks
+      ?.filter((block) => block.day && block.startTime && block.endTime)
+      .sort((left, right) => scheduleDayIndex[left.day as ScheduleDay] - scheduleDayIndex[right.day as ScheduleDay]) ?? [];
+    const groupStart = dateOnly(selectedGroup?.startDate);
+    const groupEnd = dateOnly(selectedGroup?.endDate);
+    const latestSessionEnd = sessions
+      .map((session) => new Date(session.endsAt || session.startsAt || ''))
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .sort((left, right) => right.getTime() - left.getTime())[0];
+    const anchor = latestSessionEnd && groupStart
+      ? new Date(Math.max(latestSessionEnd.getTime() + 60000, new Date(`${groupStart}T00:00`).getTime()))
+      : groupStart
+        ? new Date(`${groupStart}T00:00`)
+        : latestSessionEnd
+          ? new Date(latestSessionEnd.getTime() + 60000)
+          : new Date();
+    anchor.setHours(0, 0, 0, 0);
+
+    for (let offset = 0; offset < 370; offset += 1) {
+      const candidateDate = new Date(anchor);
+      candidateDate.setDate(anchor.getDate() + offset);
+      const candidateDay = candidateDate.getDay();
+      const dateValue = dateInputValue(candidateDate).slice(0, 10);
+      if (groupStart && dateValue < groupStart) continue;
+      if (groupEnd && dateValue > groupEnd) break;
+      const block = completeBlocks.find((item) => scheduleDayIndex[item.day as ScheduleDay] === candidateDay);
+      if (!block) continue;
+      const startsAt = combineDateTime(dateValue, block.startTime);
+      const endsAt = combineDateTime(dateValue, block.endTime);
+      if (!startsAt || !endsAt || endsAt <= startsAt) continue;
+      if (latestSessionEnd && endsAt <= latestSessionEnd) continue;
+      return {
+        title,
+        startsAt: dateInputValue(startsAt),
+        endsAt: dateInputValue(endsAt),
+        notes: '',
+      };
+    }
+
+    return { ...emptySessionForm, title };
+  }, [nextSessionIndex, selectedGroup, sessionPlaceholder, sessions]);
   const sessionActivities = selectedSession?.activities ?? [];
   const savedScheduleReady = Boolean(selectedGroup?.scheduleBlocks?.some((block) => block.day && block.startTime && block.endTime));
   const generationDatesReady = Boolean(generationRange.fromDate && generationRange.toDate);
@@ -290,7 +318,6 @@ export function SessionsPage() {
     };
     return t(removalTypeKeys[value]);
   };
-  const sessionPlaceholder = (index: number) => t('sessions.sessionPlaceholder', { index });
   const translatedSessionTabs = useMemo(
     () => sessionOperationTabs.map((tab) => ({ ...tab, label: t(tab.label) })),
     [t],
@@ -404,19 +431,19 @@ export function SessionsPage() {
 
   useEffect(() => {
     setTenantMembers([]);
-    if (!activeTenantId || !canAssignInstructor) return;
+    if (!activeTenantId || (!canAssignInstructor && !canManageEnrollment)) return;
     let cancelled = false;
     listTenantMembers(activeTenantId)
       .then((members) => {
         if (!cancelled) setTenantMembers(members);
       })
       .catch(() => {
-        if (!cancelled) toast.error(t('sessions.instructorsLoadFailed'));
+        if (!cancelled && canAssignInstructor) toast.error(t('sessions.instructorsLoadFailed'));
       });
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, canAssignInstructor, t]);
+  }, [activeTenantId, canAssignInstructor, canManageEnrollment, t]);
 
   useEffect(() => {
     setGroups([]);
@@ -534,11 +561,13 @@ export function SessionsPage() {
 
   useEffect(() => {
     if (!selectedGroup) {
-      setEditGroupForm(emptyEditGroupForm);
+      setEditGroupForm(emptyGroupForm());
+      setEditGroupErrors({});
       return;
     }
 
     setEditGroupForm(groupToForm(selectedGroup));
+    setEditGroupErrors({});
     setGenerationRange({
       fromDate: selectedGroup.startDate?.slice(0, 10) ?? '',
       toDate: selectedGroup.endDate?.slice(0, 10) ?? '',
@@ -574,13 +603,11 @@ export function SessionsPage() {
     });
   }, [selectedSession]);
 
-  const reloadGroups = async (nextCourseId = courseId) => {
+  const reloadGroups = async (nextCourseId = courseId, preferredGroupId = groupId) => {
     if (!nextCourseId) return;
     const nextGroups = await listCourseGroups(nextCourseId);
     setGroups(nextGroups);
-    if (!nextGroups.some((group) => group.id === groupId)) {
-      setGroupId(nextGroups[0]?.id);
-    }
+    setGroupId(preferredGroupId && nextGroups.some((group) => group.id === preferredGroupId) ? preferredGroupId : nextGroups[0]?.id);
   };
 
   const reloadSessions = async (nextGroupId = groupId) => {
@@ -596,77 +623,144 @@ export function SessionsPage() {
     }
   };
 
-  const optionalPositiveNumber = (value: string) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  const validateGroupSetup = (form: GroupForm, mode: 'create' | 'edit') => validateSharedGroupForm(selectedCourseLiveOnline ? form : { ...form, meetingProvider: '', meetingUrl: '' }, {
+    groupNameRequired: t('groups.groupNameRequired'),
+    selectStudentForIndividual: t('groups.selectStudentForIndividual'),
+    studentNameEmailRequired: t('groups.studentNameEmailRequired'),
+    endDateAfterStart: t('groups.endDateAfterStart'),
+    seatLimitInvalid: t('groups.seatLimitInvalid'),
+    timezoneInvalid: t('groups.timezoneInvalid'),
+    meetingUrlInvalid: t('groups.meetingUrlInvalid'),
+    scheduleBlockIncomplete: t('groups.scheduleBlockIncomplete'),
+    scheduleTimeInvalid: t('groups.scheduleTimeInvalid'),
+    createFirstSessionSetupRequired: t('groups.createFirstSessionSetupRequired'),
+    courseRequired: t('sessions.selectCourseBeforeGroup'),
+  }, {
+    mode,
+    requireCourse: mode === 'create' && !courseId,
+    deliveryMode: form.deliveryMode,
+    enrollmentMode,
+    selectedStudentId,
+    newStudent: studentInviteForm,
+    createFirstSession: form.createFirstSession,
+  });
+
+  const clearCreateError = (key: string) => {
+    setCreateErrors((current) => ({ ...current, [key]: '' }));
   };
 
-  const scheduleBlocksPayload = (blocks: ScheduleBlockForm[]) => blocks
-    .map((block) => ({
-      day: block.day,
-      startTime: block.startTime,
-      endTime: block.endTime,
-    }))
-    .filter((block) => block.day && block.startTime && block.endTime);
+  const clearEditGroupError = (key: keyof GroupValidationErrors) => {
+    setEditGroupErrors((current) => ({ ...current, [key]: undefined }));
+  };
 
   const submitGroup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (savingGroupRef.current) return;
     if (!canCoordinateGroups) return;
-    const nextErrors: Record<string, string> = {};
-    if (!courseId) {
-      nextErrors.course = t('sessions.selectCourseBeforeGroup');
+    if (groupForm.deliveryMode === 'individual' && !canManageEnrollment) {
+      return toast.error(t('groups.individualEnrollmentNotAllowed'));
     }
-    if (!groupForm.name.trim()) {
-      nextErrors.groupName = t('groups.groupNameRequired');
-    }
+    const nextErrors = validateGroupSetup(groupForm, 'create');
     if (Object.keys(nextErrors).length) {
       setCreateErrors(nextErrors);
-      toast.error(nextErrors.groupName ?? nextErrors.course);
+      toast.error(Object.values(nextErrors)[0]);
       return;
     }
 
     setCreateErrors({});
     const activeCourseId = courseId!;
+    savingGroupRef.current = true;
     setSavingGroup(true);
     try {
-      const saved = await createCourseGroup({
-        courseId: activeCourseId,
-        name: groupForm.name.trim(),
-        code: groupForm.code.trim() || `${activeCourseId}-${Date.now().toString(36)}`.toUpperCase(),
-        status: groupForm.status,
-        startDate: groupForm.startDate || undefined,
-        endDate: groupForm.endDate || undefined,
-        seatLimit: optionalPositiveNumber(groupForm.seatLimit),
-        timezone: groupForm.timezone.trim() || undefined,
-        location: groupForm.location.trim() || undefined,
-        meetingProvider: groupForm.meetingProvider.trim() || undefined,
-        meetingUrl: groupForm.meetingUrl.trim() || undefined,
-        scheduleNote: groupForm.scheduleNote.trim() || undefined,
-        scheduleBlocks: scheduleBlocksPayload(groupForm.scheduleBlocks),
-        instructorId: canAssignInstructor ? optionalPositiveNumber(groupForm.instructorId) : undefined,
-      });
-      await reloadGroups(activeCourseId);
+      let saved: CourseGroup;
+      let firstSession: CourseSession | null | undefined;
+      if (groupForm.deliveryMode === 'individual') {
+        let individualStudentId = selectedStudentId;
+        if (enrollmentMode === 'new') {
+          if (!activeTenantId) throw new Error('Missing active tenant');
+          const member = await inviteTenantMember(activeTenantId, {
+            fullName: studentInviteForm.fullName.trim(),
+            email: studentInviteForm.email.trim(),
+            role: 'student',
+            sendEmail: studentInviteForm.sendEmail,
+          });
+          individualStudentId = member.userId;
+        }
+        const result = await createIndividualCourseGroup({
+          courseId: activeCourseId,
+          studentId: individualStudentId as number,
+          name: groupForm.name.trim(),
+          startDate: groupForm.startDate || undefined,
+          endDate: groupForm.endDate || undefined,
+          timezone: groupForm.timezone.trim() || undefined,
+          ...(selectedCourseOffline ? { location: groupForm.location.trim() || undefined } : {}),
+          ...(selectedCourseLiveOnline ? {
+            meetingProvider: groupForm.meetingProvider.trim() || undefined,
+            meetingUrl: groupForm.meetingUrl.trim() || undefined,
+          } : {}),
+          scheduleBlocks: scheduleBlocksPayload(groupForm.scheduleBlocks),
+          instructorId: canAssignInstructor ? positiveNumber(groupForm.instructorId) : undefined,
+          createFirstSession: groupForm.createFirstSession,
+        });
+        saved = result.group;
+        firstSession = result.firstSession;
+      } else {
+        saved = await createCourseGroup({
+          courseId: activeCourseId,
+          name: groupForm.name.trim(),
+          code: groupForm.code.trim() || `${activeCourseId}-${Date.now().toString(36)}`.toUpperCase(),
+          status: groupForm.status,
+          startDate: groupForm.startDate || undefined,
+          endDate: groupForm.endDate || undefined,
+          seatLimit: positiveNumber(groupForm.seatLimit),
+          timezone: groupForm.timezone.trim() || undefined,
+          ...(selectedCourseOffline ? { location: groupForm.location.trim() || undefined } : {}),
+          ...(selectedCourseLiveOnline ? {
+            meetingProvider: groupForm.meetingProvider.trim() || undefined,
+            meetingUrl: groupForm.meetingUrl.trim() || undefined,
+          } : {}),
+          scheduleNote: groupForm.scheduleNote.trim() || undefined,
+          scheduleBlocks: scheduleBlocksPayload(groupForm.scheduleBlocks),
+          instructorId: canAssignInstructor ? positiveNumber(groupForm.instructorId) : undefined,
+        });
+      }
+      await reloadGroups(activeCourseId, saved.id);
       setGroupId(saved.id);
-      setGroupForm(emptyGroupForm);
+      if (firstSession) {
+        setSessions((current) => upsertSessionList(current, firstSession));
+        setSessionId(firstSession.id);
+      }
+      setGroupForm(emptyGroupForm(activeTenant?.timezone ?? undefined));
+      setStudentSearch('');
+      setStudentResults([]);
+      setSelectedStudentId(undefined);
+      setStudentInviteForm(emptyStudentInviteForm);
+      setEnrollmentMode('existing');
       setCreateModal(null);
       setCreateErrors({});
       toast.success(t('groups.groupCreated'));
-    } catch {
-      toast.error(t('groups.groupCreateFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('groups.groupCreateFailed')));
     } finally {
+      savingGroupRef.current = false;
       setSavingGroup(false);
     }
   };
 
   const submitGroupUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (savingGroupRef.current) return;
     if (!canCoordinateGroups) return;
     if (!groupId || !courseId) return;
-    if (!editGroupForm.name.trim()) {
-      toast.error(t('groups.groupNameRequired'));
+    const nextErrors = validateGroupSetup(editGroupForm, 'edit');
+    if (Object.keys(nextErrors).length) {
+      setEditGroupErrors(nextErrors);
+      toast.error(Object.values(nextErrors)[0]);
       return;
     }
 
+    setEditGroupErrors({});
+    savingGroupRef.current = true;
     setUpdatingGroup(true);
     try {
       await updateCourseGroup(groupId, {
@@ -675,21 +769,25 @@ export function SessionsPage() {
         status: editGroupForm.status,
         startDate: editGroupForm.startDate || undefined,
         endDate: editGroupForm.endDate || undefined,
-        seatLimit: optionalPositiveNumber(editGroupForm.seatLimit),
+        seatLimit: positiveNumber(editGroupForm.seatLimit),
         timezone: editGroupForm.timezone.trim() || undefined,
-        location: editGroupForm.location.trim() || undefined,
-        meetingProvider: editGroupForm.meetingProvider.trim() || undefined,
-        meetingUrl: editGroupForm.meetingUrl.trim() || undefined,
+        ...(selectedCourseOffline ? { location: editGroupForm.location.trim() || undefined } : {}),
+        ...(selectedCourseLiveOnline ? {
+          meetingProvider: editGroupForm.meetingProvider.trim() || undefined,
+          meetingUrl: editGroupForm.meetingUrl.trim() || undefined,
+        } : {}),
         scheduleNote: editGroupForm.scheduleNote.trim() || undefined,
         scheduleBlocks: scheduleBlocksPayload(editGroupForm.scheduleBlocks),
-        instructorId: canAssignInstructor ? optionalPositiveNumber(editGroupForm.instructorId) : undefined,
+        instructorId: canAssignInstructor ? positiveNumber(editGroupForm.instructorId) : undefined,
       });
       await reloadGroups(courseId);
       setEditGroupOpen(false);
+      setEditGroupErrors({});
       toast.success(t('groups.groupUpdated'));
-    } catch {
-      toast.error(t('groups.groupUpdateFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('groups.groupUpdateFailed')));
     } finally {
+      savingGroupRef.current = false;
       setUpdatingGroup(false);
     }
   };
@@ -732,11 +830,17 @@ export function SessionsPage() {
       setCreateModal(null);
       setCreateErrors({});
       toast.success(t('sessions.sessionScheduled'));
-    } catch {
-      toast.error(t('sessions.sessionScheduleFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.sessionScheduleFailed')));
     } finally {
       setSavingSession(false);
     }
+  };
+
+  const openScheduleSessionModal = () => {
+    setSessionForm(defaultSessionForm);
+    setCreateErrors({});
+    setCreateModal('session');
   };
 
   const previewSessionGeneration = async () => {
@@ -752,8 +856,8 @@ export function SessionsPage() {
       const preview = await previewGeneratedSessions(groupId, generationRange);
       setGenerationPreview(preview);
       toast.success(t('groups.previewReady'));
-    } catch {
-      toast.error(t('sessions.previewFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.previewFailed')));
     } finally {
       setGenerationLoading(false);
     }
@@ -773,8 +877,8 @@ export function SessionsPage() {
       await reloadSessions(groupId);
       setGenerationPreview(null);
       toast.success(t('groups.sessionsCreated', { count: result.createdCount }));
-    } catch {
-      toast.error(t('groups.generateFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('groups.generateFailed')));
     } finally {
       setGenerationLoading(false);
     }
@@ -784,11 +888,30 @@ export function SessionsPage() {
     if (!canManageEnrollment) return;
     setEnrolling(true);
     try {
-      const results = await searchUsers({ search: studentSearch, role: 'student', limit: 12 });
+      const normalized = studentSearch.trim().toLowerCase();
+      const localResults = createModal === 'group' && groupForm.deliveryMode === 'individual'
+        ? tenantStudentOptions
+          .filter((student) => !normalized
+            || student.fullName?.toLowerCase().includes(normalized)
+            || student.email.toLowerCase().includes(normalized))
+          .slice(0, 12)
+        : [];
+      const remoteResults = normalized || createModal !== 'group'
+        ? await searchUsers({ search: studentSearch, role: 'student', limit: 12 }).catch((error) => {
+          if (localResults.length) return [] as UserSummary[];
+          throw error;
+        })
+        : [];
+      const seen = new Set<number>();
+      const results = [...localResults, ...remoteResults].filter((student) => {
+        if (seen.has(student.id)) return false;
+        seen.add(student.id);
+        return true;
+      }).slice(0, 12);
       setStudentResults(results);
       setSelectedStudentId(results[0]?.id);
-    } catch {
-      toast.error(t('groups.studentSearchFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('groups.studentSearchFailed')));
     } finally {
       setEnrolling(false);
     }
@@ -821,8 +944,8 @@ export function SessionsPage() {
       setSelectedStudentId(undefined);
       setCreateErrors({});
       toast.success(t('groups.studentEnrolled'));
-    } catch {
-      toast.error(t('groups.studentEnrollFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('groups.studentEnrollFailed')));
     } finally {
       setEnrolling(false);
     }
@@ -851,8 +974,8 @@ export function SessionsPage() {
       setStudentInviteForm(emptyStudentInviteForm);
       setCreateModal(null);
       toast.success(member.onboarding?.emailSent ? t('groups.studentInvitedEnrolled') : t('groups.studentCreatedEnrolled'));
-    } catch {
-      toast.error(t('groups.studentCreateEnrollFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('groups.studentCreateEnrollFailed')));
     } finally {
       setEnrolling(false);
     }
@@ -866,8 +989,8 @@ export function SessionsPage() {
       await unenrollUser(courseId, student.userId);
       await reloadSessions(groupId);
       toast.success(t('sessions.studentRemovedFromGroup'));
-    } catch {
-      toast.error(t('groups.studentRemoveFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('groups.studentRemoveFailed')));
     } finally {
       setRemovingStudentId(undefined);
       setPendingRemoval(null);
@@ -908,8 +1031,8 @@ export function SessionsPage() {
       await reloadSessions(groupId);
       setEditSessionOpen(false);
       toast.success(t('sessions.sessionUpdated'));
-    } catch {
-      toast.error(t('sessions.sessionUpdateFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.sessionUpdateFailed')));
     } finally {
       setUpdatingSession(false);
     }
@@ -932,8 +1055,8 @@ export function SessionsPage() {
       });
       await reloadSessions(groupId);
       toast.success(t('sessions.materialUploaded'));
-    } catch {
-      toast.error(t('sessions.materialUploadFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.materialUploadFailed')));
     } finally {
       setUploadingMaterial(false);
     }
@@ -979,8 +1102,8 @@ export function SessionsPage() {
       setLiveMeeting(saved);
       await reloadSessions(groupId);
       toast.success(t('sessions.liveMeetingSaved'));
-    } catch {
-      toast.error(t('sessions.liveMeetingSaveFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.liveMeetingSaveFailed')));
     } finally {
       setSavingMeeting(false);
     }
@@ -994,8 +1117,8 @@ export function SessionsPage() {
       setLiveMeeting(null);
       await reloadSessions(groupId);
       toast.success(t('sessions.liveMeetingRemoved'));
-    } catch {
-      toast.error(t('sessions.liveMeetingRemoveFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.liveMeetingRemoveFailed')));
     } finally {
       setSavingMeeting(false);
     }
@@ -1011,8 +1134,8 @@ export function SessionsPage() {
       });
       await reloadSessions(groupId);
       toast.success(t('sessions.materialRemoved'));
-    } catch {
-      toast.error(t('sessions.materialRemoveFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.materialRemoveFailed')));
     } finally {
       setUpdatingSession(false);
       setPendingRemoval(null);
@@ -1080,8 +1203,8 @@ export function SessionsPage() {
       setCreateModal(null);
       setCreateErrors({});
       toast.success(t('sessions.activityAdded'));
-    } catch {
-      toast.error(t('sessions.activitySaveFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.activitySaveFailed')));
     } finally {
       setSavingActivity(false);
     }
@@ -1097,8 +1220,8 @@ export function SessionsPage() {
       });
       await reloadSessions(groupId);
       toast.success(t('sessions.activityUpdated'));
-    } catch {
-      toast.error(t('sessions.activityUpdateFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.activityUpdateFailed')));
     } finally {
       setSavingActivity(false);
     }
@@ -1111,8 +1234,8 @@ export function SessionsPage() {
       await deleteSessionActivity(sessionId, activityId);
       await reloadSessions(groupId);
       toast.success(t('sessions.activityRemoved'));
-    } catch {
-      toast.error(t('sessions.activityRemoveFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.activityRemoveFailed')));
     } finally {
       setSavingActivity(false);
       setPendingRemoval(null);
@@ -1136,8 +1259,8 @@ export function SessionsPage() {
         }
       });
       setReviewDrafts(nextDrafts);
-    } catch {
-      toast.error(t('sessions.responsesLoadFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.responsesLoadFailed')));
     } finally {
       setLoadingResponses(false);
     }
@@ -1169,8 +1292,8 @@ export function SessionsPage() {
       });
       await loadActivityResponses(activityId);
       toast.success(t('sessions.reviewSaved'));
-    } catch {
-      toast.error(t('sessions.reviewSaveFailed'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('sessions.reviewSaveFailed')));
     } finally {
       setReviewingSubmission(undefined);
     }
@@ -1250,10 +1373,10 @@ export function SessionsPage() {
             <div className="page-actions">
               {canCoordinateGroups ? (
                 <>
-                  <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>
+                  <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm(activeTenant?.timezone ?? undefined)); setEnrollmentMode('existing'); setStudentSearch(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setCreateErrors({}); setCreateModal('group'); }} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>
                     {t('groups.createGroup')}
                   </button>
-                  <button type="button" className="secondary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>
+                  <button type="button" className="secondary-button" onClick={openScheduleSessionModal} disabled={!groupId || savingSession}>
                     {t('sessions.scheduleSession')}
                   </button>
                 </>
@@ -1290,7 +1413,7 @@ export function SessionsPage() {
               <h2>{t('sessions.groupScheduleDefaults')}</h2>
               <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
             </div>
-            {canCoordinateGroups ? <button type="button" className="secondary-button" onClick={() => setEditGroupOpen(true)}>{t('groups.editGroup')}</button> : null}
+            {canCoordinateGroups ? <button type="button" className="secondary-button" onClick={() => { setEditGroupErrors({}); setEditGroupOpen(true); }}>{t('groups.editGroup')}</button> : null}
           </div>
           <div className="group-summary-grid">
             <section><span>{t('courses.status')}</span><strong>{statusLabel(selectedGroup.status)}</strong></section>
@@ -1408,8 +1531,8 @@ export function SessionsPage() {
             <>
               {canCoordinateGroups ? (
                 <>
-                  <button type="button" className="secondary-button" onClick={() => setCreateModal('group')} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>{t('groups.createGroup')}</button>
-                  <button type="button" className="primary-button" onClick={() => setCreateModal('session')} disabled={!groupId || savingSession}>{t('sessions.scheduleSession')}</button>
+                  <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm(activeTenant?.timezone ?? undefined)); setEnrollmentMode('existing'); setStudentSearch(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setCreateErrors({}); setCreateModal('group'); }} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>{t('groups.createGroup')}</button>
+                  <button type="button" className="primary-button" onClick={openScheduleSessionModal} disabled={!groupId || savingSession}>{t('sessions.scheduleSession')}</button>
                 </>
               ) : null}
             </>
@@ -1803,7 +1926,7 @@ export function SessionsPage() {
         </div>
       )}
       {editGroupOpen && selectedGroup && canCoordinateGroups ? (
-        <FormModal labelledBy="edit-group-title" onClose={() => setEditGroupOpen(false)} onSubmit={submitGroupUpdate}>
+        <FormModal labelledBy="edit-group-title" className="decision-modal form-modal group-form-modal" onClose={() => setEditGroupOpen(false)} onSubmit={submitGroupUpdate}>
           <div className="modal-header-block">
             <span>{selectedCourse?.title ?? t('courses.selectedCourse')}</span>
             <h2 id="edit-group-title">{t('groups.editGroup')}</h2>
@@ -1812,9 +1935,10 @@ export function SessionsPage() {
           <section className="form-section">
             <h3>{t('sessions.groupDetails')}</h3>
             <div className="two-col">
-              <label>
+              <label className="required-field">
                 {t('groups.name')}
-                <input value={editGroupForm.name} onChange={(event) => setEditGroupForm((current) => ({ ...current, name: event.target.value }))} autoFocus />
+                <input required value={editGroupForm.name} onChange={(event) => { setEditGroupForm((current) => ({ ...current, name: event.target.value })); clearEditGroupError('groupName'); clearEditGroupError('name'); }} className={editGroupErrors.groupName ? 'input-error' : ''} aria-invalid={!!editGroupErrors.groupName} autoFocus />
+                {editGroupErrors.groupName ? <span className="field-error">{editGroupErrors.groupName}</span> : null}
               </label>
               <label>
                 {t('groups.code')}
@@ -1834,23 +1958,26 @@ export function SessionsPage() {
               </label>
               <label>
                 {t('groups.seatLimit')}
-                <input type="number" min="1" value={editGroupForm.seatLimit} onChange={(event) => setEditGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder={t('groups.noLimit')} />
+                <input type="number" min="1" step="1" value={editGroupForm.seatLimit} onChange={(event) => { setEditGroupForm((current) => ({ ...current, seatLimit: event.target.value })); clearEditGroupError('seatLimit'); }} placeholder={t('groups.noLimit')} className={editGroupErrors.seatLimit ? 'input-error' : ''} aria-invalid={!!editGroupErrors.seatLimit} />
+                {editGroupErrors.seatLimit ? <span className="field-error">{editGroupErrors.seatLimit}</span> : null}
               </label>
             </div>
             <div className="two-col">
               <label>
                 {t('groups.startDate')}
-                <input type="date" value={editGroupForm.startDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, startDate: event.target.value }))} />
+                <input type="date" value={editGroupForm.startDate} onChange={(event) => { setEditGroupForm((current) => ({ ...current, startDate: event.target.value })); clearEditGroupError('dates'); }} className={editGroupErrors.dates ? 'input-error' : ''} aria-invalid={!!editGroupErrors.dates} />
               </label>
               <label>
                 {t('groups.endDate')}
-                <input type="date" value={editGroupForm.endDate} onChange={(event) => setEditGroupForm((current) => ({ ...current, endDate: event.target.value }))} />
+                <input type="date" value={editGroupForm.endDate} onChange={(event) => { setEditGroupForm((current) => ({ ...current, endDate: event.target.value })); clearEditGroupError('dates'); }} className={editGroupErrors.dates ? 'input-error' : ''} aria-invalid={!!editGroupErrors.dates} />
               </label>
             </div>
+            {editGroupErrors.dates ? <span className="field-error">{editGroupErrors.dates}</span> : null}
             <div className="two-col">
               <label>
                 {t('groups.timezone')}
-                <input value={editGroupForm.timezone} onChange={(event) => setEditGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
+                <input value={editGroupForm.timezone} onChange={(event) => { setEditGroupForm((current) => ({ ...current, timezone: event.target.value })); clearEditGroupError('timezone'); }} placeholder="Asia/Bishkek" className={editGroupErrors.timezone ? 'input-error' : ''} aria-invalid={!!editGroupErrors.timezone} />
+                {editGroupErrors.timezone ? <span className="field-error">{editGroupErrors.timezone}</span> : null}
               </label>
               {canAssignInstructor ? (
                 <label>
@@ -1866,20 +1993,25 @@ export function SessionsPage() {
                 </label>
               ) : null}
             </div>
-            <label>
-              {t('groups.location')}
-              <input value={editGroupForm.location} onChange={(event) => setEditGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder={t('sessions.locationPlaceholder')} />
-            </label>
-            <div className="two-col">
+            {selectedCourseOffline ? (
               <label>
-                {t('groups.meetingProvider')}
-                <input value={editGroupForm.meetingProvider} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder={t('sessions.meetingProviderPlaceholder')} />
+                {t('groups.location')}
+                <input value={editGroupForm.location} onChange={(event) => setEditGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder={t('sessions.locationPlaceholder')} />
               </label>
-              <label>
-                {t('groups.meetingUrl')}
-                <input value={editGroupForm.meetingUrl} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} placeholder="https://..." />
-              </label>
-            </div>
+            ) : null}
+            {selectedCourseLiveOnline ? (
+              <div className="two-col">
+                <label>
+                  {t('groups.meetingProvider')}
+                  <input value={editGroupForm.meetingProvider} onChange={(event) => setEditGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder={t('sessions.meetingProviderPlaceholder')} />
+                </label>
+                <label>
+                  {t('groups.meetingUrl')}
+                  <input value={editGroupForm.meetingUrl} onChange={(event) => { setEditGroupForm((current) => ({ ...current, meetingUrl: event.target.value })); clearEditGroupError('meetingUrl'); }} placeholder="https://..." className={editGroupErrors.meetingUrl ? 'input-error' : ''} aria-invalid={!!editGroupErrors.meetingUrl} />
+                  {editGroupErrors.meetingUrl ? <span className="field-error">{editGroupErrors.meetingUrl}</span> : null}
+                </label>
+              </div>
+            ) : null}
           </section>
           <section className="form-section">
             <h3>{t('groups.recurringSchedule')}</h3>
@@ -1888,10 +2020,10 @@ export function SessionsPage() {
                 <div className="three-col" key={`${index}-${block.day}`}>
                   <label>
                     {t('groups.scheduleDay')}
-                    <select value={block.day} onChange={(event) => setEditGroupForm((current) => ({
+                    <select value={block.day} onChange={(event) => { setEditGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
-                    }))}>
+                    })); clearEditGroupError('schedule'); }} className={editGroupErrors.schedule ? 'input-error' : ''} aria-invalid={!!editGroupErrors.schedule}>
                       <option value="mon">{t('groups.dayMon')}</option>
                       <option value="tue">{t('groups.dayTue')}</option>
                       <option value="wed">{t('groups.dayWed')}</option>
@@ -1903,17 +2035,17 @@ export function SessionsPage() {
                   </label>
                   <label>
                     {t('groups.starts')}
-                    <input type="time" value={block.startTime} onChange={(event) => setEditGroupForm((current) => ({
+                    <input type="time" value={block.startTime} onChange={(event) => { setEditGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
-                    }))} />
+                    })); clearEditGroupError('schedule'); }} className={editGroupErrors.schedule ? 'input-error' : ''} aria-invalid={!!editGroupErrors.schedule} />
                   </label>
                   <label>
                     {t('groups.ends')}
-                    <input type="time" value={block.endTime} onChange={(event) => setEditGroupForm((current) => ({
+                    <input type="time" value={block.endTime} onChange={(event) => { setEditGroupForm((current) => ({
                       ...current,
                       scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
-                    }))} />
+                    })); clearEditGroupError('schedule'); }} className={editGroupErrors.schedule ? 'input-error' : ''} aria-invalid={!!editGroupErrors.schedule} />
                   </label>
                   {editGroupForm.scheduleBlocks.length > 1 ? (
                     <button type="button" className="secondary-button" onClick={() => setEditGroupForm((current) => ({
@@ -1928,6 +2060,7 @@ export function SessionsPage() {
                 scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
               }))}>{t('groups.addScheduleBlock')}</button>
             </div>
+            {editGroupErrors.schedule ? <span className="field-error">{editGroupErrors.schedule}</span> : null}
             <label>
               {t('groups.scheduleNote')}
               <input value={editGroupForm.scheduleNote} onChange={(event) => setEditGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder={t('sessions.scheduleNotePlaceholder')} />
@@ -2053,21 +2186,65 @@ export function SessionsPage() {
         </Modal>
       ) : null}
       {createModal === 'group' && canCoordinateGroups ? (
-        <FormModal labelledBy="create-group-title" onClose={() => setCreateModal(null)} onSubmit={submitGroup}>
+        <FormModal labelledBy="create-group-title" className="decision-modal form-modal group-form-modal" onClose={() => setCreateModal(null)} onSubmit={submitGroup}>
             <div className="modal-header-block">
               <span>{selectedCourse?.title ?? t('groups.courseRequired')}</span>
               <h2 id="create-group-title">{t('groups.createGroup')}</h2>
               <p>{t('sessions.createGroupDetail')}</p>
             </div>
-            <div className="two-col">
-              <label>
-                {t('groups.name')}
+            <div className="segmented-control delivery-mode-tabs" aria-label={t('groups.deliveryMode')}>
+              <button type="button" aria-pressed={groupForm.deliveryMode === 'group'} className={groupForm.deliveryMode === 'group' ? 'active' : ''} onClick={() => { setGroupForm((current) => ({ ...current, deliveryMode: 'group', seatLimit: current.seatLimit === '1' ? '' : current.seatLimit })); setCreateErrors({}); }}>
+                {t('groups.deliveryGroup')}
+              </button>
+              {canManageEnrollment ? (
+                <button type="button" aria-pressed={groupForm.deliveryMode === 'individual'} className={groupForm.deliveryMode === 'individual' ? 'active' : ''} onClick={() => { setGroupForm((current) => ({ ...current, deliveryMode: 'individual', seatLimit: '1' })); setCreateErrors({}); }}>
+                  {t('groups.deliveryIndividual')}
+                </button>
+              ) : null}
+            </div>
+            {groupForm.deliveryMode === 'individual' ? (
+              <>
+                <div className="segmented-control enrollment-tabs" aria-label={t('groups.enrollmentMode')}>
+                  <button type="button" aria-pressed={enrollmentMode === 'existing'} className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => { setEnrollmentMode('existing'); clearCreateError('student'); }}>{t('groups.existingStudent')}</button>
+                  <button type="button" aria-pressed={enrollmentMode === 'new'} className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => { setEnrollmentMode('new'); clearCreateError('student'); }}>{t('groups.newStudent')}</button>
+                </div>
+                {enrollmentMode === 'existing' ? (
+                  <div className="student-search-row compact">
+                    <label>
+                      {t('groups.individualStudent')}
+                      <input value={studentSearch} onChange={(event) => { setStudentSearch(event.target.value); clearCreateError('student'); }} placeholder={t('groups.nameOrEmail')} className={createErrors.student ? 'input-error' : ''} aria-invalid={!!createErrors.student} />
+                    </label>
+                    <button type="button" className="secondary-button" onClick={() => void searchStudents()} disabled={enrolling}>{enrolling ? t('groups.searchingStudents') : t('groups.search')}</button>
+                    <select value={selectedStudentId ?? ''} onChange={(event) => { setSelectedStudentId(Number(event.target.value) || undefined); clearCreateError('student'); }} disabled={!studentResults.length} className={createErrors.student ? 'input-error' : ''} aria-invalid={!!createErrors.student}>
+                      <option value="">{t('groups.selectStudent')}</option>
+                      {studentResults.map((student) => <option key={student.id} value={student.id}>{student.fullName || student.email} ({student.email})</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="student-search-row compact">
+                    <label>{t('groups.fullName')}<input value={studentInviteForm.fullName} onChange={(event) => { setStudentInviteForm((current) => ({ ...current, fullName: event.target.value })); clearCreateError('student'); }} placeholder={t('groups.fullName')} className={createErrors.student ? 'input-error' : ''} aria-invalid={!!createErrors.student} /></label>
+                    <label>{t('groups.email')}<input type="email" value={studentInviteForm.email} onChange={(event) => { setStudentInviteForm((current) => ({ ...current, email: event.target.value })); clearCreateError('student'); }} placeholder="student@example.com" className={createErrors.student ? 'input-error' : ''} aria-invalid={!!createErrors.student} /></label>
+                    <label className="inline-check"><input type="checkbox" checked={studentInviteForm.sendEmail} onChange={(event) => setStudentInviteForm((current) => ({ ...current, sendEmail: event.target.checked }))} /> {t('groups.sendSetupEmail')}</label>
+                  </div>
+                )}
+                {createErrors.student ? <span className="field-error">{createErrors.student}</span> : null}
+                <label className="inline-check">
+                  <input type="checkbox" checked={groupForm.createFirstSession} onChange={(event) => setGroupForm((current) => ({ ...current, createFirstSession: event.target.checked }))} />
+                  {t('groups.createFirstSession')}
+                </label>
+                {groupForm.createFirstSession ? <p className="panel-note">{t('groups.createFirstSessionHint')}</p> : null}
+              </>
+            ) : null}
+            <div className={groupForm.deliveryMode === 'individual' ? '' : 'two-col'}>
+              <label className="required-field">
+                <span>{t('groups.name')}</span>
                 <input
+                  required
                   value={groupForm.name}
-                  onChange={(event) => {
-                    setGroupForm((current) => ({ ...current, name: event.target.value }));
-                    setCreateErrors((current) => ({ ...current, groupName: '' }));
-                  }}
+	                  onChange={(event) => {
+	                    setGroupForm((current) => ({ ...current, name: event.target.value }));
+	                    clearCreateError('groupName');
+	                  }}
                   className={createErrors.groupName ? 'input-error' : ''}
                   aria-invalid={!!createErrors.groupName}
                   placeholder={t('sessions.groupNamePlaceholder')}
@@ -2075,40 +2252,47 @@ export function SessionsPage() {
                 />
                 {createErrors.groupName ? <span className="field-error">{createErrors.groupName}</span> : null}
               </label>
-              <label>
-                {t('groups.code')}
-                <input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder={t('sessions.autoIfEmpty')} />
-              </label>
+              {groupForm.deliveryMode !== 'individual' ? (
+                <label>
+                  {t('groups.code')}
+                  <input value={groupForm.code} onChange={(event) => setGroupForm((current) => ({ ...current, code: event.target.value }))} placeholder={t('sessions.autoIfEmpty')} />
+                </label>
+              ) : null}
             </div>
-            <div className="two-col">
-              <label>
-                {t('courses.status')}
-                <select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as 'planned' | 'open' | 'active' | 'completed' | 'cancelled' }))}>
-                  <option value="planned">{t('courses.statusPlanned')}</option>
-                  <option value="open">{t('groups.statusOpen')}</option>
-                  <option value="active">{t('groups.statusActive')}</option>
-                </select>
-              </label>
+            <div className={groupForm.deliveryMode === 'individual' ? '' : 'two-col'}>
+              {groupForm.deliveryMode !== 'individual' ? (
+                <label>
+                  {t('courses.status')}
+                  <select value={groupForm.status} onChange={(event) => setGroupForm((current) => ({ ...current, status: event.target.value as 'planned' | 'open' | 'active' | 'completed' | 'cancelled' }))}>
+                    <option value="planned">{t('courses.statusPlanned')}</option>
+                    <option value="open">{t('groups.statusOpen')}</option>
+                    <option value="active">{t('groups.statusActive')}</option>
+                  </select>
+                </label>
+              ) : null}
               <label>
                 {t('groups.seatLimit')}
-                <input type="number" min="1" value={groupForm.seatLimit} onChange={(event) => setGroupForm((current) => ({ ...current, seatLimit: event.target.value }))} placeholder={t('groups.noLimit')} />
-              </label>
+	                <input type="number" min="1" step="1" value={groupForm.deliveryMode === 'individual' ? '1' : groupForm.seatLimit} onChange={(event) => { setGroupForm((current) => ({ ...current, seatLimit: event.target.value })); clearCreateError('seatLimit'); }} placeholder={t('groups.noLimit')} disabled={groupForm.deliveryMode === 'individual'} className={createErrors.seatLimit ? 'input-error' : ''} aria-invalid={!!createErrors.seatLimit} />
+	                {createErrors.seatLimit ? <span className="field-error">{createErrors.seatLimit}</span> : null}
+	              </label>
             </div>
             <div className="two-col">
               <label>
                 {t('groups.startDate')}
-                <input type="date" value={groupForm.startDate} onChange={(event) => setGroupForm((current) => ({ ...current, startDate: event.target.value }))} />
-              </label>
-              <label>
-                {t('groups.endDate')}
-                <input type="date" value={groupForm.endDate} onChange={(event) => setGroupForm((current) => ({ ...current, endDate: event.target.value }))} />
-              </label>
-            </div>
-            <div className="two-col">
-              <label>
-                {t('groups.timezone')}
-                <input value={groupForm.timezone} onChange={(event) => setGroupForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="Asia/Bishkek" />
-              </label>
+	                <input type="date" value={groupForm.startDate} onChange={(event) => { setGroupForm((current) => ({ ...current, startDate: event.target.value })); clearCreateError('dates'); }} className={createErrors.dates ? 'input-error' : ''} aria-invalid={!!createErrors.dates} />
+	              </label>
+	              <label>
+	                {t('groups.endDate')}
+	                <input type="date" value={groupForm.endDate} onChange={(event) => { setGroupForm((current) => ({ ...current, endDate: event.target.value })); clearCreateError('dates'); }} className={createErrors.dates ? 'input-error' : ''} aria-invalid={!!createErrors.dates} />
+	              </label>
+	            </div>
+	            {createErrors.dates ? <span className="field-error">{createErrors.dates}</span> : null}
+	            <div className="two-col">
+	              <label>
+	                {t('groups.timezone')}
+	                <input value={groupForm.timezone} onChange={(event) => { setGroupForm((current) => ({ ...current, timezone: event.target.value })); clearCreateError('timezone'); }} placeholder="Asia/Bishkek" className={createErrors.timezone ? 'input-error' : ''} aria-invalid={!!createErrors.timezone} />
+	                {createErrors.timezone ? <span className="field-error">{createErrors.timezone}</span> : null}
+	              </label>
               {canAssignInstructor ? (
                 <label>
                   {t('sessions.groupInstructor')}
@@ -2123,29 +2307,34 @@ export function SessionsPage() {
                 </label>
               ) : null}
             </div>
-            <label>
-              {t('groups.location')}
-              <input value={groupForm.location} onChange={(event) => setGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder={t('sessions.locationPlaceholder')} />
-            </label>
-            <div className="two-col">
+            {selectedCourseOffline ? (
               <label>
-                {t('groups.meetingProvider')}
-                <input value={groupForm.meetingProvider} onChange={(event) => setGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder={t('sessions.meetingProviderPlaceholder')} />
+                {t('groups.location')}
+                <input value={groupForm.location} onChange={(event) => setGroupForm((current) => ({ ...current, location: event.target.value }))} placeholder={t('sessions.locationPlaceholder')} />
               </label>
-              <label>
-                {t('groups.meetingUrl')}
-                <input value={groupForm.meetingUrl} onChange={(event) => setGroupForm((current) => ({ ...current, meetingUrl: event.target.value }))} placeholder="https://..." />
-              </label>
-            </div>
+            ) : null}
+            {selectedCourseLiveOnline ? (
+              <div className="two-col">
+                <label>
+                  {t('groups.meetingProvider')}
+                  <input value={groupForm.meetingProvider} onChange={(event) => setGroupForm((current) => ({ ...current, meetingProvider: event.target.value }))} placeholder={t('sessions.meetingProviderPlaceholder')} />
+                </label>
+                <label>
+                  {t('groups.meetingUrl')}
+	                <input value={groupForm.meetingUrl} onChange={(event) => { setGroupForm((current) => ({ ...current, meetingUrl: event.target.value })); clearCreateError('meetingUrl'); }} placeholder="https://..." className={createErrors.meetingUrl ? 'input-error' : ''} aria-invalid={!!createErrors.meetingUrl} />
+	                {createErrors.meetingUrl ? <span className="field-error">{createErrors.meetingUrl}</span> : null}
+	              </label>
+              </div>
+            ) : null}
             <div className="schedule-block-list">
               {groupForm.scheduleBlocks.map((block, index) => (
                 <div className="three-col" key={`${index}-${block.day}`}>
                   <label>
                     {t('groups.scheduleDay')}
-                    <select value={block.day} onChange={(event) => setGroupForm((current) => ({
-                      ...current,
-                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
-                    }))}>
+	                    <select value={block.day} onChange={(event) => { setGroupForm((current) => ({
+	                      ...current,
+	                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, day: event.target.value as ScheduleDay } : item),
+	                    })); clearCreateError('schedule'); }} className={createErrors.schedule ? 'input-error' : ''} aria-invalid={!!createErrors.schedule}>
                       <option value="mon">{t('groups.dayMon')}</option>
                       <option value="tue">{t('groups.dayTue')}</option>
                       <option value="wed">{t('groups.dayWed')}</option>
@@ -2157,17 +2346,17 @@ export function SessionsPage() {
                   </label>
                   <label>
                     {t('groups.starts')}
-                    <input type="time" value={block.startTime} onChange={(event) => setGroupForm((current) => ({
-                      ...current,
-                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
-                    }))} />
+	                    <input type="time" value={block.startTime} onChange={(event) => { setGroupForm((current) => ({
+	                      ...current,
+	                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item),
+	                    })); clearCreateError('schedule'); }} className={createErrors.schedule ? 'input-error' : ''} aria-invalid={!!createErrors.schedule} />
                   </label>
                   <label>
                     {t('groups.ends')}
-                    <input type="time" value={block.endTime} onChange={(event) => setGroupForm((current) => ({
-                      ...current,
-                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
-                    }))} />
+	                    <input type="time" value={block.endTime} onChange={(event) => { setGroupForm((current) => ({
+	                      ...current,
+	                      scheduleBlocks: current.scheduleBlocks.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item),
+	                    })); clearCreateError('schedule'); }} className={createErrors.schedule ? 'input-error' : ''} aria-invalid={!!createErrors.schedule} />
                   </label>
                   {groupForm.scheduleBlocks.length > 1 ? (
                     <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
@@ -2177,15 +2366,18 @@ export function SessionsPage() {
                   ) : null}
                 </div>
               ))}
-              <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
-                ...current,
-                scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
-              }))}>{t('groups.addScheduleBlock')}</button>
-            </div>
-            <label>
-              {t('groups.scheduleNote')}
-              <input value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder={t('sessions.scheduleNotePlaceholder')} />
-            </label>
+	              <button type="button" className="secondary-button" onClick={() => setGroupForm((current) => ({
+	                ...current,
+	                scheduleBlocks: [...current.scheduleBlocks, emptyScheduleBlock()],
+	              }))}>{t('groups.addScheduleBlock')}</button>
+	            </div>
+	            {createErrors.schedule ? <span className="field-error">{createErrors.schedule}</span> : null}
+            {groupForm.deliveryMode !== 'individual' ? (
+              <label>
+                {t('groups.scheduleNote')}
+                <input value={groupForm.scheduleNote} onChange={(event) => setGroupForm((current) => ({ ...current, scheduleNote: event.target.value }))} placeholder={t('sessions.scheduleNotePlaceholder')} />
+              </label>
+            ) : null}
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingGroup}>{t('courses.cancel')}</button>
               <button type="submit" disabled={!courseId || savingGroup}>{savingGroup ? t('courses.creating') : t('groups.createGroup')}</button>
@@ -2193,15 +2385,16 @@ export function SessionsPage() {
         </FormModal>
       ) : null}
       {createModal === 'session' && canCoordinateGroups ? (
-        <FormModal labelledBy="schedule-session-title" onClose={() => setCreateModal(null)} onSubmit={submitSession}>
+        <FormModal labelledBy="schedule-session-title" className="decision-modal form-modal session-form-modal" onClose={() => setCreateModal(null)} onSubmit={submitSession}>
             <div className="modal-header-block">
               <span>{selectedGroup?.name ?? t('sessions.groupRequired')}</span>
               <h2 id="schedule-session-title">{t('sessions.scheduleSession')}</h2>
               <p>{t('sessions.scheduleSessionDetail')}</p>
             </div>
-            <label>
-              {t('courses.title')}
+            <label className="required-field">
+              <span>{t('courses.title')}</span>
               <input
+                required
                 value={sessionForm.title}
                 onChange={(event) => {
                   setSessionForm((current) => ({ ...current, title: event.target.value }));
@@ -2215,10 +2408,11 @@ export function SessionsPage() {
               {createErrors.sessionTitle ? <span className="field-error">{createErrors.sessionTitle}</span> : null}
             </label>
             <div className="two-col">
-              <label>
-                {t('groups.starts')}
+              <label className="required-field">
+                <span>{t('groups.starts')}</span>
                 <input
                   type="datetime-local"
+                  required
                   value={sessionForm.startsAt}
                   onChange={(event) => {
                     setSessionForm((current) => ({ ...current, startsAt: event.target.value }));
@@ -2229,10 +2423,11 @@ export function SessionsPage() {
                 />
                 {createErrors.startsAt ? <span className="field-error">{createErrors.startsAt}</span> : null}
               </label>
-              <label>
-                {t('groups.ends')}
+              <label className="required-field">
+                <span>{t('groups.ends')}</span>
                 <input
                   type="datetime-local"
+                  required
                   value={sessionForm.endsAt}
                   onChange={(event) => {
                     setSessionForm((current) => ({ ...current, endsAt: event.target.value }));
@@ -2257,6 +2452,7 @@ export function SessionsPage() {
       {createModal === 'enrollment' && canManageEnrollment ? (
         <FormModal
           labelledBy="enroll-student-title"
+          className="decision-modal form-modal enrollment-form-modal"
           onClose={() => setCreateModal(null)}
           onSubmit={enrollmentMode === 'existing' ? submitEnrollment : (event) => {
             event.preventDefault();
@@ -2268,11 +2464,11 @@ export function SessionsPage() {
               <h2 id="enroll-student-title">{t('sessions.enrollStudent')}</h2>
               <p>{t('sessions.enrollStudentDetail')}</p>
             </div>
-            <div className="enrollment-tabs" role="tablist" aria-label={t('groups.enrollmentMode')}>
-              <button type="button" className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => setEnrollmentMode('existing')}>
+            <div className="segmented-control enrollment-tabs" aria-label={t('groups.enrollmentMode')}>
+              <button type="button" aria-pressed={enrollmentMode === 'existing'} className={enrollmentMode === 'existing' ? 'active' : ''} onClick={() => setEnrollmentMode('existing')}>
                 {t('groups.existingStudent')}
               </button>
-              <button type="button" className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => setEnrollmentMode('new')}>
+              <button type="button" aria-pressed={enrollmentMode === 'new'} className={enrollmentMode === 'new' ? 'active' : ''} onClick={() => setEnrollmentMode('new')}>
                 {t('groups.newStudent')}
               </button>
             </div>

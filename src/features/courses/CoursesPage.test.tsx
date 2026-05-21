@@ -188,23 +188,22 @@ describe('CoursesPage course setup flow', () => {
     expect(within(screen.getByLabelText('Review actions')).getByRole('button', { name: 'Reject' })).toBeInTheDocument();
   });
 
-  it('explains the no-instructor state before course creation', async () => {
+  it('allows admins to create the first course before instructors are invited', async () => {
     api.listTenantCourses.mockResolvedValue([]);
     api.listTenantMembers.mockResolvedValue([]);
 
     renderPage();
     await screen.findByText('Set up your first course');
     expect(screen.getByText('Create the course')).toBeInTheDocument();
-    expect(screen.getByText('Assign an instructor')).toBeInTheDocument();
+    expect(screen.getByText('Assign group instructors')).toBeInTheDocument();
     expect(screen.getByText('Approve and publish')).toBeInTheDocument();
     expect(screen.getByText('Create the first group')).toBeInTheDocument();
     expect(screen.getByText('Schedule the first session')).toBeInTheDocument();
     clickCreateCourse();
 
-    expect(await screen.findByText('No instructors available.')).toBeInTheDocument();
-    expect(screen.getByText('Add an instructor before creating a course.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Invite instructor' })).toHaveAttribute('href', '/members');
-    expect(screen.getAllByRole('button', { name: /create course/i }).at(-1)).toBeDisabled();
+    expect(await screen.findByLabelText('Course lead (optional)')).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'No course lead' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /create course/i }).at(-1)).not.toBeDisabled();
   });
 
   it('does not offer course creation to instructors without create permission', async () => {
@@ -250,7 +249,7 @@ describe('CoursesPage course setup flow', () => {
       courseType: 'offline',
       status: 'draft',
       isPublished: false,
-      instructor: { id: 11, fullName: 'Aida Instructor' },
+      instructor: null,
       groupCount: 0,
       sessionCount: 0,
     };
@@ -264,12 +263,12 @@ describe('CoursesPage course setup flow', () => {
     fireEvent.change(screen.getByPlaceholderText('Short description for staff and students'), { target: { value: 'Physics foundations' } });
     fireEvent.click(screen.getAllByRole('button', { name: /create course/i }).at(-1)!);
 
-    await waitFor(() => expect(api.createTenantCourse).toHaveBeenCalledWith(42, {
+    await waitFor(() => expect(api.createTenantCourse).toHaveBeenCalledWith(42, expect.objectContaining({
       title: 'Physics Live',
       description: 'Physics foundations',
       courseType: 'offline',
-      instructorId: 11,
-    }));
+    })));
+    expect(api.createTenantCourse.mock.calls[0][1]).not.toHaveProperty('instructorId');
     expect(await screen.findByRole('heading', { name: 'Physics Live' })).toBeInTheDocument();
     expect(screen.getAllByText('Approve and publish this course when the basics are ready.').length).toBeGreaterThan(0);
     expect(toast.success).toHaveBeenCalledWith('Course created');
@@ -301,7 +300,7 @@ describe('CoursesPage course setup flow', () => {
 
     expect(await screen.findByText('Create course draft')).toBeInTheDocument();
     expect(screen.getByText(/assigned to you/i)).toBeInTheDocument();
-    const instructorSelect = screen.getByLabelText('Instructor');
+    const instructorSelect = screen.getByLabelText('Course lead (optional)');
     expect(instructorSelect).toHaveValue('7');
     expect(instructorSelect).toBeDisabled();
     expect(screen.getAllByRole('button', { name: /create course/i }).at(-1)).not.toBeDisabled();

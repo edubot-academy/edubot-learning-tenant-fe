@@ -2,13 +2,15 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AUTH_EXPIRED_EVENT,
+  tenantStore,
+  tokenStore,
+} from '../../services/http';
+import {
   completeAccountSetup,
   getCurrentUser,
   login,
   logout,
-  tenantStore,
-  tokenStore,
-} from '../../services/api';
+} from '../../services/authApi';
 import type { AuthUser } from '../../types/domain';
 
 type AuthContextValue = {

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiCheckCircle, FiMail } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
-import { requestPasswordReset, resetPassword } from '../../services/api';
+import { requestPasswordReset, resetPassword } from '../../services/authApi';
 import { getApiErrorMessage, getApiResponseMessage } from '../../lib/apiErrors';
 import { useTenant } from '../tenant/TenantProvider';
 import { getPasswordSetupError } from './authPassword';

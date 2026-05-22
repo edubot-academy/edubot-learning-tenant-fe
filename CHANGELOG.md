@@ -19,6 +19,38 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.12.0 - 2026-05-22
+
+### Added
+
+- Added instructor-capable session scheduling for assigned groups while keeping group creation and enrollment controls scoped to admins, owners, and assistants.
+- Added session workflow handoffs for planning, running, and reviewing sessions with role-aware links to meetings, materials, attendance, homework, and insights.
+- Added delivery-record impact warnings and explicit confirmation before changing session date, time, or status when attendance or homework records already exist.
+- Added frontend support for group-only student removal through the backend group roster removal API.
+- Added multi-question quiz activity creation with per-question answer options, correct-answer selection, and accessible labels for each quiz field.
+
+### Changed
+
+- Split shared API transport, auth, tenant, and shell APIs into smaller modules and refined Vite manual chunks so the app shell no longer loads the full feature API barrel.
+- Changed instructor Sessions course visibility to derive from assigned ready groups, hiding unpublished courses and courses with no assigned group.
+- Updated Sessions and Groups removal copy to clarify that removing a learner from a group keeps course access active.
+- Updated the Sessions activity modal with a denser, role-aware quiz builder that supports adding/removing questions and options without ambiguous screen-reader labels.
+- Added Kyrgyz translations for the new Sessions workflow and edit-impact copy.
+
+### Fixed
+
+- Fixed the production large chunk warning by isolating React, app i18n, charts, transport, shell APIs, and feature API chunks.
+- Fixed session detail loading so unavailable attendance/homework permissions do not block the selected session workspace.
+- Fixed stale selected-session detail loading so newly created sessions do not repeatedly trigger insight, homework, meeting, or attendance requests for the previous session.
+
+### Tests
+
+- `npm run lint` passes.
+- `npm test` passes with 31 test files and 180 tests.
+- `npm run build` passes without the previous Vite large chunk warning.
+- Backend touched tests pass with 5 suites and 72 tests.
+- Backend `npm run build` passes.
+
 ## 1.11.0 - 2026-05-21
 
 ### Added

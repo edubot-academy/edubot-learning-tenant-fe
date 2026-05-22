@@ -7,7 +7,7 @@ import { useAuth } from '../features/auth/AuthProvider';
 import { useTenant } from '../features/tenant/TenantProvider';
 import { EmptyState, LoadingState } from '../components/DataState';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
-import { getStudentAccess } from '../services/api';
+import { getStudentAccess } from '../services/shellApi';
 import {
   canManageTenantBranding,
   canManageAssignedAttendance,

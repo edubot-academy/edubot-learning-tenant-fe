@@ -1,7 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { listTenantWorkspaces, resolveTenantByHost, switchTenantWorkspace, tenantStore } from '../../services/api';
+import { tenantStore } from '../../services/http';
+import { listTenantWorkspaces, resolveTenantByHost, switchTenantWorkspace } from '../../services/tenantApi';
 import type { Tenant } from '../../types/domain';
 import { useAuth } from '../auth/AuthProvider';
 

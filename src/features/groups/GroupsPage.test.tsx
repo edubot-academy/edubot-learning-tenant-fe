@@ -18,8 +18,8 @@ const api = vi.hoisted(() => ({
   listTenantCourses: vi.fn(),
   listTenantMembers: vi.fn(),
   previewGeneratedSessions: vi.fn(),
+  removeUserFromGroup: vi.fn(),
   searchUsers: vi.fn(),
-  unenrollUser: vi.fn(),
   updateCourseGroup: vi.fn(),
 }));
 

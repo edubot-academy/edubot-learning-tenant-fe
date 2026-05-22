@@ -1,4 +1,3 @@
-import axios from 'axios';
 import type {
   AttendanceRecord,
   AttendanceStatus,
@@ -6,7 +5,6 @@ import type {
   AssistantDashboard,
   AssistantSupportResponse,
   AssistantSupportStatus,
-  AuthUser,
   CertificateBranding,
   CourseCertificate,
   CourseCertificateSettings,
@@ -30,13 +28,11 @@ import type {
   SessionInsights,
   SessionHomework,
   StudentGuardian,
-  StudentAccessState,
   StudentCertificateSummary,
   StudentCourseDetail,
   StudentCourseSummary,
   StudentHomeworkItem,
   StudentMaterialItem,
-  StudentNotification,
   StudentNotificationPage,
   StudentProgressSummary,
   StudentReminder,
@@ -52,174 +48,30 @@ import type {
   TenantReportSummary,
   TenantReportTimeSeries,
   UserSummary,
-  WorkspaceListResponse,
 } from '../types/domain';
-import { getCurrentLocale } from '../i18n/locale';
-import { getBackendErrorCode } from '../lib/apiErrors';
+import { API_BASE_URL, api, dedupeRead, toStudentPage, type StudentPagedResponse } from './http';
 
-declare module 'axios' {
-  export interface AxiosRequestConfig {
-    skipTenantHeader?: boolean;
-    __csrfRetry?: boolean;
-  }
-}
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-const TOKEN_KEY = 'edubot_tenant_token';
-const TENANT_KEY = 'edubot_active_tenant_id';
-
-export type StudentPagedResponse<T> = {
-  items: T[];
-  total?: number;
-  page?: number;
-  limit?: number;
-  totalPages?: number;
-};
-
-function toStudentPage<T>(data: T[] | StudentPagedResponse<T>): StudentPagedResponse<T> {
-  return Array.isArray(data)
-    ? { items: data, total: data.length, page: 1, limit: data.length, totalPages: 1 }
-    : { ...data, items: data.items ?? [], totalPages: data.totalPages ?? (data.total && data.limit ? Math.ceil(data.total / data.limit) : undefined) };
-}
-
-export const tokenStore = {
-  get: () => sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY),
-  set: (token: string) => {
-    sessionStorage.setItem(TOKEN_KEY, token);
-    localStorage.removeItem(TOKEN_KEY);
-  },
-  clear: () => {
-    sessionStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(TOKEN_KEY);
-  },
-};
-
-export const tenantStore = {
-  get: () => {
-    const value = localStorage.getItem(TENANT_KEY);
-    const id = Number(value);
-    return Number.isFinite(id) && id > 0 ? id : null;
-  },
-  set: (tenantId: number) => localStorage.setItem(TENANT_KEY, String(tenantId)),
-  clear: () => localStorage.removeItem(TENANT_KEY),
-};
-
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-  withCredentials: true,
-});
-
-export const AUTH_EXPIRED_EVENT = 'edubot_tenant_auth_expired';
-const CSRF_ERROR_TEXT = 'CSRF token missing or invalid';
-const CSRF_ERROR_CODE = 'CSRF_TOKEN_INVALID';
-
-function getCookieValue(name: string) {
-  if (typeof document === 'undefined') return null;
-  const cookie = document.cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${name}=`));
-  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : null;
-}
-
-api.interceptors.request.use((config) => {
-  const token = tokenStore.get();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  const tenantId = tenantStore.get();
-  if (config.skipTenantHeader) {
-    delete config.headers['X-Company-Id'];
-  } else if (tenantId) {
-    config.headers['X-Company-Id'] = String(tenantId);
-  }
-  const method = String(config.method || 'get').toUpperCase();
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-    const csrfToken = getCookieValue('edubot_csrf_token');
-    if (csrfToken) config.headers['X-CSRF-Token'] = csrfToken;
-  }
-  config.headers['Accept-Language'] = getCurrentLocale();
-  return config;
-});
-
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const message = error?.response?.data?.message;
-    const code = getBackendErrorCode(error);
-    const isCsrfError =
-      error?.response?.status === 403 &&
-      (code === CSRF_ERROR_CODE ||
-        (Array.isArray(message)
-          ? message.includes(CSRF_ERROR_TEXT)
-          : String(message || '').includes(CSRF_ERROR_TEXT)));
-
-    if (isCsrfError && error.config && !error.config.__csrfRetry) {
-      error.config.__csrfRetry = true;
-      try {
-        await api.get('/auth/profile', { skipTenantHeader: true, __csrfRetry: true });
-        return api(error.config);
-      } catch {
-        return Promise.reject(error);
-      }
-    }
-
-    if (error?.response?.status === 401) {
-      tokenStore.clear();
-      tenantStore.clear();
-      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-    }
-    return Promise.reject(error);
-  },
-);
-
-type LoginResponse = {
-  token?: string;
-  access_token?: string;
-  user?: AuthUser;
-};
-
-function storeAuthToken(data: LoginResponse) {
-  const token = data.token || data.access_token;
-  if (token) tokenStore.set(token);
-  return token;
-}
-
-export async function login(email: string, password: string) {
-  const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
-  const token = storeAuthToken(data);
-  if (!token) throw new Error('Login response did not include a token');
-  return data.user ?? getCurrentUser();
-}
-
-export async function completeAccountSetup(payload: { token: string; newPassword: string }) {
-  const { data } = await api.post<LoginResponse>('/auth/setup-account', payload);
-  const token = storeAuthToken(data);
-  if (!token) throw new Error('Account setup response did not include a token');
-  return data.user ?? getCurrentUser();
-}
-
-export async function logout() {
-  await api.post('/auth/logout');
-}
-
-export async function requestPasswordReset(payload: { identifier: string; method: 'email' | 'whatsapp' | 'telegram' }) {
-  const { data } = await api.post<{ message?: string; messageKey?: string; labelKey?: string }>('/auth/forgot-password', payload);
-  return data;
-}
-
-export async function resetPassword(payload: {
-  identifier: string;
-  method: 'email' | 'whatsapp' | 'telegram';
-  otp: string;
-  newPassword: string;
-}) {
-  const { data } = await api.post<{ message?: string; messageKey?: string; labelKey?: string }>('/auth/reset-password', payload);
-  return data;
-}
-
-export async function getCurrentUser() {
-  const { data } = await api.get<AuthUser>('/auth/profile');
-  return data;
-}
+export { API_BASE_URL, AUTH_EXPIRED_EVENT, api, tenantStore, tokenStore, type StudentPagedResponse } from './http';
+export {
+  completeAccountSetup,
+  getCurrentUser,
+  login,
+  logout,
+  requestPasswordReset,
+  resetPassword,
+} from './authApi';
+export {
+  listMyTenants,
+  listTenantWorkspaces,
+  resolveTenantByHost,
+  switchTenantWorkspace,
+} from './tenantApi';
+export {
+  getStudentAccess,
+  getStudentNotificationUnreadCount,
+  listStudentNotifications,
+  markStudentNotificationRead,
+} from './shellApi';
 
 export async function searchUsers(params: { search?: string; role?: string; limit?: number } = {}) {
   const search = params.search?.trim() || undefined;
@@ -234,72 +86,6 @@ export async function searchUsers(params: { search?: string; role?: string; limi
   });
   if (Array.isArray(data)) return data;
   return data.data ?? data.items ?? data.users ?? [];
-}
-
-export async function listMyTenants() {
-  const { data } = await api.get<{ items?: Tenant[] } | Tenant[]>('/companies/mine', {
-    params: { limit: 100 },
-  });
-  return Array.isArray(data) ? data : data.items ?? [];
-}
-
-function tenantFromWorkspace(item: WorkspaceListResponse['items'][number]): Tenant | null {
-  if (item.type !== 'tenant' || !item.companyId) return null;
-  return {
-    id: item.companyId,
-    name: item.name,
-    role: item.role,
-    roles: item.roles,
-    membershipStatus: item.membershipStatus,
-    status: item.status ?? item.availability?.status ?? undefined,
-    plan: item.plan,
-    billingStatus: item.billingStatus,
-    featureFlags: item.featureFlags ?? undefined,
-    timezone: item.timezone,
-    locale: item.locale,
-    availability: item.availability,
-    permissions: item.permissions,
-    branding: item.branding,
-    logoUrl: item.logoUrl,
-    host: item.host,
-    crmLink: item.crmLink,
-    crmTenantId: item.crmLink?.crmTenantId ?? undefined,
-    crmTenantSlug: item.crmLink?.crmTenantSlug ?? undefined,
-    crmPrimaryDomain: item.crmLink?.crmPrimaryDomain ?? undefined,
-  };
-}
-
-export async function listTenantWorkspaces() {
-  const { data } = await api.get<WorkspaceListResponse>('/companies/workspaces', {
-    skipTenantHeader: true,
-  });
-  return {
-    ...data,
-    tenantItems: (data.items ?? []).filter((item) => item.type === 'tenant'),
-    tenants: (data.items ?? [])
-      .map(tenantFromWorkspace)
-      .filter((tenant): tenant is Tenant => Boolean(tenant)),
-  };
-}
-
-export async function switchTenantWorkspace(tenantId: number) {
-  const { data } = await api.post<{ active: WorkspaceListResponse['items'][number] }>('/companies/workspaces/switch', {
-    type: 'tenant',
-    companyId: tenantId,
-  }, {
-    skipTenantHeader: true,
-  });
-  const tenant = tenantFromWorkspace(data.active);
-  if (!tenant) throw new Error('Workspace switch response did not include a tenant workspace');
-  return tenant;
-}
-
-export async function resolveTenantByHost(host: string) {
-  const { data } = await api.get<Tenant & { resolvedHost?: string }>('/tenant-context/resolve', {
-    params: { host },
-    skipTenantHeader: true,
-  });
-  return data;
 }
 
 export async function getTenant(tenantId: number) {
@@ -444,10 +230,12 @@ export async function getTenantReportTimeSeries(tenantId: number) {
 }
 
 export async function listTenantCourses(tenantId: number) {
-  const { data } = await api.get<{ items?: Course[] } | Course[]>(`/companies/${tenantId}/courses`, {
-    params: { limit: 100 },
+  return dedupeRead(`tenant:${tenantId}:courses`, async () => {
+    const { data } = await api.get<{ items?: Course[] } | Course[]>(`/companies/${tenantId}/courses`, {
+      params: { limit: 100 },
+    });
+    return Array.isArray(data) ? data : data.items ?? [];
   });
-  return Array.isArray(data) ? data : data.items ?? [];
 }
 
 export async function listCourseStudents(courseId: number, params: {
@@ -529,10 +317,12 @@ export async function updateCourseStatus(courseId: number, status: 'pending' | '
 }
 
 export async function listCourseGroups(courseId?: number) {
-  const { data } = await api.get<{ items?: CourseGroup[] } | CourseGroup[]>('/course-groups', {
-    params: courseId ? { courseId } : undefined,
+  return dedupeRead(`course-groups:${courseId ?? 'all'}`, async () => {
+    const { data } = await api.get<{ items?: CourseGroup[] } | CourseGroup[]>('/course-groups', {
+      params: courseId ? { courseId } : undefined,
+    });
+    return Array.isArray(data) ? data : data.items ?? [];
   });
-  return Array.isArray(data) ? data : data.items ?? [];
 }
 
 export async function createCourseGroup(payload: {
@@ -606,12 +396,60 @@ export async function generateGroupSessions(groupId: number, payload: { fromDate
   return data;
 }
 
-export async function listGroupSessions(groupId?: number) {
-  const { data } = await api.get<{ items?: CourseSession[] } | CourseSession[]>('/group-sessions', {
-    params: groupId ? { groupId } : undefined,
-  });
-  return Array.isArray(data) ? data : data.items ?? [];
+function normalizeDateString(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  }
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  }
+  return undefined;
 }
+
+function normalizeOptionalNumber(value: unknown): number | undefined {
+  const next = Number(value);
+  return Number.isFinite(next) && next > 0 ? next : undefined;
+}
+
+function normalizeCourseSession(value: CourseSession): CourseSession {
+  const raw = value as CourseSession & {
+    id?: unknown;
+    courseId?: unknown;
+    groupId?: unknown;
+    sessionIndex?: unknown;
+    startsAt?: unknown;
+    endsAt?: unknown;
+    materials?: unknown;
+    activities?: unknown;
+  };
+  return {
+    ...value,
+    id: normalizeOptionalNumber(raw.id) ?? value.id,
+    courseId: normalizeOptionalNumber(raw.courseId) ?? value.courseId,
+    groupId: raw.groupId === null ? null : normalizeOptionalNumber(raw.groupId),
+    sessionIndex: normalizeOptionalNumber(raw.sessionIndex),
+    startsAt: normalizeDateString(raw.startsAt),
+    endsAt: normalizeDateString(raw.endsAt),
+    materials: Array.isArray(raw.materials) ? raw.materials as CourseSession['materials'] : [],
+    activities: Array.isArray(raw.activities) ? raw.activities as CourseSession['activities'] : [],
+  };
+}
+
+export async function listGroupSessions(groupId?: number) {
+  return dedupeRead(`group-sessions:${groupId ?? 'all'}`, async () => {
+    const { data } = await api.get<{ items?: CourseSession[] } | CourseSession[]>('/group-sessions', {
+      params: groupId ? { groupId } : undefined,
+    });
+    const items = Array.isArray(data) ? data : data.items ?? [];
+    return items.map(normalizeCourseSession);
+  });
+}
+
+const pendingGroupSessionCreates = new Map<string, Promise<CourseSession>>();
 
 export async function createGroupSession(payload: {
   groupId: number;
@@ -622,8 +460,25 @@ export async function createGroupSession(payload: {
   status?: 'scheduled' | 'completed' | 'cancelled';
   notes?: string;
 }) {
-  const { data } = await api.post<CourseSession>('/group-sessions', payload);
-  return data;
+  const requestKey = JSON.stringify({
+    groupId: payload.groupId,
+    sessionIndex: payload.sessionIndex,
+    title: payload.title,
+    startsAt: payload.startsAt,
+    endsAt: payload.endsAt,
+    status: payload.status ?? 'scheduled',
+    notes: payload.notes ?? '',
+  });
+  const pending = pendingGroupSessionCreates.get(requestKey);
+  if (pending) return pending;
+
+  const request = api.post<CourseSession>('/group-sessions', payload)
+    .then(({ data }) => normalizeCourseSession(data))
+    .finally(() => {
+      pendingGroupSessionCreates.delete(requestKey);
+    });
+  pendingGroupSessionCreates.set(requestKey, request);
+  return request;
 }
 
 export async function updateGroupSession(sessionId: number, payload: {
@@ -651,10 +506,12 @@ export async function uploadSessionMaterial(sessionId: number, file: File) {
 }
 
 export async function getLiveMeeting(sessionId: number, provider?: 'zoom' | 'google_meet' | 'custom') {
-  const { data } = await api.get<LiveMeeting>(`/live-integration/sessions/${sessionId}/meeting`, {
-    params: provider ? { provider } : undefined,
+  return dedupeRead(`live-meeting:${sessionId}:${provider ?? 'default'}`, async () => {
+    const { data } = await api.get<LiveMeeting>(`/live-integration/sessions/${sessionId}/meeting`, {
+      params: provider ? { provider } : undefined,
+    });
+    return data;
   });
-  return data;
 }
 
 export async function createLiveMeeting(sessionId: number, payload: {
@@ -730,8 +587,10 @@ export async function getSessionActivityResponses(sessionId: number, activityId:
 }
 
 export async function getSessionInsights(sessionId: number) {
-  const { data } = await api.get<SessionInsights>(`/group-sessions/${sessionId}/insights`);
-  return data;
+  return dedupeRead(`session-insights:${sessionId}`, async () => {
+    const { data } = await api.get<SessionInsights>(`/group-sessions/${sessionId}/insights`);
+    return data;
+  });
 }
 
 export async function reviewSessionActivitySubmission(
@@ -762,21 +621,31 @@ export async function unenrollUser(courseId: number, userId: number) {
   return data;
 }
 
+export async function removeUserFromGroup(groupId: number, userId: number) {
+  const { data } = await api.delete(`/enrollments/groups/${groupId}/students/${userId}`);
+  return data;
+}
+
 export async function listGroupStudents(groupId: number, params: {
   q?: string;
   progressGte?: number;
   progressLte?: number;
   limit?: number;
 } = {}) {
-  const { data } = await api.get<{ items?: GroupStudent[] } | GroupStudent[]>(`/course-groups/${groupId}/students`, {
-    params: { limit: params.limit ?? 200, q: params.q, progressGte: params.progressGte, progressLte: params.progressLte },
+  const requestKey = `group-students:${groupId}:${params.limit ?? 200}:${params.q ?? ''}:${params.progressGte ?? ''}:${params.progressLte ?? ''}`;
+  return dedupeRead(requestKey, async () => {
+    const { data } = await api.get<{ items?: GroupStudent[] } | GroupStudent[]>(`/course-groups/${groupId}/students`, {
+      params: { limit: params.limit ?? 200, q: params.q, progressGte: params.progressGte, progressLte: params.progressLte },
+    });
+    return Array.isArray(data) ? data : data.items ?? [];
   });
-  return Array.isArray(data) ? data : data.items ?? [];
 }
 
 export async function getSessionAttendance(sessionId: number) {
-  const { data } = await api.get<{ items?: AttendanceRecord[] } | AttendanceRecord[]>(`/attendance/sessions/${sessionId}`);
-  return Array.isArray(data) ? data : data.items ?? [];
+  return dedupeRead(`session-attendance:${sessionId}`, async () => {
+    const { data } = await api.get<{ items?: AttendanceRecord[] } | AttendanceRecord[]>(`/attendance/sessions/${sessionId}`);
+    return Array.isArray(data) ? data : data.items ?? [];
+  });
 }
 
 export async function saveSessionAttendance(
@@ -788,10 +657,12 @@ export async function saveSessionAttendance(
 }
 
 export async function listSessionHomework(sessionId: number, includeUnpublished = true) {
-  const { data } = await api.get<SessionHomework[] | { items?: SessionHomework[] }>(`/group-sessions/${sessionId}/homework`, {
-    params: { includeUnpublished },
+  return dedupeRead(`session-homework:${sessionId}:${includeUnpublished ? 'all' : 'published'}`, async () => {
+    const { data } = await api.get<SessionHomework[] | { items?: SessionHomework[] }>(`/group-sessions/${sessionId}/homework`, {
+      params: { includeUnpublished },
+    });
+    return Array.isArray(data) ? data : data.items ?? [];
   });
-  return Array.isArray(data) ? data : data.items ?? [];
 }
 
 export async function createSessionHomework(
@@ -867,8 +738,10 @@ export async function reviewHomeworkSubmission(
 }
 
 export async function listTenantMembers(tenantId: number) {
-  const { data } = await api.get<{ items?: CompanyMember[] } | CompanyMember[]>(`/companies/${tenantId}/members`);
-  return Array.isArray(data) ? data : data.items ?? [];
+  return dedupeRead(`tenant:${tenantId}:members`, async () => {
+    const { data } = await api.get<{ items?: CompanyMember[] } | CompanyMember[]>(`/companies/${tenantId}/members`);
+    return Array.isArray(data) ? data : data.items ?? [];
+  });
 }
 
 export async function addTenantMember(tenantId: number, payload: { userId: number; role: string }) {
@@ -1105,11 +978,6 @@ export async function getStudentHome(params: { courseId?: number; groupId?: numb
   return data;
 }
 
-export async function getStudentAccess() {
-  const { data } = await api.get<StudentAccessState>('/student/access');
-  return data;
-}
-
 export async function listStudentCourses() {
   const { data } = await api.get<StudentCourseSummary[] | { items?: StudentCourseSummary[]; courses?: StudentCourseSummary[] }>('/student/courses');
   return Array.isArray(data) ? data : data?.items ?? data?.courses ?? [];
@@ -1209,23 +1077,8 @@ export async function updateStudentNotificationSettings(payload: {
   return data;
 }
 
-export async function listStudentNotifications(params: { page?: number; limit?: number } = {}) {
-  const { data } = await api.get<StudentNotification[] | { items?: StudentNotification[] }>('/student/notifications', { params });
-  return Array.isArray(data) ? data : data?.items ?? [];
-}
-
 export async function getStudentNotificationsPage(params: { page?: number; limit?: number } = {}) {
   const { data } = await api.get<StudentNotificationPage>('/student/notifications', { params });
-  return data;
-}
-
-export async function getStudentNotificationUnreadCount() {
-  const { data } = await api.get('/student/notifications/unread-count');
-  return data;
-}
-
-export async function markStudentNotificationRead(notificationId: number) {
-  const { data } = await api.post(`/student/notifications/${notificationId}/read`);
   return data;
 }
 

@@ -8,7 +8,7 @@ import { isTenantStudent } from '../features/tenant/tenantRoles';
 import { countEnabledStaffTools, getMobileNavGroups, getVisibleNavItems } from './appNavigation';
 import { LanguageMenu } from './LanguageMenu';
 import { LoadingState } from './DataState';
-import { getStudentNotificationUnreadCount, listStudentNotifications, markStudentNotificationRead } from '../services/api';
+import { getStudentNotificationUnreadCount, listStudentNotifications, markStudentNotificationRead } from '../services/shellApi';
 
 type ShellNotification = {
   id?: number;

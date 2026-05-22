@@ -18,8 +18,8 @@ import {
   listTenantCourses,
   listTenantMembers,
   previewGeneratedSessions,
+  removeUserFromGroup,
   searchUsers,
-  unenrollUser,
   updateCourseGroup,
 } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionGenerationPreview, UserSummary } from '../../types/domain';
@@ -612,7 +612,7 @@ export function GroupsPage() {
     if (!courseId || !groupId) return;
     setRemovingStudentId(student.userId);
     try {
-      await unenrollUser(courseId, student.userId);
+      await removeUserFromGroup(groupId, student.userId);
       await reloadGroupDetail(groupId);
       toast.success(t('groups.studentRemoved'));
     } catch (error) {

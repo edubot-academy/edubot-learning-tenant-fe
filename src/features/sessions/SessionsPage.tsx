@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { PageHeader } from '../../components/PageHeader';
@@ -28,13 +28,13 @@ import {
   listTenantMembers,
   listTenantCourses,
   previewGeneratedSessions,
+  removeUserFromGroup,
   searchUsers,
   reviewSessionActivitySubmission,
   updateCourseGroup,
   updateGroupSession,
   updateLiveMeeting,
   updateSessionActivity,
-  unenrollUser,
   uploadSessionMaterial,
 } from '../../services/api';
 import type { AttendanceRecord, CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
@@ -43,8 +43,20 @@ import { activityTypeLabelKeys, commonStatusLabelKeys, enumLabel } from '../../l
 import { getApiErrorMessage } from '../../lib/apiErrors';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
-import { canCoordinateTenantLearning, canEnrollTenantStudents, canTeachAssignedSessions, isTenantAdmin } from '../tenant/tenantRoles';
-import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
+import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
+import {
+  canCoordinateTenantLearning,
+  canEnrollTenantStudents,
+  canManageAssignedActivities,
+  canManageAssignedAttendance,
+  canManageAssignedHomework,
+  canManageAssignedLiveMeetings,
+  canManageAssignedMaterials,
+  canManageTenantCourses,
+  canTeachAssignedSessions,
+  isTenantAdmin,
+} from '../tenant/tenantRoles';
+import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
 import {
   emptyGroupForm,
   emptyScheduleBlock,
@@ -78,6 +90,12 @@ const scheduleDayIndex: Record<ScheduleDay, number> = {
 const dateInputValue = (date: Date) => {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return localDate.toISOString().slice(0, 16);
+};
+
+const dateTimeLocalValue = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : dateInputValue(date);
 };
 
 const dateOnly = (value?: string | null) => {
@@ -114,15 +132,30 @@ const emptyMeetingForm = {
   hostUserId: '',
 };
 
+type QuizQuestionForm = {
+  prompt: string;
+  options: string[];
+  correctOptionIndex: number;
+};
+
+const emptyQuizQuestion = (): QuizQuestionForm => ({
+  prompt: '',
+  options: ['', ''],
+  correctOptionIndex: 0,
+});
+
 const emptyActivityForm = {
   title: '',
   description: '',
   type: 'discussion' as SessionActivityType,
   status: 'planned' as SessionActivityStatus,
-  quizPrompt: '',
-  quizOptionA: '',
-  quizOptionB: '',
-  quizCorrectOption: 'a' as 'a' | 'b',
+  quizQuestions: [emptyQuizQuestion()],
+};
+
+const supportedMeetingProviders = new Set(['zoom', 'google_meet', 'custom']);
+
+const meetingProviderValue = (value?: string | null): 'zoom' | 'google_meet' | 'custom' | undefined => {
+  return supportedMeetingProviders.has(String(value)) ? value as 'zoom' | 'google_meet' | 'custom' : undefined;
 };
 
 function upsertSessionList(items: CourseSession[], nextSession: CourseSession) {
@@ -134,6 +167,8 @@ function upsertSessionList(items: CourseSession[], nextSession: CourseSession) {
       return String(first.startsAt ?? '').localeCompare(String(second.startsAt ?? ''));
     });
 }
+
+const quizOptionLetter = (index: number) => String.fromCharCode(65 + index);
 
 type SessionOperationTab = 'overview' | 'activities' | 'meeting' | 'materials' | 'insights';
 type PendingRemoval =
@@ -204,6 +239,7 @@ export function SessionsPage() {
   const [createModal, setCreateModal] = useState<'group' | 'session' | 'enrollment' | 'activity' | null>(null);
   const [editGroupOpen, setEditGroupOpen] = useState(false);
   const [editSessionOpen, setEditSessionOpen] = useState(false);
+  const [sessionImpactConfirmed, setSessionImpactConfirmed] = useState(false);
   const [enrollmentMode, setEnrollmentMode] = useState<'existing' | 'new'>('existing');
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
@@ -212,7 +248,41 @@ export function SessionsPage() {
   const [meetingErrors, setMeetingErrors] = useState<Record<string, string>>({});
   const [materialError, setMaterialError] = useState('');
   const [sessionOperationTab, setSessionOperationTab] = useState<SessionOperationTab>('overview');
+  const [preferredSessionId, setPreferredSessionId] = useState<number | undefined>();
   const savingGroupRef = useRef(false);
+  const savingSessionRef = useRef(false);
+  const createModalRef = useRef(createModal);
+  const submittedSessionKeyRef = useRef<string | null>(null);
+  const locallyCreatedSessionIdsRef = useRef<Set<number>>(new Set());
+  const loadedCourseScopeRef = useRef<string | null>(null);
+  const loadedAssignedSessionsScopeRef = useRef<string | null>(null);
+  const loadedMembersScopeRef = useRef<string | null>(null);
+  const loadedGroupsScopeRef = useRef<string | null>(null);
+  const loadedGroupSessionsScopeRef = useRef<string | null>(null);
+  const loadedSessionDetailScopeRef = useRef<string | null>(null);
+  const loadingCourseScopeRef = useRef<string | null>(null);
+  const loadingAssignedSessionsScopeRef = useRef<string | null>(null);
+  const loadingMembersScopeRef = useRef<string | null>(null);
+  const loadingGroupsScopeRef = useRef<string | null>(null);
+  const loadingGroupSessionsScopeRef = useRef<string | null>(null);
+  const loadingSessionDetailScopeRef = useRef<string | null>(null);
+  const courseLoadRequestRef = useRef(0);
+  const assignedSessionsLoadRequestRef = useRef(0);
+  const membersLoadRequestRef = useRef(0);
+  const groupsLoadRequestRef = useRef(0);
+  const groupSessionsLoadRequestRef = useRef(0);
+  const sessionDetailLoadRequestRef = useRef(0);
+  const tRef = useRef(t);
+  const assignedGroupsByCourseIdRef = useRef<Record<number, CourseGroup[]>>({});
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  useEffect(() => {
+    createModalRef.current = createModal;
+    if (createModal !== 'session') submittedSessionKeyRef.current = null;
+  }, [createModal]);
 
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
   const selectedCourseReady = isCourseWorkflowReady(selectedCourse);
@@ -227,10 +297,33 @@ export function SessionsPage() {
   })();
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
+  const preferredSessionAvailable = Boolean(
+    preferredSessionId
+    && sessions.some((session) => session.id === preferredSessionId),
+  );
+  const requestedSessionPending = Boolean(
+    requestedSessionId
+    && preferredSessionId !== requestedSessionId
+    && !sessions.some((session) => session.id === requestedSessionId),
+  );
+  const selectedSessionScope = {
+    courseId: selectedSession?.courseId ?? courseId,
+    groupId: selectedSession?.groupId ?? groupId,
+    sessionId: selectedSession?.id,
+  };
   const canAssignInstructor = isTenantAdmin(user, activeTenant);
   const canCoordinateGroups = canCoordinateTenantLearning(user, activeTenant);
   const canManageEnrollment = canEnrollTenantStudents(user, activeTenant);
   const canUseAssignedSessionPicker = canTeachAssignedSessions(user, activeTenant);
+  const canScheduleSessions = canCoordinateGroups || canTeachAssignedSessions(user, activeTenant);
+  const isAssignedInstructorView = canUseAssignedSessionPicker && !canCoordinateGroups;
+  const canManageSessionActivities = canCoordinateGroups || canManageAssignedActivities(user, activeTenant);
+  const canManageSessionMaterials = canCoordinateGroups || canManageAssignedMaterials(user, activeTenant);
+  const canManageSessionMeetings = canCoordinateGroups || canManageAssignedLiveMeetings(user, activeTenant);
+  const attendanceEnabled = isTenantFeatureEnabled(activeTenant, 'attendance.enabled');
+  const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
+  const canUseAttendanceWorkflow = attendanceEnabled && (canManageAssignedAttendance(user, activeTenant) || canManageTenantCourses(user, activeTenant));
+  const canUseHomeworkWorkflow = homeworkEnabled && (canManageAssignedHomework(user, activeTenant) || canManageTenantCourses(user, activeTenant));
   const instructorOptions = useMemo(
     () => tenantMembers.filter((member) => String(member.role).toLowerCase() === 'instructor'),
     [tenantMembers],
@@ -319,9 +412,65 @@ export function SessionsPage() {
     return t(removalTypeKeys[value]);
   };
   const translatedSessionTabs = useMemo(
-    () => sessionOperationTabs.map((tab) => ({ ...tab, label: t(tab.label) })),
-    [t],
+    () => sessionOperationTabs
+      .filter((tab) => {
+        if (tab.key === 'activities') return canManageSessionActivities || Boolean(selectedSession?.activities?.length);
+        if (tab.key === 'meeting') return canManageSessionMeetings || Boolean(selectedSession?.liveJoinUrl || liveMeeting?.joinUrl);
+        if (tab.key === 'materials') return canManageSessionMaterials || Boolean(selectedSession?.materials?.length);
+        return true;
+      })
+      .map((tab) => ({ ...tab, label: t(tab.label) })),
+    [canManageSessionActivities, canManageSessionMaterials, canManageSessionMeetings, liveMeeting?.joinUrl, selectedSession, t],
   );
+  const currentMeetingProvider = meetingProviderValue(liveMeeting?.provider) ?? meetingProviderValue(selectedSession?.liveProvider) ?? meetingForm.provider;
+  const sessionWorkflowLink = (path: string, session: CourseSession) => workflowPath(path, {
+    courseId: session.courseId,
+    groupId: session.groupId ?? groupId,
+    sessionId: session.id,
+  });
+  const sessionToolsSummary = (session: CourseSession) => {
+    const parts = [
+      session.liveJoinUrl || session.liveHostUrl ? t('sessions.meetingReady') : t('sessions.meetingMissing'),
+      t('sessions.materialCount', { count: session.materials?.length ?? 0 }),
+      t('sessions.activityCount', { count: session.activities?.length ?? 0 }),
+    ];
+    return parts.join(' · ');
+  };
+  const selectedAttendanceLink = workflowPath('/attendance', selectedSessionScope);
+  const selectedHomeworkLink = workflowPath('/homework', selectedSessionScope);
+  const sessionDetailScopeKey = useCallback((nextSessionId?: number) => (
+    nextSessionId
+      ? `${nextSessionId}:${canUseAttendanceWorkflow ? 'attendance' : 'no-attendance'}:${canUseHomeworkWorkflow ? 'homework' : 'no-homework'}`
+      : null
+  ), [canUseAttendanceWorkflow, canUseHomeworkWorkflow]);
+  const planModeTarget = translatedSessionTabs.some((tab) => tab.key === 'meeting')
+    ? 'meeting'
+    : translatedSessionTabs.some((tab) => tab.key === 'materials')
+      ? 'materials'
+      : 'overview';
+  const runModeTarget = translatedSessionTabs.some((tab) => tab.key === 'activities') ? 'activities' : 'overview';
+  const planModeDetail = planModeTarget === 'meeting'
+    ? t('sessions.modePlanDetail')
+    : planModeTarget === 'materials'
+      ? t('sessions.modePlanMaterialsDetail')
+      : t('sessions.modePlanOverviewDetail');
+  const reviewWorkflowLink = canUseHomeworkWorkflow ? selectedHomeworkLink : selectedAttendanceLink;
+  const reviewModeDetail = canUseHomeworkWorkflow
+    ? t('sessions.modeReviewDetail')
+    : canUseAttendanceWorkflow
+      ? t('sessions.modeReviewAttendanceDetail')
+      : t('sessions.modeReviewInsightsDetail');
+  const runModeDetail = canUseAttendanceWorkflow ? t('sessions.modeRunDetail') : t('sessions.modeRunActivitiesDetail');
+  const hasSessionDeliveryRecords = Boolean(attendance.length || homework.length);
+  const sessionEditChangesDeliveryFields = Boolean(
+    selectedSession
+    && (
+      editSessionForm.startsAt !== dateTimeLocalValue(selectedSession.startsAt)
+      || editSessionForm.endsAt !== dateTimeLocalValue(selectedSession.endsAt)
+      || editSessionForm.status !== (selectedSession.status === 'completed' || selectedSession.status === 'cancelled' ? selectedSession.status : 'scheduled')
+    ),
+  );
+  const sessionEditNeedsImpactConfirmation = hasSessionDeliveryRecords && sessionEditChangesDeliveryFields;
   const pendingRemovalTitle = pendingRemoval?.type === 'student'
     ? (pendingRemoval.student.fullName || pendingRemoval.student.email || studentFallback(pendingRemoval.student.userId))
     : pendingRemoval?.type === 'activity'
@@ -364,6 +513,14 @@ export function SessionsPage() {
       .filter((session) => !session.startsAt || new Date(session.startsAt).getTime() >= now || session.status === 'scheduled')
       .slice(0, 8);
   }, [assignedSessions]);
+  const instructorHasNoAssignedGroups = Boolean(isAssignedInstructorView && !loading && !groups.length);
+  const canShowScheduleAction = canScheduleSessions && !instructorHasNoAssignedGroups;
+  const emptySessionsTitle = instructorHasNoAssignedGroups
+    ? t('sessions.noAssignedGroupsTitle')
+    : selectedGroup ? t('sessions.emptyScheduledTitle') : t('sessions.emptySelectedTitle');
+  const emptySessionsDetail = instructorHasNoAssignedGroups
+    ? t('sessions.noAssignedGroupsDetail')
+    : selectedGroup ? t('sessions.emptyScheduledDetail') : t('sessions.emptySelectedDetail');
   const openAssignedSession = (session: CourseSession) => {
     const next = new URLSearchParams(searchParamsString);
     next.set('courseId', String(session.courseId));
@@ -373,10 +530,24 @@ export function SessionsPage() {
   };
 
   useEffect(() => {
+    const scopeKey = activeTenantId ? `${activeTenantId}:${isAssignedInstructorView ? 'assigned' : 'full'}` : null;
+    if (loadedCourseScopeRef.current === scopeKey) return;
+    if (loadingCourseScopeRef.current === scopeKey) return;
+    loadedAssignedSessionsScopeRef.current = null;
+    loadedMembersScopeRef.current = null;
+    loadedGroupsScopeRef.current = null;
+    loadedGroupSessionsScopeRef.current = null;
+    loadedSessionDetailScopeRef.current = null;
+    loadingAssignedSessionsScopeRef.current = null;
+    loadingMembersScopeRef.current = null;
+    loadingGroupsScopeRef.current = null;
+    loadingGroupSessionsScopeRef.current = null;
+    loadingSessionDetailScopeRef.current = null;
     setCourses([]);
     setGroups([]);
     setSessions([]);
     setAssignedSessions([]);
+    assignedGroupsByCourseIdRef.current = {};
     setStudents([]);
     setTenantMembers([]);
     setAttendance([]);
@@ -386,39 +557,84 @@ export function SessionsPage() {
     setCourseId(undefined);
     setGroupId(undefined);
     setSessionId(undefined);
-    if (!activeTenantId) return;
-    let cancelled = false;
+    if (!activeTenantId) {
+      courseLoadRequestRef.current += 1;
+      loadedCourseScopeRef.current = scopeKey;
+      loadingCourseScopeRef.current = null;
+      return;
+    }
+    const requestId = courseLoadRequestRef.current + 1;
+    courseLoadRequestRef.current = requestId;
+    loadingCourseScopeRef.current = scopeKey;
     setLoading(true);
     listTenantCourses(activeTenantId)
-      .then((nextCourses) => {
-        if (cancelled) return;
-        setCourses(nextCourses);
+      .then(async (nextCourses) => {
+        if (courseLoadRequestRef.current !== requestId) return;
+        if (!isAssignedInstructorView) {
+          assignedGroupsByCourseIdRef.current = {};
+          setCourses(nextCourses);
+          return;
+        }
+
+        const readyCourses = nextCourses.filter((course) => isCourseWorkflowReady(course));
+        const assignedCoursePairs = await Promise.all(readyCourses.map(async (course) => {
+          try {
+            const nextGroups = await listCourseGroups(course.id);
+            return { course, groups: nextGroups };
+          } catch {
+            return { course, groups: [] };
+          }
+        }));
+        if (courseLoadRequestRef.current !== requestId) return;
+        const nextAssignedGroupsByCourseId = Object.fromEntries(
+          assignedCoursePairs.map((item) => [item.course.id, item.groups]),
+        );
+        assignedGroupsByCourseIdRef.current = nextAssignedGroupsByCourseId;
+        setCourses(assignedCoursePairs
+          .filter((item) => item.groups.length > 0)
+          .map((item) => item.course));
       })
       .catch(() => {
-        if (!cancelled) toast.error(t('courses.loadFailed'));
+        if (courseLoadRequestRef.current === requestId) toast.error(tRef.current('courses.loadFailed'));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (courseLoadRequestRef.current === requestId) {
+          loadedCourseScopeRef.current = scopeKey;
+          loadingCourseScopeRef.current = null;
+          setLoading(false);
+        }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTenantId, t]);
+  }, [activeTenantId, isAssignedInstructorView]);
 
   useEffect(() => {
+    const scopeKey = activeTenantId && canUseAssignedSessionPicker ? `${activeTenantId}:assigned-sessions` : null;
+    if (loadedAssignedSessionsScopeRef.current === scopeKey) return;
+    if (loadingAssignedSessionsScopeRef.current === scopeKey) return;
     setAssignedSessions([]);
-    if (!activeTenantId || !canUseAssignedSessionPicker) return;
-    let cancelled = false;
+    if (!activeTenantId || !canUseAssignedSessionPicker) {
+      assignedSessionsLoadRequestRef.current += 1;
+      loadedAssignedSessionsScopeRef.current = scopeKey;
+      loadingAssignedSessionsScopeRef.current = null;
+      return;
+    }
+    const requestId = assignedSessionsLoadRequestRef.current + 1;
+    assignedSessionsLoadRequestRef.current = requestId;
+    loadingAssignedSessionsScopeRef.current = scopeKey;
     listGroupSessions()
       .then((nextSessions) => {
-        if (!cancelled) setAssignedSessions(nextSessions);
+        if (assignedSessionsLoadRequestRef.current === requestId) {
+          setAssignedSessions(nextSessions);
+          loadedAssignedSessionsScopeRef.current = scopeKey;
+          loadingAssignedSessionsScopeRef.current = null;
+        }
       })
       .catch(() => {
-        if (!cancelled) setAssignedSessions([]);
+        if (assignedSessionsLoadRequestRef.current === requestId) {
+          setAssignedSessions([]);
+          loadedAssignedSessionsScopeRef.current = scopeKey;
+          loadingAssignedSessionsScopeRef.current = null;
+        }
       });
-    return () => {
-      cancelled = true;
-    };
   }, [activeTenantId, canUseAssignedSessionPicker]);
 
   useEffect(() => {
@@ -430,22 +646,46 @@ export function SessionsPage() {
   }, [courses, requestedCourseId]);
 
   useEffect(() => {
+    const scopeKey = activeTenantId && (canAssignInstructor || canManageEnrollment)
+      ? `${activeTenantId}:${canAssignInstructor ? 'assign' : 'view'}:${canManageEnrollment ? 'enroll' : 'no-enroll'}`
+      : null;
+    if (loadedMembersScopeRef.current === scopeKey) return;
+    if (loadingMembersScopeRef.current === scopeKey) return;
     setTenantMembers([]);
-    if (!activeTenantId || (!canAssignInstructor && !canManageEnrollment)) return;
-    let cancelled = false;
+    if (!activeTenantId || (!canAssignInstructor && !canManageEnrollment)) {
+      membersLoadRequestRef.current += 1;
+      loadedMembersScopeRef.current = scopeKey;
+      loadingMembersScopeRef.current = null;
+      return;
+    }
+    const requestId = membersLoadRequestRef.current + 1;
+    membersLoadRequestRef.current = requestId;
+    loadingMembersScopeRef.current = scopeKey;
     listTenantMembers(activeTenantId)
       .then((members) => {
-        if (!cancelled) setTenantMembers(members);
+        if (membersLoadRequestRef.current === requestId) {
+          setTenantMembers(members);
+          loadedMembersScopeRef.current = scopeKey;
+          loadingMembersScopeRef.current = null;
+        }
       })
       .catch(() => {
-        if (!cancelled && canAssignInstructor) toast.error(t('sessions.instructorsLoadFailed'));
+        if (membersLoadRequestRef.current === requestId && canAssignInstructor) toast.error(tRef.current('sessions.instructorsLoadFailed'));
+        if (membersLoadRequestRef.current === requestId) {
+          loadedMembersScopeRef.current = scopeKey;
+          loadingMembersScopeRef.current = null;
+        }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTenantId, canAssignInstructor, canManageEnrollment, t]);
+  }, [activeTenantId, canAssignInstructor, canManageEnrollment]);
 
   useEffect(() => {
+    const scopeKey = courseId ? `${courseId}:${isAssignedInstructorView ? 'assigned' : 'full'}` : null;
+    if (loadedGroupsScopeRef.current === scopeKey) return;
+    if (loadingGroupsScopeRef.current === scopeKey) return;
+    loadedGroupSessionsScopeRef.current = null;
+    loadedSessionDetailScopeRef.current = null;
+    loadingGroupSessionsScopeRef.current = null;
+    loadingSessionDetailScopeRef.current = null;
     setGroups([]);
     setSessions([]);
     setStudents([]);
@@ -453,24 +693,37 @@ export function SessionsPage() {
     setHomework([]);
     setGroupId(undefined);
     setSessionId(undefined);
-    if (!courseId) return;
-    let cancelled = false;
+    if (!courseId) {
+      groupsLoadRequestRef.current += 1;
+      loadedGroupsScopeRef.current = scopeKey;
+      loadingGroupsScopeRef.current = null;
+      return;
+    }
+    if (isAssignedInstructorView && Object.prototype.hasOwnProperty.call(assignedGroupsByCourseIdRef.current, courseId)) {
+      setGroups(assignedGroupsByCourseIdRef.current[courseId] ?? []);
+      loadedGroupsScopeRef.current = scopeKey;
+      return;
+    }
+    const requestId = groupsLoadRequestRef.current + 1;
+    groupsLoadRequestRef.current = requestId;
+    loadingGroupsScopeRef.current = scopeKey;
     setLoading(true);
     listCourseGroups(courseId)
       .then((nextGroups) => {
-        if (cancelled) return;
+        if (groupsLoadRequestRef.current !== requestId) return;
         setGroups(nextGroups);
       })
       .catch(() => {
-        if (!cancelled) toast.error(t('groups.courseGroupsLoadFailed'));
+        if (groupsLoadRequestRef.current === requestId) toast.error(tRef.current('groups.courseGroupsLoadFailed'));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (groupsLoadRequestRef.current === requestId) {
+          loadedGroupsScopeRef.current = scopeKey;
+          loadingGroupsScopeRef.current = null;
+          setLoading(false);
+        }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [courseId, t]);
+  }, [courseId, isAssignedInstructorView]);
 
   useEffect(() => {
     setGroupId((current) => {
@@ -481,45 +734,85 @@ export function SessionsPage() {
   }, [groups, requestedGroupId]);
 
   useEffect(() => {
+    const scopeKey = groupId ? `${groupId}` : null;
+    if (loadedGroupSessionsScopeRef.current === scopeKey) return;
+    if (loadingGroupSessionsScopeRef.current === scopeKey) return;
+    loadedSessionDetailScopeRef.current = null;
+    loadingSessionDetailScopeRef.current = null;
     setSessions([]);
     setStudents([]);
     setAttendance([]);
     setHomework([]);
     setSessionId(undefined);
-    if (!groupId) return;
-    let cancelled = false;
+    if (!groupId) {
+      groupSessionsLoadRequestRef.current += 1;
+      loadedGroupSessionsScopeRef.current = scopeKey;
+      loadingGroupSessionsScopeRef.current = null;
+      return;
+    }
+    const requestId = groupSessionsLoadRequestRef.current + 1;
+    groupSessionsLoadRequestRef.current = requestId;
+    loadingGroupSessionsScopeRef.current = scopeKey;
     setLoading(true);
     Promise.all([listGroupSessions(groupId), listGroupStudents(groupId)])
       .then(([nextSessions, nextStudents]) => {
-        if (cancelled) return;
+        if (groupSessionsLoadRequestRef.current !== requestId) return;
         setSessions(nextSessions);
         setStudents(nextStudents);
       })
       .catch(() => {
-        if (!cancelled) toast.error(t('sessions.groupSessionsLoadFailed'));
+        if (groupSessionsLoadRequestRef.current === requestId) toast.error(tRef.current('sessions.groupSessionsLoadFailed'));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (groupSessionsLoadRequestRef.current === requestId) {
+          loadedGroupSessionsScopeRef.current = scopeKey;
+          loadingGroupSessionsScopeRef.current = null;
+          setLoading(false);
+        }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [groupId, t]);
+  }, [groupId]);
 
   useEffect(() => {
     setSessionId((current) => {
       if (!sessions.length) return undefined;
-      if (requestedSessionId && sessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
+      if (preferredSessionId) {
+        return sessions.some((session) => session.id === preferredSessionId) ? preferredSessionId : current;
+      }
+      if (requestedSessionId) {
+        return sessions.some((session) => session.id === requestedSessionId) ? requestedSessionId : undefined;
+      }
       return current && sessions.some((session) => session.id === current) ? current : sessions[0]?.id;
     });
-  }, [sessions, requestedSessionId]);
+  }, [preferredSessionId, requestedSessionId, sessions]);
 
   useEffect(() => {
-    const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId, sessionId });
+    const nextSessionId = preferredSessionAvailable
+      ? preferredSessionId
+      : sessionId ?? (requestedSessionPending ? requestedSessionId : undefined);
+    const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId, sessionId: nextSessionId });
     if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
-  }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
+  }, [courseId, groupId, preferredSessionAvailable, preferredSessionId, requestedSessionId, requestedSessionPending, sessionId, searchParamsString, setSearchParams]);
 
   useEffect(() => {
+    if (preferredSessionId && requestedSessionId === preferredSessionId && sessionId === preferredSessionId) {
+      setPreferredSessionId(undefined);
+    }
+  }, [preferredSessionId, requestedSessionId, sessionId]);
+
+  useEffect(() => {
+    if (!translatedSessionTabs.some((tab) => tab.key === sessionOperationTab)) {
+      setSessionOperationTab('overview');
+    }
+  }, [sessionOperationTab, translatedSessionTabs]);
+
+  useEffect(() => {
+    const scopeKey = sessionDetailScopeKey(sessionId);
+    if (loadedSessionDetailScopeRef.current === scopeKey) return;
+    if (loadingSessionDetailScopeRef.current === scopeKey) return;
+    if (preferredSessionId && sessionId !== preferredSessionId) {
+      sessionDetailLoadRequestRef.current += 1;
+      return;
+    }
     setAttendance([]);
     setHomework([]);
     setInsights(null);
@@ -528,32 +821,50 @@ export function SessionsPage() {
     setActivityResponses(null);
     setReviewDrafts({});
     setSessionOperationTab('overview');
-    if (!sessionId) return;
-    let cancelled = false;
+    if (!sessionId) {
+      sessionDetailLoadRequestRef.current += 1;
+      loadedSessionDetailScopeRef.current = scopeKey;
+      loadingSessionDetailScopeRef.current = null;
+      return;
+    }
+    if (!selectedSession) {
+      sessionDetailLoadRequestRef.current += 1;
+      return;
+    }
+    if (locallyCreatedSessionIdsRef.current.has(sessionId)) {
+      locallyCreatedSessionIdsRef.current.delete(sessionId);
+      loadedSessionDetailScopeRef.current = scopeKey;
+      setDetailLoading(false);
+      return;
+    }
+    const requestId = sessionDetailLoadRequestRef.current + 1;
+    sessionDetailLoadRequestRef.current = requestId;
+    loadingSessionDetailScopeRef.current = scopeKey;
     setDetailLoading(true);
-    Promise.all([
-      getSessionAttendance(sessionId),
-      listSessionHomework(sessionId),
+    Promise.allSettled([
+      canUseAttendanceWorkflow ? getSessionAttendance(sessionId) : Promise.resolve([] as AttendanceRecord[]),
+      canUseHomeworkWorkflow ? listSessionHomework(sessionId) : Promise.resolve([] as SessionHomework[]),
       getSessionInsights(sessionId),
-      getLiveMeeting(sessionId).catch(() => null),
+      getLiveMeeting(sessionId),
     ])
-      .then(([nextAttendance, nextHomework, nextInsights, nextLiveMeeting]) => {
-        if (cancelled) return;
-        setAttendance(nextAttendance);
-        setHomework(nextHomework);
-        setInsights(nextInsights);
-        setLiveMeeting(nextLiveMeeting);
-      })
-      .catch(() => {
-        if (!cancelled) toast.error(t('sessions.detailLoadFailed'));
+      .then(([attendanceResult, homeworkResult, insightsResult, meetingResult]) => {
+        if (sessionDetailLoadRequestRef.current !== requestId) return;
+        setAttendance(attendanceResult.status === 'fulfilled' ? attendanceResult.value : []);
+        setHomework(homeworkResult.status === 'fulfilled' ? homeworkResult.value : []);
+        setInsights(insightsResult.status === 'fulfilled' ? insightsResult.value : null);
+        setLiveMeeting(meetingResult.status === 'fulfilled' ? meetingResult.value : null);
+        if (attendanceResult.status === 'rejected' || homeworkResult.status === 'rejected' || insightsResult.status === 'rejected') {
+          toast.error(tRef.current('sessions.detailPartialLoadFailed'));
+        }
       })
       .finally(() => {
-        if (!cancelled) setDetailLoading(false);
+        if (sessionDetailLoadRequestRef.current === requestId) {
+          loadedSessionDetailScopeRef.current = scopeKey;
+          loadingSessionDetailScopeRef.current = null;
+          setDetailLoading(false);
+        }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, t]);
+  }, [canUseAttendanceWorkflow, canUseHomeworkWorkflow, preferredSessionId, selectedSession, sessionDetailScopeKey, sessionId]);
 
   useEffect(() => {
     if (!createModal) setCreateErrors({});
@@ -578,21 +889,21 @@ export function SessionsPage() {
   useEffect(() => {
     if (!selectedSession) {
       setEditSessionForm(emptyEditSessionForm);
+      setSessionImpactConfirmed(false);
       return;
     }
 
     setEditSessionForm({
       title: selectedSession.title ?? '',
-      startsAt: selectedSession.startsAt ? selectedSession.startsAt.slice(0, 16) : '',
-      endsAt: selectedSession.endsAt ? selectedSession.endsAt.slice(0, 16) : '',
+      startsAt: dateTimeLocalValue(selectedSession.startsAt),
+      endsAt: dateTimeLocalValue(selectedSession.endsAt),
       status: selectedSession.status === 'completed' || selectedSession.status === 'cancelled' ? selectedSession.status : 'scheduled',
       notes: selectedSession.notes ?? '',
       recordingUrl: selectedSession.recordingUrl ?? '',
     });
+    setSessionImpactConfirmed(false);
     setMeetingForm({
-      provider: selectedSession.liveProvider === 'zoom' || selectedSession.liveProvider === 'google_meet' || selectedSession.liveProvider === 'custom'
-        ? selectedSession.liveProvider
-        : 'custom',
+      provider: meetingProviderValue(selectedSession.liveProvider) ?? 'custom',
       customJoinUrl: selectedSession.liveJoinUrl ?? '',
       topic: selectedSession.title ?? '',
       agenda: selectedSession.notes ?? '',
@@ -647,6 +958,14 @@ export function SessionsPage() {
 
   const clearCreateError = (key: string) => {
     setCreateErrors((current) => ({ ...current, [key]: '' }));
+  };
+
+  const updateQuizQuestion = (questionIndex: number, updater: (question: QuizQuestionForm) => QuizQuestionForm) => {
+    setActivityForm((current) => ({
+      ...current,
+      quizQuestions: current.quizQuestions.map((question, index) => (index === questionIndex ? updater(question) : question)),
+    }));
+    clearCreateError('quizQuestions');
   };
 
   const clearEditGroupError = (key: keyof GroupValidationErrors) => {
@@ -727,6 +1046,7 @@ export function SessionsPage() {
       await reloadGroups(activeCourseId, saved.id);
       setGroupId(saved.id);
       if (firstSession) {
+        locallyCreatedSessionIdsRef.current.add(firstSession.id);
         setSessions((current) => upsertSessionList(current, firstSession));
         setSessionId(firstSession.id);
       }
@@ -794,7 +1114,9 @@ export function SessionsPage() {
 
   const submitSession = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canCoordinateGroups) return;
+    if (createModalRef.current !== 'session') return;
+    if (savingSessionRef.current) return;
+    if (!canScheduleSessions) return;
     const nextErrors: Record<string, string> = {};
     if (!groupId) {
       nextErrors.group = t('sessions.selectGroupBeforeSession');
@@ -813,6 +1135,16 @@ export function SessionsPage() {
 
     setCreateErrors({});
     const activeGroupId = groupId!;
+    const submissionKey = JSON.stringify({
+      groupId: activeGroupId,
+      title: sessionForm.title.trim(),
+      startsAt: sessionForm.startsAt,
+      endsAt: sessionForm.endsAt,
+      notes: sessionForm.notes.trim(),
+    });
+    if (submittedSessionKeyRef.current === submissionKey) return;
+    submittedSessionKeyRef.current = submissionKey;
+    savingSessionRef.current = true;
     setSavingSession(true);
     try {
       const saved = await createGroupSession({
@@ -824,22 +1156,39 @@ export function SessionsPage() {
         status: 'scheduled',
         notes: sessionForm.notes.trim() || undefined,
       });
+      setPreferredSessionId(saved.id);
       setSessions((current) => upsertSessionList(current, saved));
+      locallyCreatedSessionIdsRef.current.add(saved.id);
+      loadedSessionDetailScopeRef.current = sessionDetailScopeKey(saved.id);
+      setAttendance([]);
+      setHomework([]);
+      setInsights(null);
+      setLiveMeeting(null);
+      setSelectedActivityId(undefined);
+      setActivityResponses(null);
+      setReviewDrafts({});
+      setSessionOperationTab('overview');
       setSessionId(saved.id);
       setSessionForm(emptySessionForm);
+      createModalRef.current = null;
       setCreateModal(null);
       setCreateErrors({});
       toast.success(t('sessions.sessionScheduled'));
     } catch (error) {
+      submittedSessionKeyRef.current = null;
       toast.error(getApiErrorMessage(error, t('sessions.sessionScheduleFailed')));
     } finally {
+      savingSessionRef.current = false;
       setSavingSession(false);
     }
   };
 
   const openScheduleSessionModal = () => {
+    if (!canScheduleSessions) return;
     setSessionForm(defaultSessionForm);
     setCreateErrors({});
+    submittedSessionKeyRef.current = null;
+    createModalRef.current = 'session';
     setCreateModal('session');
   };
 
@@ -986,7 +1335,7 @@ export function SessionsPage() {
     if (!courseId || !groupId) return;
     setRemovingStudentId(student.userId);
     try {
-      await unenrollUser(courseId, student.userId);
+      await removeUserFromGroup(groupId, student.userId);
       await reloadSessions(groupId);
       toast.success(t('sessions.studentRemovedFromGroup'));
     } catch (error) {
@@ -999,7 +1348,7 @@ export function SessionsPage() {
 
   const submitSessionUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canCoordinateGroups) return;
+    if (!canScheduleSessions) return;
     if (!sessionId || !groupId) return;
     const nextErrors: Record<string, string> = {};
     if (!editSessionForm.title.trim()) nextErrors.title = t('sessions.sessionTitleRequired');
@@ -1011,9 +1360,12 @@ export function SessionsPage() {
     if (editSessionForm.recordingUrl.trim() && !/^https?:\/\/\S+\.\S+/.test(editSessionForm.recordingUrl.trim())) {
       nextErrors.recordingUrl = t('sessions.fullRecordingUrl');
     }
+    if (sessionEditNeedsImpactConfirmation && !sessionImpactConfirmed) {
+      nextErrors.impactConfirmation = t('sessions.editImpactConfirmationRequired');
+    }
     if (Object.keys(nextErrors).length) {
       setSessionEditErrors(nextErrors);
-      toast.error(nextErrors.title ?? nextErrors.startsAt ?? nextErrors.endsAt ?? nextErrors.recordingUrl);
+      toast.error(nextErrors.title ?? nextErrors.startsAt ?? nextErrors.endsAt ?? nextErrors.recordingUrl ?? nextErrors.impactConfirmation);
       return;
     }
 
@@ -1039,6 +1391,7 @@ export function SessionsPage() {
   };
 
   const uploadMaterial = async (file: File | undefined) => {
+    if (!canManageSessionMaterials) return;
     if (!file) {
       setMaterialError(t('sessions.chooseFile'));
       toast.error(t('sessions.chooseFile'));
@@ -1063,6 +1416,7 @@ export function SessionsPage() {
   };
 
   const saveLiveMeeting = async () => {
+    if (!canManageSessionMeetings) return;
     if (!sessionId || !groupId) return;
     const nextErrors: Record<string, string> = {};
     if (meetingForm.provider !== 'zoom' && !meetingForm.customJoinUrl.trim()) {
@@ -1110,10 +1464,11 @@ export function SessionsPage() {
   };
 
   const removeLiveMeeting = async () => {
+    if (!canManageSessionMeetings) return;
     if (!sessionId || !groupId) return;
     setSavingMeeting(true);
     try {
-      await deleteLiveMeeting(sessionId, meetingForm.provider);
+      await deleteLiveMeeting(sessionId, currentMeetingProvider);
       setLiveMeeting(null);
       await reloadSessions(groupId);
       toast.success(t('sessions.liveMeetingRemoved'));
@@ -1125,6 +1480,7 @@ export function SessionsPage() {
   };
 
   const removeMaterial = async (materialIndex: number) => {
+    if (!canManageSessionMaterials) return;
     if (!sessionId || !groupId || !selectedSession) return;
     const currentMaterials = Array.isArray(selectedSession.materials) ? selectedSession.materials : [];
     setUpdatingSession(true);
@@ -1161,19 +1517,25 @@ export function SessionsPage() {
 
   const submitActivity = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canManageSessionActivities) return;
     if (!sessionId || !groupId) return;
     const nextErrors: Record<string, string> = {};
     if (!activityForm.title.trim()) {
       nextErrors.activityTitle = t('sessions.activityTitleRequired');
     }
     if (activityForm.type === 'quiz') {
-      if (!activityForm.quizPrompt.trim()) nextErrors.quizPrompt = t('sessions.quizQuestionRequired');
-      if (!activityForm.quizOptionA.trim()) nextErrors.quizOptionA = t('sessions.optionARequired');
-      if (!activityForm.quizOptionB.trim()) nextErrors.quizOptionB = t('sessions.optionBRequired');
+      activityForm.quizQuestions.forEach((question) => {
+        const filledOptions = question.options
+          .map((option) => option.trim())
+          .filter(Boolean);
+        if (!question.prompt.trim()) nextErrors.quizQuestions = t('sessions.quizQuestionRequired');
+        if (filledOptions.length < 2) nextErrors.quizQuestions = t('sessions.quizOptionsRequired');
+        if (!question.options[question.correctOptionIndex]?.trim()) nextErrors.quizQuestions = t('sessions.correctOptionRequired');
+      });
     }
     if (Object.keys(nextErrors).length) {
       setCreateErrors(nextErrors);
-      toast.error(nextErrors.activityTitle ?? nextErrors.quizPrompt ?? nextErrors.quizOptionA ?? nextErrors.quizOptionB);
+      toast.error(nextErrors.activityTitle ?? nextErrors.quizQuestions);
       return;
     }
 
@@ -1184,14 +1546,17 @@ export function SessionsPage() {
       type: activityForm.type,
       status: activityForm.status,
       questions: activityForm.type === 'quiz'
-        ? [{
-            prompt: activityForm.quizPrompt.trim(),
+        ? activityForm.quizQuestions.map((question) => ({
+            prompt: question.prompt.trim(),
             questionMode: 'single_choice' as const,
-            options: [
-              { text: activityForm.quizOptionA.trim(), isCorrect: activityForm.quizCorrectOption === 'a' },
-              { text: activityForm.quizOptionB.trim(), isCorrect: activityForm.quizCorrectOption === 'b' },
-            ],
-          }]
+            options: question.options
+              .map((option, index) => ({ option, index }))
+              .filter(({ option }) => option.trim())
+              .map(({ option, index }) => ({
+                text: option.trim(),
+                isCorrect: index === question.correctOptionIndex,
+              })),
+          }))
         : undefined,
     };
 
@@ -1211,6 +1576,7 @@ export function SessionsPage() {
   };
 
   const setActivityStatus = async (activity: SessionActivity, status: SessionActivityStatus) => {
+    if (!canManageSessionActivities) return;
     if (!sessionId || !groupId) return;
     setSavingActivity(true);
     try {
@@ -1228,6 +1594,7 @@ export function SessionsPage() {
   };
 
   const removeActivity = async (activityId: number) => {
+    if (!canManageSessionActivities) return;
     if (!sessionId || !groupId) return;
     setSavingActivity(true);
     try {
@@ -1271,6 +1638,7 @@ export function SessionsPage() {
     submissionId: number,
     status: 'approved' | 'rejected' | 'needs_revision',
   ) => {
+    if (!canManageSessionActivities) return;
     if (!sessionId) return;
     const draft = reviewDrafts[submissionId] ?? { score: '', reviewComment: '' };
     const score = draft.score.trim() ? Number(draft.score) : undefined;
@@ -1313,7 +1681,11 @@ export function SessionsPage() {
         </select>
         <select value={groupId ?? ''} onChange={(event) => setGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
           <option value="">{t('courses.selectGroup')}</option>
-          {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+          {groups.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name}{isAssignedInstructorView ? ` - ${t('sessions.assignedGroup')}` : ''}
+            </option>
+          ))}
         </select>
         <select value={sessionId ?? ''} onChange={(event) => setSessionId(Number(event.target.value) || undefined)} disabled={!sessions.length}>
           <option value="">{t('sessions.selectSession')}</option>
@@ -1324,7 +1696,7 @@ export function SessionsPage() {
           ))}
         </select>
       </div>
-      {canUseAssignedSessionPicker && upcomingAssignedSessions.length ? (
+      {canUseAssignedSessionPicker && upcomingAssignedSessions.length && !courseId && !groupId && !selectedSession ? (
         <section className="content-section workflow-context-panel">
           <div className="section-heading-row">
             <div>
@@ -1340,6 +1712,7 @@ export function SessionsPage() {
                   <span>
                     {formatDate(session.startsAt)} · <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
                     {' '}<span className={`status-badge delivery-${session.groupDeliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode)}</span>
+                    {isAssignedInstructorView ? <> <span className="status-badge assigned">{t('sessions.assignedGroup')}</span></> : null}
                   </span>
                 </div>
                 <button type="button" className="link-button" onClick={() => openAssignedSession(session)}>
@@ -1350,36 +1723,40 @@ export function SessionsPage() {
           </div>
         </section>
       ) : null}
-      <section className="session-workflow-strip" aria-label={t('sessions.workflow')}>
-        {workflowSteps.map((step, index) => (
-          <article key={step.label} className={`workflow-step ${step.state}`}>
-            <span>{index + 1}</span>
-            <div>
-              <strong>{step.label}</strong>
-              <small>{step.value}</small>
-            </div>
-          </article>
-        ))}
-      </section>
+      {!selectedSession && !isAssignedInstructorView ? (
+        <section className="session-workflow-strip" aria-label={t('sessions.workflow')}>
+          {workflowSteps.map((step, index) => (
+            <article key={step.label} className={`workflow-step ${step.state}`}>
+              <span>{index + 1}</span>
+              <div>
+                <strong>{step.label}</strong>
+                <small>{step.value}</small>
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : null}
       {loading ? <LoadingState label={t('sessions.loading')} /> : null}
-      {canCoordinateGroups || canManageEnrollment ? (
+      {!selectedSession && (canCoordinateGroups || canManageEnrollment || (canScheduleSessions && !isAssignedInstructorView)) ? (
       <section className="workflow-section workflow-context-panel">
         <div className="section-heading-row">
           <div>
             <h2>{t('sessions.setupTitle')}</h2>
             <span>{t('sessions.setupDetail')}</span>
           </div>
-          {canCoordinateGroups || canManageEnrollment ? (
+          {canCoordinateGroups || canManageEnrollment || canScheduleSessions ? (
             <div className="page-actions">
               {canCoordinateGroups ? (
                 <>
                   <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm(activeTenant?.timezone ?? undefined)); setEnrollmentMode('existing'); setStudentSearch(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setCreateErrors({}); setCreateModal('group'); }} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>
                     {t('groups.createGroup')}
                   </button>
-                  <button type="button" className="secondary-button" onClick={openScheduleSessionModal} disabled={!groupId || savingSession}>
-                    {t('sessions.scheduleSession')}
-                  </button>
                 </>
+              ) : null}
+              {canShowScheduleAction ? (
+                <button type="button" className="secondary-button" onClick={openScheduleSessionModal} disabled={!groupId || savingSession}>
+                  {t('sessions.scheduleSession')}
+                </button>
               ) : null}
               {canManageEnrollment ? (
                 <button type="button" className="secondary-button" onClick={() => setCreateModal('enrollment')} disabled={!courseId || !groupId || enrolling}>
@@ -1406,7 +1783,7 @@ export function SessionsPage() {
       </section>
       ) : null}
 
-      {selectedGroup ? (
+      {selectedGroup && !selectedSession && (canCoordinateGroups || canManageEnrollment) ? (
         <section className="settings-panel group-edit-panel workflow-section workflow-context-panel">
           <div className="section-heading-row">
             <div>
@@ -1438,11 +1815,11 @@ export function SessionsPage() {
             <div className="three-col">
               <label>
                 {t('groups.from')}
-                <input type="date" value={generationRange.fromDate} onChange={(event) => setGenerationRange((current) => ({ ...current, fromDate: event.target.value }))} />
+                <input type="date" value={generationRange.fromDate} onChange={(event) => { setGenerationRange((current) => ({ ...current, fromDate: event.target.value })); setGenerationPreview(null); }} />
               </label>
               <label>
                 {t('groups.to')}
-                <input type="date" value={generationRange.toDate} onChange={(event) => setGenerationRange((current) => ({ ...current, toDate: event.target.value }))} />
+                <input type="date" value={generationRange.toDate} onChange={(event) => { setGenerationRange((current) => ({ ...current, toDate: event.target.value })); setGenerationPreview(null); }} />
               </label>
               <div className="generation-actions">
                 <button type="button" className="secondary-button" onClick={() => void previewSessionGeneration()} disabled={generationLoading || !generationReady}>
@@ -1525,14 +1902,18 @@ export function SessionsPage() {
 
       {!loading && !sessions.length ? (
         <EmptyState
-          title={selectedGroup ? t('sessions.emptyScheduledTitle') : t('sessions.emptySelectedTitle')}
-          detail={selectedGroup ? t('sessions.emptyScheduledDetail') : t('sessions.emptySelectedDetail')}
+          title={emptySessionsTitle}
+          detail={emptySessionsDetail}
           action={(
             <>
-              {canCoordinateGroups ? (
+              {canCoordinateGroups || canShowScheduleAction ? (
                 <>
-                  <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm(activeTenant?.timezone ?? undefined)); setEnrollmentMode('existing'); setStudentSearch(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setCreateErrors({}); setCreateModal('group'); }} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>{t('groups.createGroup')}</button>
-                  <button type="button" className="primary-button" onClick={openScheduleSessionModal} disabled={!groupId || savingSession}>{t('sessions.scheduleSession')}</button>
+                  {canCoordinateGroups ? (
+                    <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm(activeTenant?.timezone ?? undefined)); setEnrollmentMode('existing'); setStudentSearch(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setCreateErrors({}); setCreateModal('group'); }} disabled={!courseId || !selectedCourseReady || savingGroup} title={!selectedCourseReady ? selectedCourseBlocker : undefined}>{t('groups.createGroup')}</button>
+                  ) : null}
+                  {canShowScheduleAction ? (
+                    <button type="button" className="primary-button" onClick={openScheduleSessionModal} disabled={!groupId || savingSession}>{t('sessions.scheduleSession')}</button>
+                  ) : null}
                 </>
               ) : null}
             </>
@@ -1541,51 +1922,54 @@ export function SessionsPage() {
       ) : null}
       {!!sessions.length && (
         <div className="workspace-grid session-workspace-grid">
-          <section className="content-section">
+          <section className="content-section session-schedule-panel">
             <div className="section-heading-row">
               <div>
                 <h2>{t('sessions.sessionSchedule')}</h2>
                 <span>{t('sessions.sessionScheduleDetail')}</span>
               </div>
+              {canShowScheduleAction ? (
+                <button type="button" className="secondary-button" onClick={openScheduleSessionModal} disabled={!groupId || savingSession}>
+                  {t('sessions.scheduleSession')}
+                </button>
+              ) : null}
             </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{t('sessions.session')}</th>
-                    <th>{t('groups.starts')}</th>
-                    <th>{t('courses.status')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((session) => (
-                    <tr
-                      key={session.id}
-                      className={session.id === sessionId ? 'selected-row' : ''}
-                    >
-                      <td>
-                        <button
-                          type="button"
-                          className="table-row-button"
-                          aria-pressed={session.id === sessionId}
-                          onClick={() => setSessionId(session.id)}
-                        >
-                          <strong>{session.title}</strong>
-                        </button>
-                      </td>
-                      <td>{formatDate(session.startsAt)}</td>
-                      <td>
-                        <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
-                        {' '}<span className={`status-badge delivery-${session.groupDeliveryMode ?? selectedGroup?.deliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode ?? selectedGroup?.deliveryMode)}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="session-schedule-list">
+              {sessions.map((session) => (
+                <article
+                  key={session.id}
+                  className={`session-schedule-card ${session.id === sessionId ? 'active' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="session-schedule-card-main"
+                    aria-pressed={session.id === sessionId}
+                    onClick={() => setSessionId(session.id)}
+                  >
+                    <strong>{session.title}</strong>
+                    <span>{formatDate(session.startsAt)} - {formatDate(session.endsAt)}</span>
+                  </button>
+                  <div className="session-schedule-card-status">
+                    <span className={`status-badge ${session.status || 'scheduled'}`}>{statusLabel(session.status)}</span>
+                    <span className={`status-badge delivery-${session.groupDeliveryMode ?? selectedGroup?.deliveryMode ?? 'group'}`}>{deliveryModeLabel(session.groupDeliveryMode ?? selectedGroup?.deliveryMode)}</span>
+                  </div>
+                  <div className="session-tools-cell">
+                    <span>{sessionToolsSummary(session)}</span>
+                    <div className="session-row-links">
+                      {canUseAttendanceWorkflow ? (
+                        <Link to={sessionWorkflowLink('/attendance', session)}>{t('navigation.attendance')}</Link>
+                      ) : null}
+                      {canUseHomeworkWorkflow ? (
+                        <Link to={sessionWorkflowLink('/homework', session)}>{t('navigation.homework')}</Link>
+                      ) : null}
+                    </div>
+                  </div>
+                </article>
+              ))}
             </div>
           </section>
 
-          <aside className="settings-panel workflow-context-panel">
+          <aside className="settings-panel workflow-context-panel session-detail-panel">
             <div className="section-heading-row compact">
               <div>
                 <h2>{t('sessions.workspace')}</h2>
@@ -1603,6 +1987,42 @@ export function SessionsPage() {
                   ariaLabel={t('sessions.operations')}
                   className="session-operation-tabs"
                 />
+                <div className="session-mode-strip" aria-label={t('sessions.workflowModes')}>
+                  <button
+                    type="button"
+                    className={`session-mode-button ${sessionOperationTab === planModeTarget ? 'active' : ''}`}
+                    aria-pressed={sessionOperationTab === planModeTarget}
+                    onClick={() => setSessionOperationTab(planModeTarget)}
+                  >
+                    <strong>{t('sessions.modePlan')}</strong>
+                    <span>{planModeDetail}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`session-mode-button ${sessionOperationTab === runModeTarget && sessionOperationTab !== planModeTarget ? 'active' : ''}`}
+                    aria-pressed={sessionOperationTab === runModeTarget && sessionOperationTab !== planModeTarget}
+                    onClick={() => setSessionOperationTab(runModeTarget)}
+	                  >
+	                    <strong>{t('sessions.modeRun')}</strong>
+	                    <span>{runModeDetail}</span>
+	                  </button>
+	                  {canUseHomeworkWorkflow || canUseAttendanceWorkflow ? (
+	                    <Link className="session-mode-button" to={reviewWorkflowLink}>
+	                      <strong>{t('sessions.modeReview')}</strong>
+	                      <span>{reviewModeDetail}</span>
+	                    </Link>
+	                  ) : (
+	                    <button
+                        type="button"
+                        className={`session-mode-button ${sessionOperationTab === 'insights' ? 'active' : ''}`}
+                        aria-pressed={sessionOperationTab === 'insights'}
+                        onClick={() => setSessionOperationTab('insights')}
+                      >
+	                      <strong>{t('sessions.modeReview')}</strong>
+	                      <span>{reviewModeDetail}</span>
+	                    </button>
+	                  )}
+                </div>
                 {sessionOperationTab === 'activities' ? (
                   <div className="session-activities-panel">
                     <div className="section-heading-row compact">
@@ -1610,9 +2030,11 @@ export function SessionsPage() {
                         <h3>{t('sessions.tabActivities')}</h3>
                         <span>{selectedSession.title}</span>
                       </div>
+                      {canManageSessionActivities ? (
                       <button type="button" className="secondary-button" onClick={() => setCreateModal('activity')} disabled={savingActivity}>
                         {t('sessions.addActivity')}
                       </button>
+                      ) : null}
                     </div>
                     <div className="stack-list activity-list">
                       {sessionActivities.map((activity) => (
@@ -1622,14 +2044,16 @@ export function SessionsPage() {
                             <span>{activityTypeLabel(activity.type)} · <span className={`status-badge ${activity.status}`}>{statusLabel(activity.status)}</span></span>
                           </div>
                           <div className="activity-actions">
-                            {activity.status !== 'active' ? (
+                            {canManageSessionActivities && activity.status !== 'active' ? (
                               <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'active')} disabled={savingActivity}>{t('sessions.startActivity')}</button>
                             ) : null}
-                            {activity.status !== 'done' ? (
+                            {canManageSessionActivities && activity.status !== 'done' ? (
                               <button type="button" className="secondary-button" onClick={() => void setActivityStatus(activity, 'done')} disabled={savingActivity}>{t('sessions.statusDone')}</button>
                             ) : null}
                             <button type="button" className="secondary-button" onClick={() => void loadActivityResponses(activity.id)} disabled={loadingResponses && selectedActivityId === activity.id}>{t('sessions.responses')}</button>
-                            <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'activity', activityId: activity.id })} disabled={savingActivity}>{t('groups.remove')}</button>
+                            {canManageSessionActivities ? (
+                              <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'activity', activityId: activity.id })} disabled={savingActivity}>{t('groups.remove')}</button>
+                            ) : null}
                           </div>
                         </article>
                       ))}
@@ -1666,19 +2090,25 @@ export function SessionsPage() {
                                   </>
                                 )}
                               </div>
-                              {activityResponses.mode === 'submission' && item.id ? (
+                              {canManageSessionActivities && activityResponses.mode === 'submission' && item.id ? (
                                 <div className="review-controls">
+                                  <label>
+                                    {t('sessions.score')}
                                   <input
                                     value={reviewDrafts[item.id]?.score ?? ''}
                                     onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: event.target.value, reviewComment: current[item.id!]?.reviewComment ?? '' } }))}
                                     placeholder={t('sessions.score')}
                                     inputMode="numeric"
                                   />
+                                  </label>
+                                  <label>
+                                    {t('sessions.reviewComment')}
                                   <input
                                     value={reviewDrafts[item.id]?.reviewComment ?? ''}
                                     onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id!]: { score: current[item.id!]?.score ?? '', reviewComment: event.target.value } }))}
                                     placeholder={t('sessions.reviewComment')}
                                   />
+                                  </label>
                                   <div className="activity-actions">
                                     <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'approved')} disabled={reviewingSubmission === item.id}>{t('courses.approve')}</button>
                                     <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'needs_revision')} disabled={reviewingSubmission === item.id}>{t('sessions.revise')}</button>
@@ -1710,10 +2140,16 @@ export function SessionsPage() {
                   <span>{t('sessions.recording')}</span><strong>{selectedSession.recordingUrl ? t('sessions.attached') : t('sessions.notAttached')}</strong>
                 </div>
                 <div className="session-summary-actions">
-                  {canCoordinateGroups ? (
+                  {canScheduleSessions ? (
                   <button type="button" className="secondary-button" onClick={() => setEditSessionOpen(true)}>
                     {t('sessions.editSession')}
                   </button>
+                  ) : null}
+                  {canUseAttendanceWorkflow ? (
+                    <Link className="secondary-link-button" to={selectedAttendanceLink}>{t('navigation.attendance')}</Link>
+                  ) : null}
+                  {canUseHomeworkWorkflow ? (
+                    <Link className="secondary-link-button" to={selectedHomeworkLink}>{t('navigation.homework')}</Link>
                   ) : null}
                 </div>
                   </>
@@ -1729,7 +2165,7 @@ export function SessionsPage() {
                   <div className="two-col">
                     <label>
                       {t('sessions.provider')}
-                      <select value={meetingForm.provider} onChange={(event) => setMeetingForm((current) => ({ ...current, provider: event.target.value as 'zoom' | 'google_meet' | 'custom' }))}>
+                      <select disabled={!canManageSessionMeetings} value={meetingForm.provider} onChange={(event) => setMeetingForm((current) => ({ ...current, provider: event.target.value as 'zoom' | 'google_meet' | 'custom' }))}>
                         <option value="custom">{t('sessions.providerCustom')}</option>
                         <option value="google_meet">Google Meet</option>
                         <option value="zoom">Zoom</option>
@@ -1740,6 +2176,7 @@ export function SessionsPage() {
                       <input
                         type="number"
                         min="1"
+                        disabled={!canManageSessionMeetings}
                         value={meetingForm.durationMinutes}
                         onChange={(event) => {
                           setMeetingForm((current) => ({ ...current, durationMinutes: event.target.value }));
@@ -1756,6 +2193,7 @@ export function SessionsPage() {
                       {t('sessions.joinUrl')}
                       <input
                         value={meetingForm.customJoinUrl}
+                        disabled={!canManageSessionMeetings}
                         onChange={(event) => {
                           setMeetingForm((current) => ({ ...current, customJoinUrl: event.target.value }));
                           setMeetingErrors((current) => ({ ...current, customJoinUrl: '' }));
@@ -1771,6 +2209,7 @@ export function SessionsPage() {
                       {t('sessions.zoomHostUserId')}
                       <input
                         value={meetingForm.hostUserId}
+                        disabled={!canManageSessionMeetings}
                         onChange={(event) => {
                           setMeetingForm((current) => ({ ...current, hostUserId: event.target.value }));
                           setMeetingErrors((current) => ({ ...current, hostUserId: '' }));
@@ -1784,16 +2223,20 @@ export function SessionsPage() {
                   )}
                   <label>
                     {t('sessions.topic')}
-                    <input value={meetingForm.topic} onChange={(event) => setMeetingForm((current) => ({ ...current, topic: event.target.value }))} />
+                    <input disabled={!canManageSessionMeetings} value={meetingForm.topic} onChange={(event) => setMeetingForm((current) => ({ ...current, topic: event.target.value }))} />
                   </label>
                   <div className="live-meeting-actions">
+                    {canManageSessionMeetings ? (
                     <button type="button" onClick={() => void saveLiveMeeting()} disabled={savingMeeting}>
                       {savingMeeting ? t('courses.saving') : t('sessions.saveMeeting')}
                     </button>
+                    ) : null}
                     {(liveMeeting?.joinUrl || selectedSession.liveJoinUrl) ? (
                       <>
                         <a href={liveMeeting?.joinUrl ?? selectedSession.liveJoinUrl ?? '#'} target="_blank" rel="noreferrer">{t('sessions.openMeeting')}</a>
-                        <button type="button" className="secondary-button" onClick={() => void removeLiveMeeting()} disabled={savingMeeting}>{t('groups.remove')}</button>
+                        {canManageSessionMeetings ? (
+                          <button type="button" className="secondary-button" onClick={() => void removeLiveMeeting()} disabled={savingMeeting}>{t('groups.remove')}</button>
+                        ) : null}
                       </>
                     ) : null}
                   </div>
@@ -1806,6 +2249,7 @@ export function SessionsPage() {
                       <h3>{t('sessions.tabMaterials')}</h3>
                       <span>{t('sessions.materialsHint')}</span>
                     </div>
+                    {canManageSessionMaterials ? (
                     <label className="file-button">
                       {uploadingMaterial ? t('sessions.uploading') : t('sessions.upload')}
                       <input
@@ -1814,6 +2258,7 @@ export function SessionsPage() {
                         onChange={(event) => void uploadMaterial(event.target.files?.[0])}
                       />
                     </label>
+                    ) : null}
                   </div>
                   {materialError ? <span className="field-error">{materialError}</span> : null}
                   <div className="stack-list">
@@ -1823,9 +2268,11 @@ export function SessionsPage() {
                           <strong>{material.title || materialFallback(index)}</strong>
                           <a href={material.url} target="_blank" rel="noreferrer">{t('sessions.openFile')}</a>
                         </div>
+                        {canManageSessionMaterials ? (
                         <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'material', materialIndex: index })} disabled={updatingSession}>
                           {t('groups.remove')}
                         </button>
+                        ) : null}
                       </article>
                     ))}
                     {!selectedSession.materials?.length ? (
@@ -2072,13 +2519,19 @@ export function SessionsPage() {
           </div>
         </FormModal>
       ) : null}
-      {editSessionOpen && selectedSession && canCoordinateGroups ? (
+      {editSessionOpen && selectedSession && canScheduleSessions ? (
         <FormModal labelledBy="edit-session-title" onClose={() => setEditSessionOpen(false)} onSubmit={submitSessionUpdate}>
           <div className="modal-header-block">
             <span>{selectedGroup?.name ?? t('courses.selectedGroup')}</span>
             <h2 id="edit-session-title">{t('sessions.editSession')}</h2>
             <p>{t('sessions.editSessionDetail')}</p>
           </div>
+          {hasSessionDeliveryRecords ? (
+            <div className="session-edit-impact-warning" role="note">
+              <strong>{t('sessions.editImpactWarningTitle')}</strong>
+              <span>{t('sessions.editImpactWarningDetail')}</span>
+            </div>
+          ) : null}
           <label>
             {t('courses.title')}
             <input
@@ -2131,6 +2584,20 @@ export function SessionsPage() {
               <option value="cancelled">{t('groups.statusCancelled')}</option>
             </select>
           </label>
+          {sessionEditNeedsImpactConfirmation ? (
+            <label className="session-impact-confirmation">
+              <input
+                type="checkbox"
+                checked={sessionImpactConfirmed}
+                onChange={(event) => {
+                  setSessionImpactConfirmed(event.target.checked);
+                  setSessionEditErrors((current) => ({ ...current, impactConfirmation: '' }));
+                }}
+              />
+              <span>{t('sessions.editImpactConfirmation')}</span>
+              {sessionEditErrors.impactConfirmation ? <span className="field-error">{sessionEditErrors.impactConfirmation}</span> : null}
+            </label>
+          ) : null}
           <label>
             {t('sessions.recordingUrl')}
             <input
@@ -2159,7 +2626,7 @@ export function SessionsPage() {
           <div className="modal-header-block">
             <span>{t('sessions.confirmRemoval')}</span>
             <h2 id="confirm-removal-title">{t('sessions.removeType', { type: removalTypeLabel(pendingRemoval.type) })}</h2>
-            <p>{t('sessions.removalImmediate')}</p>
+            <p>{pendingRemoval.type === 'student' ? t('sessions.studentRemovalGroupDetail') : t('sessions.removalImmediate')}</p>
           </div>
           <p className="muted-text">{t('sessions.removeItemQuestion', { name: pendingRemovalTitle })}</p>
           <div className="modal-actions">
@@ -2384,7 +2851,7 @@ export function SessionsPage() {
             </div>
         </FormModal>
       ) : null}
-      {createModal === 'session' && canCoordinateGroups ? (
+      {createModal === 'session' && canScheduleSessions ? (
         <FormModal labelledBy="schedule-session-title" className="decision-modal form-modal session-form-modal" onClose={() => setCreateModal(null)} onSubmit={submitSession}>
             <div className="modal-header-block">
               <span>{selectedGroup?.name ?? t('sessions.groupRequired')}</span>
@@ -2545,15 +3012,15 @@ export function SessionsPage() {
             </div>
         </FormModal>
       ) : null}
-      {createModal === 'activity' ? (
-        <FormModal labelledBy="add-activity-title" onClose={() => setCreateModal(null)} onSubmit={submitActivity}>
+      {createModal === 'activity' && canManageSessionActivities ? (
+        <FormModal labelledBy="add-activity-title" className="decision-modal form-modal activity-form-modal" onClose={() => setCreateModal(null)} onSubmit={submitActivity}>
             <div className="modal-header-block">
               <span>{selectedSession?.title ?? t('sessions.sessionRequired')}</span>
               <h2 id="add-activity-title">{t('sessions.addActivity')}</h2>
               <p>{t('sessions.addActivityDetail')}</p>
             </div>
-            <div className="two-col">
-              <label>
+            <div className="activity-modal-grid">
+              <label className="wide-field">
                 {t('courses.title')}
                 <input
                   value={activityForm.title}
@@ -2568,17 +3035,28 @@ export function SessionsPage() {
                 />
                 {createErrors.activityTitle ? <span className="field-error">{createErrors.activityTitle}</span> : null}
               </label>
-              <label>
-                {t('courses.type')}
-                <select value={activityForm.type} onChange={(event) => setActivityForm((current) => ({ ...current, type: event.target.value as SessionActivityType }))}>
-                  <option value="discussion">{t('sessions.activityTypeDiscussion')}</option>
-                  <option value="exercise">{t('sessions.activityTypeExercise')}</option>
-                  <option value="group_work">{t('sessions.activityTypeGroupWork')}</option>
-                  <option value="quiz">{t('sessions.activityTypeQuiz')}</option>
-                </select>
-              </label>
-            </div>
-            <div className="two-col">
+              <fieldset className="activity-type-picker wide-field">
+                <legend>{t('courses.type')}</legend>
+                {([
+                  ['discussion', t('sessions.activityTypeDiscussion')],
+                  ['exercise', t('sessions.activityTypeExercise')],
+                  ['group_work', t('sessions.activityTypeGroupWork')],
+                  ['quiz', t('sessions.activityTypeQuiz')],
+                ] as Array<[SessionActivityType, string]>).map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={activityForm.type === type ? 'active' : ''}
+                    aria-pressed={activityForm.type === type}
+                    onClick={() => {
+                      setActivityForm((current) => ({ ...current, type }));
+                      setCreateErrors((current) => ({ ...current, quizQuestions: '' }));
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </fieldset>
               <label>
                 {t('courses.status')}
                 <select value={activityForm.status} onChange={(event) => setActivityForm((current) => ({ ...current, status: event.target.value as SessionActivityStatus }))}>
@@ -2594,54 +3072,127 @@ export function SessionsPage() {
             </div>
             {activityForm.type === 'quiz' ? (
               <div className="quiz-builder">
-                <label>
-                  {t('sessions.question')}
-                  <input
-                    value={activityForm.quizPrompt}
-                    onChange={(event) => {
-                      setActivityForm((current) => ({ ...current, quizPrompt: event.target.value }));
-                      setCreateErrors((current) => ({ ...current, quizPrompt: '' }));
-                    }}
-                    className={createErrors.quizPrompt ? 'input-error' : ''}
-                    aria-invalid={!!createErrors.quizPrompt}
-                  />
-                  {createErrors.quizPrompt ? <span className="field-error">{createErrors.quizPrompt}</span> : null}
-                </label>
-                <div className="two-col">
-                  <label>
-                    {t('sessions.optionA')}
-                    <input
-                      value={activityForm.quizOptionA}
-                      onChange={(event) => {
-                        setActivityForm((current) => ({ ...current, quizOptionA: event.target.value }));
-                        setCreateErrors((current) => ({ ...current, quizOptionA: '' }));
-                      }}
-                      className={createErrors.quizOptionA ? 'input-error' : ''}
-                      aria-invalid={!!createErrors.quizOptionA}
-                    />
-                    {createErrors.quizOptionA ? <span className="field-error">{createErrors.quizOptionA}</span> : null}
-                  </label>
-                  <label>
-                    {t('sessions.optionB')}
-                    <input
-                      value={activityForm.quizOptionB}
-                      onChange={(event) => {
-                        setActivityForm((current) => ({ ...current, quizOptionB: event.target.value }));
-                        setCreateErrors((current) => ({ ...current, quizOptionB: '' }));
-                      }}
-                      className={createErrors.quizOptionB ? 'input-error' : ''}
-                      aria-invalid={!!createErrors.quizOptionB}
-                    />
-                    {createErrors.quizOptionB ? <span className="field-error">{createErrors.quizOptionB}</span> : null}
-                  </label>
-                </div>
-                <label>
-                  {t('sessions.correctAnswer')}
-                  <select value={activityForm.quizCorrectOption} onChange={(event) => setActivityForm((current) => ({ ...current, quizCorrectOption: event.target.value as 'a' | 'b' }))}>
-                    <option value="a">{t('sessions.optionA')}</option>
-                    <option value="b">{t('sessions.optionB')}</option>
-                  </select>
-                </label>
+                {activityForm.quizQuestions.map((question, questionIndex) => (
+                  <section className="quiz-question-card" key={questionIndex}>
+                    <div className="quiz-question-header">
+                      <strong>{t('sessions.questionLabel', { number: questionIndex + 1 })}</strong>
+                      <button
+                        type="button"
+                        className="link-button danger"
+                        onClick={() => {
+                          setActivityForm((current) => ({
+                            ...current,
+                            quizQuestions: current.quizQuestions.filter((_, index) => index !== questionIndex),
+                          }));
+                          clearCreateError('quizQuestions');
+                        }}
+                        disabled={activityForm.quizQuestions.length <= 1}
+                        aria-label={t('sessions.removeQuestionLabel', { number: questionIndex + 1 })}
+                      >
+                        {t('groups.remove')}
+                      </button>
+                    </div>
+                    <label>
+                      {t('sessions.question')}
+                      <input
+                        value={question.prompt}
+                        aria-label={t('sessions.questionPromptLabel', { number: questionIndex + 1 })}
+                        onChange={(event) => updateQuizQuestion(questionIndex, (currentQuestion) => ({
+                          ...currentQuestion,
+                          prompt: event.target.value,
+                        }))}
+                        className={createErrors.quizQuestions ? 'input-error' : ''}
+                        aria-invalid={!!createErrors.quizQuestions}
+                      />
+                    </label>
+                    <div className="quiz-options-list">
+                      {question.options.map((option, optionIndex) => (
+                        <div className="quiz-option-row" key={optionIndex}>
+                          <label>
+                            {t('sessions.optionLabel', { letter: quizOptionLetter(optionIndex) })}
+                            <input
+                              value={option}
+                              aria-label={t('sessions.questionOptionLabel', { number: questionIndex + 1, letter: quizOptionLetter(optionIndex) })}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                updateQuizQuestion(questionIndex, (currentQuestion) => ({
+                                  ...currentQuestion,
+                                  options: currentQuestion.options.map((item, itemIndex) => (itemIndex === optionIndex ? nextValue : item)),
+                                }));
+                              }}
+                              className={createErrors.quizQuestions ? 'input-error' : ''}
+                              aria-invalid={!!createErrors.quizQuestions}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="secondary-button quiz-option-remove"
+                            onClick={() => updateQuizQuestion(questionIndex, (currentQuestion) => {
+                              const nextOptions = currentQuestion.options.filter((_, itemIndex) => itemIndex !== optionIndex);
+                              return {
+                                ...currentQuestion,
+                                options: nextOptions,
+                                correctOptionIndex: Math.min(
+                                  currentQuestion.correctOptionIndex === optionIndex ? 0 : currentQuestion.correctOptionIndex > optionIndex ? currentQuestion.correctOptionIndex - 1 : currentQuestion.correctOptionIndex,
+                                  Math.max(0, nextOptions.length - 1),
+                                ),
+                              };
+                            })}
+                            disabled={question.options.length <= 2}
+                            aria-label={t('sessions.removeQuestionOptionLabel', { number: questionIndex + 1, letter: quizOptionLetter(optionIndex) })}
+                          >
+                            {t('groups.remove')}
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="secondary-button quiz-option-add"
+                        onClick={() => updateQuizQuestion(questionIndex, (currentQuestion) => ({
+                          ...currentQuestion,
+                          options: [...currentQuestion.options, ''],
+                        }))}
+                        disabled={question.options.length >= 6}
+                        aria-label={t('sessions.addOptionToQuestionLabel', { number: questionIndex + 1 })}
+                      >
+                        {t('sessions.addOption')}
+                      </button>
+                    </div>
+                    <fieldset className="activity-type-picker answer-picker" aria-label={t('sessions.questionCorrectAnswerLabel', { number: questionIndex + 1 })}>
+                      <legend>{t('sessions.correctAnswer')}</legend>
+                      {question.options.map((_, optionIndex) => (
+                        <button
+                          key={optionIndex}
+                          type="button"
+                          className={question.correctOptionIndex === optionIndex ? 'active' : ''}
+                          aria-pressed={question.correctOptionIndex === optionIndex}
+                          onClick={() => updateQuizQuestion(questionIndex, (currentQuestion) => ({
+                            ...currentQuestion,
+                            correctOptionIndex: optionIndex,
+                          }))}
+                          aria-label={t('sessions.questionCorrectOptionLabel', { number: questionIndex + 1, letter: quizOptionLetter(optionIndex) })}
+                        >
+                          {quizOptionLetter(optionIndex)}
+                        </button>
+                      ))}
+                    </fieldset>
+                  </section>
+                ))}
+                {createErrors.quizQuestions ? <span className="field-error">{createErrors.quizQuestions}</span> : null}
+                <button
+                  type="button"
+                  className="secondary-button quiz-question-add"
+                  onClick={() => {
+                    setActivityForm((current) => ({
+                      ...current,
+                      quizQuestions: [...current.quizQuestions, emptyQuizQuestion()],
+                    }));
+                    clearCreateError('quizQuestions');
+                  }}
+                  disabled={activityForm.quizQuestions.length >= 20}
+                >
+                  {t('sessions.addQuestion')}
+                </button>
               </div>
             ) : null}
             <div className="modal-actions">

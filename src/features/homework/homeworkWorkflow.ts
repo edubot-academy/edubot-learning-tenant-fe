@@ -32,6 +32,7 @@ export function filterHomeworkReviewItems(
 export function getHomeworkReviewBlocker(
   status: 'approved' | 'rejected' | 'needs_revision',
   draft: { score: string; reviewComment: string },
+  maxScore?: number | null,
 ) {
   const score = draft.score.trim() ? Number(draft.score) : undefined;
   if ((status === 'rejected' || status === 'needs_revision') && !draft.reviewComment.trim()) {
@@ -39,6 +40,12 @@ export function getHomeworkReviewBlocker(
   }
   if (score !== undefined && !Number.isFinite(score)) {
     return i18n.t('homework.errorScoreNumber');
+  }
+  if (score !== undefined && score < 0) {
+    return i18n.t('homework.errorScoreNegative');
+  }
+  if (score !== undefined && typeof maxScore === 'number' && Number.isFinite(maxScore) && score > maxScore) {
+    return i18n.t('homework.errorScoreMax', { max: maxScore });
   }
   return '';
 }

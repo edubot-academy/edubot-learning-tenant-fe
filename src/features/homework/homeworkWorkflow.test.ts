@@ -25,6 +25,13 @@ describe('homework workflow helpers', () => {
     expect(getHomeworkReviewBlocker('rejected', { score: '', reviewComment: 'Incomplete' })).toBe('');
   });
 
+  it('validates review scores against numeric and max score bounds', () => {
+    expect(getHomeworkReviewBlocker('approved', { score: 'abc', reviewComment: '' }, 10)).toBe('Score must be a number.');
+    expect(getHomeworkReviewBlocker('approved', { score: '-1', reviewComment: '' }, 10)).toBe('Score cannot be negative.');
+    expect(getHomeworkReviewBlocker('approved', { score: '11', reviewComment: '' }, 10)).toBe('Score cannot be greater than 10.');
+    expect(getHomeworkReviewBlocker('approved', { score: '10', reviewComment: '' }, 10)).toBe('');
+  });
+
   it('validates homework form title, session state, and score', () => {
     expect(getHomeworkFormErrors({ title: '', maxScore: '-1' }, false)).toMatchObject({
       session: 'Select a scheduled or completed session before creating homework.',

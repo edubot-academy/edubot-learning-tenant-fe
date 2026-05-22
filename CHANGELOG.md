@@ -19,6 +19,31 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.13.0 - 2026-05-22
+
+### Added
+
+- Added role-aware attendance and homework scoping so assigned instructors work from their assigned sessions while owners and admins retain full course/group visibility.
+- Added focused regression coverage for attendance deep links, assigned-only selector filtering, homework session selection, stale URL cleanup, and review score validation.
+
+### Changed
+
+- Redesigned the homework workspace with clearer session assignment cards, icon-first release/edit/delete actions, release confirmation, and a compact all-homework disclosure.
+- Refined attendance row alignment, bulk actions, session workflow states, and assigned-session entry points for a cleaner instructor marking flow.
+- Updated the instructor groups workspace with quick links to the next session, attendance, homework, and students.
+
+### Fixed
+
+- Fixed owner homework visibility when a selected group has homework on a later session than the default selected session.
+- Fixed unavailable deep links for attendance and homework so invalid course, group, session, or homework IDs no longer silently fall back to another record.
+- Fixed homework action-card keyboard behavior and dark-theme active/hover styling.
+- Fixed the groups “next session” quick action so it opens the exact displayed session.
+
+### Tests
+
+- `npm test -- --run src/features/homework/HomeworkPage.test.tsx src/features/homework/homeworkWorkflow.test.ts src/features/attendance/AttendancePage.test.tsx src/features/groups/GroupsPage.test.tsx src/i18n/translationKeys.test.ts` passes.
+- `npm run build` passes.
+
 ## 1.12.0 - 2026-05-22
 
 ### Added

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { FiBookOpen, FiCalendar, FiCheckCircle, FiClipboard, FiPlus, FiUsers } from 'react-icons/fi';
+import { FiBookOpen, FiCalendar, FiCheckCircle, FiChevronDown, FiClipboard, FiEdit2, FiPlus, FiSend, FiTrash2, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
@@ -33,6 +33,8 @@ import {
 } from '../../services/api';
 import type { Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewQueue, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
+import { useAuth } from '../auth/AuthProvider';
+import { canManageAssignedHomework, canManageTenantCourses, canTeachAssignedSessions } from '../tenant/tenantRoles';
 import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
@@ -53,6 +55,7 @@ function isHomeworkCourseReady(course: Course | undefined | null) {
 export function HomeworkPage() {
   const { t } = useTranslation();
   const { activeTenant } = useTenant();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTenantId = activeTenant?.id;
   const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
@@ -83,18 +86,65 @@ export function HomeworkPage() {
   const [editForm, setEditForm] = useState(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [homeworkPendingDelete, setHomeworkPendingDelete] = useState<SessionHomework | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [homeworkPendingRelease, setHomeworkPendingRelease] = useState<SessionHomework | null>(null);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [scopeLoading, setScopeLoading] = useState(false);
+  const [sessionHomeworkLoading, setSessionHomeworkLoading] = useState(false);
+  const [reviewQueueLoading, setReviewQueueLoading] = useState(false);
+  const [assignedSessionsLoading, setAssignedSessionsLoading] = useState(false);
+  const [coursesLoaded, setCoursesLoaded] = useState(false);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
+  const [sessionHomeworkLoaded, setSessionHomeworkLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewingSubmission, setReviewingSubmission] = useState<number | undefined>();
+  const [assignedSessions, setAssignedSessions] = useState<CourseSession[]>([]);
+  const canManageAllHomework = canManageTenantCourses(user, activeTenant);
+  const canManageAssignedOnly = canManageAssignedHomework(user, activeTenant) && !canManageAllHomework;
+  const canUseAssignedSessionScope = canTeachAssignedSessions(user, activeTenant) || canManageAssignedHomework(user, activeTenant);
+  const assignedSessionIds = useMemo(() => new Set(assignedSessions.map((session) => session.id)), [assignedSessions]);
+  const assignedCourseIds = useMemo(() => new Set(assignedSessions.map((session) => session.courseId).filter(Boolean)), [assignedSessions]);
+  const assignedGroupIds = useMemo(() => new Set(assignedSessions.map((session) => session.groupId).filter((id): id is number => Boolean(id))), [assignedSessions]);
+  const scopedCourses = useMemo(() => {
+    if (!canManageAssignedOnly) return courses;
+    return courses.filter((course) => assignedCourseIds.has(course.id));
+  }, [assignedCourseIds, canManageAssignedOnly, courses]);
+  const scopedGroups = useMemo(() => {
+    if (!canManageAssignedOnly) return groups;
+    return groups.filter((group) => assignedGroupIds.has(group.id));
+  }, [assignedGroupIds, canManageAssignedOnly, groups]);
+  const loading = coursesLoading || groupsLoading || rosterLoading || scopeLoading || sessionHomeworkLoading || reviewQueueLoading || assignedSessionsLoading;
+  const requestedCourseHasHomework = Boolean(requestedCourseId && items.some((item) => item.courseId === requestedCourseId));
+  const requestedGroupHasHomework = Boolean(requestedGroupId && items.some((item) => item.groupId === requestedGroupId));
+  const requestedSessionHasHomework = Boolean(requestedSessionId && items.some((item) => item.sessionId === requestedSessionId));
+  const requestedCourseUnavailable = Boolean(requestedCourseId && coursesLoaded && !coursesLoading && !scopedCourses.some((course) => course.id === requestedCourseId) && !requestedCourseHasHomework);
+  const requestedGroupUnavailable = Boolean(requestedGroupId && courseId && groupsLoaded && !groupsLoading && !scopedGroups.some((group) => group.id === requestedGroupId) && !requestedGroupHasHomework);
+  const requestedSessionUnavailable = Boolean(requestedSessionId && groupId && rosterLoaded && !rosterLoading && !sessions.some((session) => session.id === requestedSessionId) && !requestedSessionHasHomework);
+  const requestedHomeworkUnavailable = Boolean(requestedHomeworkId && sessionId && sessionHomeworkLoaded && !sessionHomeworkLoading && !sessionItems.some((item) => item.id === requestedHomeworkId));
+  const hasUnavailableRequest = requestedCourseUnavailable || requestedGroupUnavailable || requestedSessionUnavailable || requestedHomeworkUnavailable;
+  const filterHomeworkByAssignedScope = useCallback((nextItems: SessionHomework[]) => (
+    canManageAssignedOnly ? nextItems.filter((item) => !item.sessionId || assignedSessionIds.has(item.sessionId)) : nextItems
+  ), [assignedSessionIds, canManageAssignedOnly]);
+  const filterReviewQueueByAssignedScope = useCallback((nextQueue: HomeworkReviewQueue) => (
+    canManageAssignedOnly
+      ? { ...nextQueue, items: nextQueue.items.filter((item) => !item.sessionId || assignedSessionIds.has(item.sessionId)) }
+      : nextQueue
+  ), [assignedSessionIds, canManageAssignedOnly]);
 
-  const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
-  const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
+  const selectedCourse = useMemo(() => scopedCourses.find((course) => course.id === courseId), [courseId, scopedCourses]);
+  const selectedGroup = useMemo(() => scopedGroups.find((group) => group.id === groupId), [groupId, scopedGroups]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
   const selectedSessionReady = isHomeworkSessionReady(selectedSession);
   const selectedHomework = useMemo(
     () => sessionItems.find((item) => item.id === selectedHomeworkId),
     [selectedHomeworkId, sessionItems],
+  );
+  const editingHomework = useMemo(
+    () => sessionItems.find((item) => item.id === editHomeworkId),
+    [editHomeworkId, sessionItems],
   );
   const sessionHomeworkSummary = useMemo(() => {
     const needsReview = sessionItems.reduce((total, item) => total + (item.queue?.needsReview ?? 0), 0);
@@ -221,8 +271,14 @@ export function HomeworkPage() {
     setSummary(null);
     setSelectedHomeworkId(undefined);
     setReviewRoster(null);
+    setAssignedSessions([]);
+    setCoursesLoaded(false);
+    setGroupsLoaded(false);
+    setRosterLoaded(false);
+    setSessionHomeworkLoaded(false);
     if (!activeTenantId) return;
     let cancelled = false;
+    setCoursesLoading(true);
     listTenantCourses(activeTenantId)
       .then((nextCourses) => {
         if (cancelled) return;
@@ -231,6 +287,12 @@ export function HomeworkPage() {
       })
       .catch(() => {
         if (!cancelled) toast.error(t('courses.loadFailed'));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCoursesLoaded(true);
+          setCoursesLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -241,52 +303,80 @@ export function HomeworkPage() {
     setReviewQueue(null);
     if (!activeTenantId) return;
     let cancelled = false;
+    setReviewQueueLoading(true);
     getHomeworkReviewQueue({ limit: 20 })
       .then((nextQueue) => {
-        if (!cancelled) setReviewQueue(nextQueue);
+        if (!cancelled) {
+          setReviewQueue(filterReviewQueueByAssignedScope(nextQueue));
+        }
       })
       .catch(() => {
         if (!cancelled) setReviewQueue(null);
+      })
+      .finally(() => {
+        if (!cancelled) setReviewQueueLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, filterReviewQueueByAssignedScope]);
 
   useEffect(() => {
+    setAssignedSessions([]);
+    setAssignedSessionsLoading(false);
+    if (!activeTenantId || !canUseAssignedSessionScope) return;
+    let cancelled = false;
+    setAssignedSessionsLoading(true);
+    listGroupSessions()
+      .then((nextSessions) => {
+        if (!cancelled) setAssignedSessions(nextSessions);
+      })
+      .catch(() => {
+        if (!cancelled) setAssignedSessions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAssignedSessionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantId, canUseAssignedSessionScope]);
+
+  useEffect(() => {
+    if (canManageAssignedOnly && assignedSessionsLoading) return;
     setCourseId((current) => {
-      if (!courses.length) return undefined;
-      if (requestedCourseId && courses.some((course) => course.id === requestedCourseId)) return requestedCourseId;
-      return current && courses.some((course) => course.id === current) ? current : courses[0]?.id;
+      if (!scopedCourses.length) return undefined;
+      if (requestedCourseId) return scopedCourses.some((course) => course.id === requestedCourseId) ? requestedCourseId : undefined;
+      return current && scopedCourses.some((course) => course.id === current) ? current : scopedCourses[0]?.id;
     });
-  }, [courses, requestedCourseId]);
+  }, [assignedSessionsLoading, canManageAssignedOnly, requestedCourseId, scopedCourses]);
 
   useEffect(() => {
     if (!courseId) {
       setSummary(null);
       setItems([]);
-      setLoading(false);
+      setScopeLoading(false);
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
+    setScopeLoading(true);
     Promise.all([getHomeworkSummary(courseId, groupId), listHomework(courseId, groupId)])
       .then(([nextSummary, nextItems]) => {
         if (cancelled) return;
         setSummary(nextSummary);
-        setItems(nextItems);
+        setItems(filterHomeworkByAssignedScope(nextItems));
       })
       .catch(() => {
         if (!cancelled) toast.error(t('homework.loadFailed'));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setScopeLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [courseId, groupId, t]);
+  }, [courseId, filterHomeworkByAssignedScope, groupId, t]);
 
   useEffect(() => {
     setGroups([]);
@@ -298,30 +388,40 @@ export function HomeworkPage() {
     setReviewFilter('needsReview');
     setReviewDrafts({});
     setExpandedReviewStudentId(undefined);
+    setGroupsLoaded(false);
+    setRosterLoaded(false);
+    setSessionHomeworkLoaded(false);
     setGroupId(undefined);
     setSessionId(undefined);
     if (!courseId) return;
     let cancelled = false;
+    setGroupsLoading(true);
     listCourseGroups(courseId)
       .then((nextGroups) => {
         if (cancelled) return;
-        setGroups(nextGroups);
+        setGroups(canManageAssignedOnly ? nextGroups.filter((group) => assignedGroupIds.has(group.id)) : nextGroups);
       })
       .catch(() => {
         if (!cancelled) toast.error(t('groups.courseGroupsLoadFailed'));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setGroupsLoaded(true);
+          setGroupsLoading(false);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [courseId, t]);
+  }, [assignedGroupIds, canManageAssignedOnly, courseId, t]);
 
   useEffect(() => {
     setGroupId((current) => {
-      if (!groups.length) return undefined;
-      if (requestedGroupId && groups.some((group) => group.id === requestedGroupId)) return requestedGroupId;
-      return current && groups.some((group) => group.id === current) ? current : groups[0]?.id;
+      if (!scopedGroups.length) return undefined;
+      if (requestedGroupId) return scopedGroups.some((group) => group.id === requestedGroupId) ? requestedGroupId : undefined;
+      return current && scopedGroups.some((group) => group.id === current) ? current : scopedGroups[0]?.id;
     });
-  }, [groups, requestedGroupId]);
+  }, [requestedGroupId, scopedGroups]);
 
   useEffect(() => {
     setSessions([]);
@@ -333,36 +433,53 @@ export function HomeworkPage() {
     setReviewDrafts({});
     setExpandedReviewStudentId(undefined);
     setEditHomeworkId(undefined);
+    setRosterLoaded(false);
+    setSessionHomeworkLoaded(false);
     setSessionId(undefined);
     if (!groupId) return;
     let cancelled = false;
+    setRosterLoading(true);
     Promise.all([listGroupSessions(groupId), listGroupStudents(groupId)])
       .then(([nextSessions, nextStudents]) => {
         if (cancelled) return;
-        const readySessions = nextSessions.filter(isHomeworkSessionReady);
+        const readySessions = nextSessions
+          .filter(isHomeworkSessionReady)
+          .filter((session) => !canManageAssignedOnly || assignedSessionIds.has(session.id));
         setSessions(readySessions);
         setStudents(nextStudents);
       })
       .catch(() => {
         if (!cancelled) toast.error(t('sessions.groupSessionsLoadFailed'));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRosterLoaded(true);
+          setRosterLoading(false);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [groupId, t]);
+  }, [assignedSessionIds, canManageAssignedOnly, groupId, t]);
 
   useEffect(() => {
     setSessionId((current) => {
       if (!sessions.length) return undefined;
-      if (requestedSessionId && sessions.some((session) => session.id === requestedSessionId)) return requestedSessionId;
-      return current && sessions.some((session) => session.id === current) ? current : sessions[0]?.id;
+      if (requestedSessionId) return sessions.some((session) => session.id === requestedSessionId) ? requestedSessionId : undefined;
+      if (current && sessions.some((session) => session.id === current)) return current;
+      const sessionWithHomework = items.find((homework) => homework.sessionId && sessions.some((session) => session.id === homework.sessionId))?.sessionId;
+      return sessionWithHomework ?? sessions[0]?.id;
     });
-  }, [sessions, requestedSessionId]);
+  }, [items, requestedSessionId, sessions]);
 
   useEffect(() => {
+    if (requestedCourseUnavailable || requestedGroupUnavailable || requestedSessionUnavailable) return;
+    if (requestedCourseId && courseId !== requestedCourseId) return;
+    if (requestedGroupId && groupId !== requestedGroupId) return;
+    if (requestedSessionId && sessionId !== requestedSessionId) return;
     const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId, sessionId });
     if (next.toString() !== searchParamsString) setSearchParams(next, { replace: true });
-  }, [courseId, groupId, sessionId, searchParamsString, setSearchParams]);
+  }, [courseId, groupId, requestedCourseId, requestedCourseUnavailable, requestedGroupId, requestedGroupUnavailable, requestedSessionId, requestedSessionUnavailable, searchParamsString, sessionId, setSearchParams]);
 
   useEffect(() => {
     setSessionItems([]);
@@ -372,14 +489,22 @@ export function HomeworkPage() {
     setReviewDrafts({});
     setExpandedReviewStudentId(undefined);
     setEditHomeworkId(undefined);
+    setSessionHomeworkLoaded(false);
     if (!sessionId) return;
     let cancelled = false;
+    setSessionHomeworkLoading(true);
     listSessionHomework(sessionId)
       .then((nextSessionItems) => {
         if (!cancelled) setSessionItems(nextSessionItems);
       })
       .catch(() => {
         if (!cancelled) toast.error(t('homework.sessionLoadFailed'));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSessionHomeworkLoaded(true);
+          setSessionHomeworkLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -418,6 +543,11 @@ export function HomeworkPage() {
     void loadReviewRoster(requestedHomeworkId);
   }, [loadReviewRoster, requestedHomeworkId, selectedHomeworkId, sessionId, sessionItems]);
 
+  useEffect(() => {
+    if (!sessionId || requestedHomeworkId || selectedHomeworkId || !sessionItems.length) return;
+    void loadReviewRoster(sessionItems[0].id);
+  }, [loadReviewRoster, requestedHomeworkId, selectedHomeworkId, sessionId, sessionItems]);
+
   const reloadHomeworkLists = async () => {
     const [nextSessionItems, nextSummary, nextItems, nextReviewQueue] = await Promise.all([
       sessionId ? listSessionHomework(sessionId) : Promise.resolve([]),
@@ -427,8 +557,8 @@ export function HomeworkPage() {
     ]);
     setSessionItems(nextSessionItems);
     setSummary(nextSummary);
-    setItems(nextItems);
-    setReviewQueue(nextReviewQueue);
+    setItems(filterHomeworkByAssignedScope(nextItems));
+    setReviewQueue(filterReviewQueueByAssignedScope(nextReviewQueue));
   };
 
   const startEditHomework = (homework: SessionHomework) => {
@@ -441,6 +571,22 @@ export function HomeworkPage() {
       isPublished: homework.isPublished ?? true,
       assignedStudentIds: homework.assignedStudentIds ?? [],
     });
+  };
+
+  const releaseHomework = async (homework: SessionHomework) => {
+    if (!sessionId) return;
+    setSaving(true);
+    try {
+      await updateSessionHomework(sessionId, homework.id, { isPublished: true });
+      await reloadHomeworkLists();
+      await loadReviewRoster(homework.id);
+      setHomeworkPendingRelease(null);
+      toast.success(t('homework.releasedToStudents'));
+    } catch {
+      toast.error(t('homework.updateFailed'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleAssignee = (
@@ -473,7 +619,7 @@ export function HomeworkPage() {
     const activeSessionId = sessionId!;
     setSaving(true);
     try {
-      await createSessionHomework(activeSessionId, {
+      const createdHomework = await createSessionHomework(activeSessionId, {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : undefined,
@@ -482,6 +628,11 @@ export function HomeworkPage() {
         assignedStudentIds: assigneePayload(form.assignedStudentIds),
       });
       await reloadHomeworkLists();
+      setSelectedHomeworkId(createdHomework.id);
+      const next = nextWorkflowSearchParams(searchParamsString, { courseId, groupId, sessionId: activeSessionId });
+      next.set('homeworkId', String(createdHomework.id));
+      setSearchParams(next, { replace: true });
+      await loadReviewRoster(createdHomework.id);
       setForm(emptyForm);
       setIsCreateModalOpen(false);
       toast.success(t('homework.created'));
@@ -577,7 +728,7 @@ export function HomeworkPage() {
     const draft = reviewDrafts[submissionId] ?? { score: '', reviewComment: '' };
     const score = draft.score.trim() ? Number(draft.score) : undefined;
 
-    const blocker = getHomeworkReviewBlocker(status, draft);
+    const blocker = getHomeworkReviewBlocker(status, draft, selectedHomework?.maxScore);
     if (blocker) {
       toast.error(reviewBlockerMessage(blocker));
       return;
@@ -598,10 +749,10 @@ export function HomeworkPage() {
       ]);
       setReviewRoster(nextRoster);
       setSummary(nextSummary);
-      setItems(nextItems);
+      setItems(filterHomeworkByAssignedScope(nextItems));
       setSessionItems(nextSessionItems);
       void getHomeworkReviewQueue({ limit: 20 })
-        .then(setReviewQueue)
+        .then((nextQueue) => setReviewQueue(filterReviewQueueByAssignedScope(nextQueue)))
         .catch(() => undefined);
       toast.success(t('homework.reviewSaved'));
     } catch {
@@ -611,28 +762,67 @@ export function HomeworkPage() {
     }
   };
 
+  const chooseCourse = (nextCourseId: number | undefined) => {
+    setCourseId(nextCourseId);
+    setGroupId(undefined);
+    setSessionId(undefined);
+    setSelectedHomeworkId(undefined);
+    const next = new URLSearchParams(searchParamsString);
+    if (nextCourseId) next.set('courseId', String(nextCourseId));
+    else next.delete('courseId');
+    next.delete('groupId');
+    next.delete('sessionId');
+    next.delete('homeworkId');
+    setSearchParams(next, { replace: true });
+  };
+
+  const chooseGroup = (nextGroupId: number | undefined) => {
+    setGroupId(nextGroupId);
+    setSessionId(undefined);
+    setSelectedHomeworkId(undefined);
+    const next = new URLSearchParams(searchParamsString);
+    if (courseId) next.set('courseId', String(courseId));
+    if (nextGroupId) next.set('groupId', String(nextGroupId));
+    else next.delete('groupId');
+    next.delete('sessionId');
+    next.delete('homeworkId');
+    setSearchParams(next, { replace: true });
+  };
+
+  const chooseSession = (nextSessionId: number | undefined) => {
+    setSessionId(nextSessionId);
+    setSelectedHomeworkId(undefined);
+    const next = new URLSearchParams(searchParamsString);
+    if (courseId) next.set('courseId', String(courseId));
+    if (groupId) next.set('groupId', String(groupId));
+    if (nextSessionId) next.set('sessionId', String(nextSessionId));
+    else next.delete('sessionId');
+    next.delete('homeworkId');
+    setSearchParams(next, { replace: true });
+  };
+
   return (
     <>
       <PageHeader
         title={t('homework.title')}
         eyebrow={activeTenant?.name}
         actions={(
-          <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady || saving}>
+          <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)} disabled={!sessionId || !selectedSessionReady || saving || requestedSessionUnavailable}>
             <FiPlus />
             {t('homework.createHomework')}
           </button>
         )}
       />
       <div className="filters-row three">
-        <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
+        <select value={courseId ?? ''} onChange={(event) => chooseCourse(Number(event.target.value) || undefined)}>
           <option value="">{t('sessions.chooseCourse')}</option>
-          {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+          {scopedCourses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
         </select>
-        <select value={groupId ?? ''} onChange={(event) => setGroupId(Number(event.target.value) || undefined)} disabled={!groups.length}>
+        <select value={groupId ?? ''} onChange={(event) => chooseGroup(Number(event.target.value) || undefined)} disabled={!scopedGroups.length}>
           <option value="">{t('attendance.chooseGroup')}</option>
-          {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+          {scopedGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
         </select>
-        <select value={sessionId ?? ''} onChange={(event) => setSessionId(Number(event.target.value) || undefined)} disabled={!sessions.length}>
+        <select value={sessionId ?? ''} onChange={(event) => chooseSession(Number(event.target.value) || undefined)} disabled={!sessions.length}>
           <option value="">{t('sessions.chooseSession')}</option>
           {sessions.map((session) => (
             <option key={session.id} value={session.id}>
@@ -657,8 +847,23 @@ export function HomeworkPage() {
         })}
       </section>
       {loading ? <LoadingState label={t('homework.loading')} /> : null}
-      {summary ? (
-        <div className="stat-grid compact">
+      {!loading && !courseId ? (
+        <EmptyState
+          title={requestedCourseUnavailable ? t('homework.unavailableCourseTitle') : t('attendance.chooseCourseTitle')}
+          detail={requestedCourseUnavailable ? t('homework.unavailableCourseDetail') : t('homework.noScopeDetail')}
+        />
+      ) : null}
+      {!loading && courseId && requestedGroupUnavailable ? (
+        <EmptyState title={t('homework.unavailableGroupTitle')} detail={t('homework.unavailableGroupDetail')} />
+      ) : null}
+      {!loading && groupId && requestedSessionUnavailable ? (
+        <EmptyState title={t('homework.unavailableSessionTitle')} detail={t('homework.unavailableSessionDetail')} />
+      ) : null}
+      {!loading && sessionId && requestedHomeworkUnavailable ? (
+        <EmptyState title={t('homework.unavailableHomeworkTitle')} detail={t('homework.unavailableHomeworkDetail')} />
+      ) : null}
+      {!hasUnavailableRequest && summary ? (
+        <div className="stat-grid compact homework-scope-metrics">
           {['total', 'needsReview', 'missing', 'overdue'].map((key) => (
             <section className="stat-tile" key={key}>
               <FiClipboard />
@@ -669,8 +874,8 @@ export function HomeworkPage() {
         </div>
       ) : null}
 
-      {reviewQueue ? (
-        <section className="content-section homework-list-section">
+      {!hasUnavailableRequest && reviewQueue?.items.length ? (
+        <section className="content-section homework-list-section homework-priority-section">
           <div className="section-heading-row">
             <div>
               <h2>{t('homework.reviewRoster')}</h2>
@@ -708,6 +913,7 @@ export function HomeworkPage() {
         </section>
       ) : null}
 
+      {!hasUnavailableRequest ? (
       <div className="workspace-grid homework-workspace-grid">
         <section className="settings-panel full workflow-context-panel">
           <div className="settings-panel-heading">
@@ -725,10 +931,12 @@ export function HomeworkPage() {
           </div>
           {!sessionId ? (
             <EmptyState
-              title={t('homework.noSessionSelected')}
-              detail={t('homework.noScopeDetail')}
+              title={requestedSessionUnavailable ? t('homework.unavailableSessionTitle') : t('homework.noSessionSelected')}
+              detail={requestedSessionUnavailable ? t('homework.unavailableSessionDetail') : t('homework.noScopeDetail')}
               action={<Link className="secondary-link-button" to="/sessions">{t('attendance.openSessions')}</Link>}
             />
+          ) : requestedHomeworkUnavailable ? (
+            <EmptyState title={t('homework.unavailableHomeworkTitle')} detail={t('homework.unavailableHomeworkDetail')} />
           ) : !sessionItems.length ? (
             <EmptyState
               title={t('homework.noSessionHomework')}
@@ -741,18 +949,68 @@ export function HomeworkPage() {
                 <article
                   key={homework.id}
                   className={`stack-list-item homework-assignment-item ${selectedHomeworkId === homework.id ? 'active' : ''}`}
+                  onClick={() => void loadReviewRoster(homework.id)}
                 >
-                  <button type="button" className="stack-list-content-button" onClick={() => void loadReviewRoster(homework.id)}>
-                    <strong>{homework.title}</strong>
-                    <span><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? t('courses.published') : t('courses.draft')}</span>{homework.deadline || homework.dueAt ? ` · ${t('homework.dueWithDate', { date: formatDate(homework.deadline ?? homework.dueAt) })}` : ''}</span>
-                    <small>{selectedHomeworkId === homework.id ? t('homework.reviewRosterOpen') : t('homework.openReviewRoster')}</small>
+                  <button
+                    type="button"
+                    className="stack-list-content-button homework-assignment-content-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void loadReviewRoster(homework.id);
+                    }}
+                  >
+                    <span className="homework-assignment-content">
+                      <strong>{homework.title}</strong>
+                      <span><span className={`status-badge ${homework.isPublished ? 'published' : 'draft'}`}>{homework.isPublished ? t('courses.published') : t('courses.draft')}</span>{homework.deadline || homework.dueAt ? ` · ${t('homework.dueWithDate', { date: formatDate(homework.deadline ?? homework.dueAt) })}` : ''}</span>
+                      <small>{selectedHomeworkId === homework.id ? t('homework.reviewRosterOpen') : t('homework.openReviewRoster')}</small>
+                    </span>
                   </button>
                   <div className="activity-actions">
                     <span className={`status-badge ${(homework.queue?.needsReview ?? 0) > 0 ? 'pending_approval' : 'approved'}`}>
                       {t('homework.reviewCount', { count: homework.queue?.needsReview ?? 0 })}
                     </span>
-                    <button type="button" className="secondary-button" onClick={() => startEditHomework(homework)}>{t('homework.edit')}</button>
-                    <button type="button" className="link-button danger" disabled={saving} onClick={() => setHomeworkPendingDelete(homework)}>{t('homework.delete')}</button>
+                    {!homework.isPublished ? (
+                      <button
+                        type="button"
+                        className="icon-button release"
+                        aria-label={t('homework.releaseHomework')}
+                        title={t('homework.releaseHomework')}
+                        disabled={saving}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setHomeworkPendingRelease(homework);
+                        }}
+                      >
+                        <FiSend />
+                      </button>
+                    ) : null}
+                    <div className="homework-icon-actions">
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t('homework.edit')}
+                        title={t('homework.edit')}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          startEditHomework(homework);
+                        }}
+                      >
+                        <FiEdit2 />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button danger"
+                        aria-label={t('homework.delete')}
+                        title={t('homework.delete')}
+                        disabled={saving}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setHomeworkPendingDelete(homework);
+                        }}
+                      >
+                        <FiTrash2 />
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -773,7 +1031,7 @@ export function HomeworkPage() {
           ) : reviewRoster ? (
             <>
               <CountFilterRow
-                className="review-summary-row"
+                className="review-summary-row homework-review-filters"
                 ariaLabel={t('homework.reviewFilters')}
                 items={reviewFilters.map((key) => ({
                   key,
@@ -868,13 +1126,14 @@ export function HomeworkPage() {
           )}
         </aside>
       </div>
+      ) : null}
 
       {editHomeworkId ? (
         <FormModal labelledBy="edit-homework-title" onClose={closeEditModal} onSubmit={saveHomeworkEdit}>
           <div className="modal-header-block">
             <span>{selectedSession?.title ?? t('homework.selectedSession')}</span>
             <h2 id="edit-homework-title">{t('homework.editHomework')}</h2>
-            <p>{sessionItems.find((item) => item.id === editHomeworkId)?.title ?? t('homework.selectedHomework')}</p>
+            <p>{editingHomework?.title ?? t('homework.selectedHomework')}</p>
           </div>
           <label>
             {t('courses.title')}
@@ -922,7 +1181,7 @@ export function HomeworkPage() {
               checked={editForm.isPublished}
               onChange={(event) => setEditForm((current) => ({ ...current, isPublished: event.target.checked }))}
             />
-            {t('courses.published')}
+            {t('homework.releasedToStudents')}
           </label>
           <div className="settings-panel compact assignee-panel">
             <div className="section-heading-row compact">
@@ -962,7 +1221,9 @@ export function HomeworkPage() {
           </div>
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={closeEditModal} disabled={saving}>{t('courses.cancel')}</button>
-            <button type="submit" disabled={saving}>{saving ? t('courses.saving') : t('homework.saveHomework')}</button>
+            <button type="submit" disabled={saving}>
+              {saving ? t('courses.saving') : !editingHomework?.isPublished && editForm.isPublished ? t('homework.releaseHomework') : t('homework.saveHomework')}
+            </button>
           </div>
         </FormModal>
       ) : null}
@@ -975,13 +1236,16 @@ export function HomeworkPage() {
         />
       ) : null}
       {!loading && !!items.length ? (
-        <section className="content-section homework-list-section">
-          <div className="section-heading-row">
+        <details className="homework-list-section homework-archive-panel">
+          <summary className="section-heading-row">
             <div>
-              <h2>{t('homework.queue')}</h2>
+              <h2>{t('homework.allHomework')}</h2>
               <span>{t('homework.assignmentScopeCount', { count: items.length })}</span>
             </div>
-          </div>
+            <span className="homework-archive-toggle" aria-label={t('homework.showAllHomework')} title={t('homework.showAllHomework')}>
+              <FiChevronDown aria-hidden="true" />
+            </span>
+          </summary>
           <div className="table-wrap">
             <table>
               <thead>
@@ -1026,7 +1290,7 @@ export function HomeworkPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </details>
       ) : null}
       {isCreateModalOpen ? (
         <FormModal labelledBy="create-homework-title" onClose={closeCreateModal} onSubmit={submitHomework}>
@@ -1081,7 +1345,7 @@ export function HomeworkPage() {
                 checked={form.isPublished}
                 onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))}
               />
-              {t('homework.publishImmediately')}
+              {t('homework.releaseToStudentsNow')}
             </label>
             <div className="settings-panel compact assignee-panel">
               <div className="section-heading-row compact">
@@ -1121,7 +1385,9 @@ export function HomeworkPage() {
             </div>
             <div className="modal-actions">
               <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={saving}>{t('courses.cancel')}</button>
-              <button type="submit" disabled={!sessionId || !selectedSessionReady || saving}>{saving ? t('courses.creating') : t('homework.createHomework')}</button>
+              <button type="submit" disabled={!sessionId || !selectedSessionReady || saving}>
+                {saving ? t('courses.creating') : form.isPublished ? t('homework.createAndRelease') : t('homework.saveDraft')}
+              </button>
             </div>
         </FormModal>
       ) : null}
@@ -1137,6 +1403,22 @@ export function HomeworkPage() {
               <button type="button" className="secondary-button" onClick={() => setHomeworkPendingDelete(null)} disabled={saving}>{t('courses.cancel')}</button>
               <button type="button" className="danger-button" onClick={() => void deleteHomework(homeworkPendingDelete.id)} disabled={saving}>
                 {saving ? t('homework.deleting') : t('homework.deleteHomework')}
+              </button>
+            </div>
+        </Modal>
+      ) : null}
+      {homeworkPendingRelease ? (
+        <Modal labelledBy="release-homework-title" onClose={() => setHomeworkPendingRelease(null)}>
+            <div className="modal-header-block">
+              <span>{t('homework.releaseHomework')}</span>
+              <h2 id="release-homework-title">{t('homework.releaseConfirmTitle')}</h2>
+              <p>{homeworkPendingRelease.title}</p>
+            </div>
+            <p className="panel-note">{t('homework.releaseConfirmDetail')}</p>
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setHomeworkPendingRelease(null)} disabled={saving}>{t('courses.cancel')}</button>
+              <button type="button" onClick={() => void releaseHomework(homeworkPendingRelease)} disabled={saving}>
+                {saving ? t('courses.saving') : t('homework.releaseHomework')}
               </button>
             </div>
         </Modal>

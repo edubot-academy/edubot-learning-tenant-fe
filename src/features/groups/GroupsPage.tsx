@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { FiCalendar, FiCheckSquare, FiClipboard, FiEdit2, FiPlus } from 'react-icons/fi';
+import { FiArrowRight, FiCalendar, FiCheckSquare, FiClipboard, FiEdit2, FiPlus, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
@@ -166,6 +166,14 @@ export function GroupsPage() {
   const scheduleBlockSummary = completeScheduleBlocks.length
     ? completeScheduleBlocks.map((block) => `${scheduleDayLabel(block.day)} ${block.startTime}-${block.endTime}`).join(', ')
     : t('groups.needsSetup');
+  const sortedSessions = useMemo(
+    () => [...sessions].sort((left, right) => new Date(left.startsAt ?? 0).getTime() - new Date(right.startsAt ?? 0).getTime()),
+    [sessions],
+  );
+  const nextSession = useMemo(() => {
+    const now = Date.now();
+    return sortedSessions.find((session) => new Date(session.startsAt ?? 0).getTime() >= now) ?? sortedSessions[0];
+  }, [sortedSessions]);
   const selectedCourseBlocker = (() => {
     if (!selectedCourse) return t('courses.blockerChooseCourse');
     if (!['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''))) return t('courses.blockerDeliveryType');
@@ -174,7 +182,7 @@ export function GroupsPage() {
     return '';
   })();
   const selectedScope = { courseId: selectedGroup?.courseId ?? selectedCourse?.id, groupId: selectedGroup?.id };
-  const nextSessionLink = workflowPath('/sessions', selectedScope);
+  const nextSessionLink = workflowPath('/sessions', { ...selectedScope, sessionId: nextSession?.id });
   const attendanceLink = workflowPath('/attendance', selectedScope);
   const homeworkLink = workflowPath('/homework', selectedScope);
   const groupTabs: Array<{ id: GroupWorkspaceTab; label: string }> = [
@@ -925,6 +933,32 @@ export function GroupsPage() {
           </div>
           {groupWorkspaceTab === 'overview' ? (
             <div id="group-workspace-panel-overview" role="tabpanel" aria-labelledby="group-workspace-tab-overview">
+              <div className="group-operations-strip" aria-label={t('groups.quickActions')}>
+                <Link to={nextSessionLink}>
+                  <FiCalendar />
+                  <span>{t('groups.nextSession')}</span>
+                  <strong>{nextSession ? formatDate(nextSession.startsAt) : t('groups.noSessionsTitle')}</strong>
+                  <FiArrowRight />
+                </Link>
+                <Link to={attendanceLink}>
+                  <FiCheckSquare />
+                  <span>{t('navigation.attendance')}</span>
+                  <strong>{students.length ? t('groups.activeLearnerCount', { count: students.length }) : t('groups.noStudentsTitle')}</strong>
+                  <FiArrowRight />
+                </Link>
+                <Link to={homeworkLink}>
+                  <FiClipboard />
+                  <span>{t('navigation.homework')}</span>
+                  <strong>{t('groups.groupHomeworkAction')}</strong>
+                  <FiArrowRight />
+                </Link>
+                <button type="button" onClick={() => setGroupWorkspaceTab('students')}>
+                  <FiUsers />
+                  <span>{t('groups.studentsTab')}</span>
+                  <strong>{students.length}</strong>
+                  <FiArrowRight />
+                </button>
+              </div>
               <div className="group-summary-grid">
                 <section>
                   <span>{t('courses.students')}</span>

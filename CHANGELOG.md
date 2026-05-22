@@ -19,6 +19,35 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.14.0 - 2026-05-23
+
+### Added
+
+- Added a role-aware certificate approval inbox for instructors with assigned-course scoping and pending approval defaults.
+- Added certificate regression coverage for owner/admin paginated rosters, instructor approval scoping, and certificate issue/approval display-name payloads.
+
+### Changed
+
+- Redesigned certificate branding, course rules, and registry workspaces with clearer admin actions, course context, eligibility summaries, certificate status filters, and empty states.
+- Redesigned the owner/company admin overview into a denser operations dashboard with setup progress, priority actions, certificate workload, latest courses, upcoming lessons, and recent activity.
+- Updated overview and certificate localization for English, Kyrgyz, and Russian.
+- Package version updated to `1.14.0`.
+
+### Fixed
+
+- Fixed owner/company admin certificate registry roster loading so all roster pages are fetched before local filtering.
+- Fixed instructor certificate access so directly owned courses remain visible even when group lookup is unavailable.
+- Fixed certificate deep links so `courseId` is preserved while course data is still loading.
+- Fixed certificate approval and issue requests so selected student display names are sent to the backend.
+- Fixed certificate registry layout spacing and release-readiness test stability.
+
+### Tests
+
+- `npm test` passes with 34 test files and 192 tests.
+- `npm run lint` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
 ## 1.13.0 - 2026-05-22
 
 ### Added

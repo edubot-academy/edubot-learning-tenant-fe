@@ -83,7 +83,9 @@ export const activityTypeLabelKeys: Record<string, string> = {
 export const activityActionLabelKeys: Record<string, string> = {
   certificate: 'navigation.certificates',
   course: 'navigation.courses',
+  courseapproved: 'overview.activityCourseApproved',
   coursecreated: 'overview.activityCourseCreated',
+  coursepublished: 'overview.activityCoursePublished',
   create: 'actions.create',
   delete: 'actions.delete',
   group: 'navigation.groups',

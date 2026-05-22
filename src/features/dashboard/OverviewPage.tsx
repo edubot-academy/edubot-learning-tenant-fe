@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import type { TFunction } from 'i18next';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +24,7 @@ import type { ActivityReviewQueue, InstructorDashboard, TenantOverview, TenantRe
 import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { canTeachAssignedSessions, canViewStudentSupportContext } from '../tenant/tenantRoles';
-import { formatDate, readable } from '../../lib/format';
+import { formatDate } from '../../lib/format';
 import { activityActionLabelKeys, commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
 import { getAdminSetupChecklist } from './adminSetupChecklist';
@@ -43,46 +42,11 @@ function statNumber(value: unknown) {
   return Number.isFinite(nextValue) ? nextValue : 0;
 }
 
-type SetupItem = TenantOverview['setup']['items'][number];
-
-const readinessItemKeys: Record<string, string> = {
-  courses: 'courses',
-  groups: 'groups',
-  locale: 'locale',
-  certificates: 'certificates',
-};
-
-function normalizeReadinessText(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function translateReadinessValue(value: string, itemKey: string | undefined, t: TFunction) {
-  const normalizedValue = normalizeReadinessText(value);
-  const linkedMatch = normalizedValue.match(/^(\d+)\s+linked$/);
-
-  if (itemKey === 'courses' && linkedMatch) {
-    return t('overview.readiness.courses.linkedCount', { count: Number(linkedMatch[1]) });
-  }
-
-  if (itemKey === 'groups' && normalizedValue === 'no groups') {
-    return t('overview.readiness.groups.noGroups');
-  }
-
-  if (itemKey === 'certificates' && normalizedValue === 'needs setup') {
-    return t('overview.readiness.certificates.needsSetup');
-  }
-
-  return readable(value);
-}
-
-function getReadinessItemCopy(item: SetupItem, t: TFunction) {
-  const itemKey = readinessItemKeys[normalizeReadinessText(item.label)];
-
-  return {
-    label: itemKey ? t(`overview.readiness.${itemKey}.label`) : readable(item.label),
-    hint: itemKey ? t(`overview.readiness.${itemKey}.hint`) : readable(item.hint),
-    value: translateReadinessValue(item.value, itemKey, t),
-  };
+function localDateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function OverviewPage() {
@@ -96,6 +60,7 @@ export function OverviewPage() {
   const [timeSeries, setTimeSeries] = useState<TenantReportTimeSeries | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState(false);
+  const [showCompletedSetup, setShowCompletedSetup] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -380,6 +345,7 @@ export function OverviewPage() {
     });
   }, [activeTenant, canManageCertificates, canManageMembers, certificatesEnabled, overview]);
   const incompleteSetupCount = adminSetupChecklist.filter((item) => !item.complete).length;
+  const visibleSetupChecklist = showCompletedSetup ? adminSetupChecklist : adminSetupChecklist.filter((item) => !item.complete);
 
   const todayOperations = useMemo(() => {
     if (!overview) return [];
@@ -450,6 +416,42 @@ export function OverviewPage() {
     ];
   }, [assistantSupportEnabled, attendanceEnabled, homeworkEnabled, homeworkNeedsReviewCount, instructorDashboard, instructorNextSession, instructorTodaySessions, instructorUpcomingSessions, isAssistant, overview, t, unmarkedAttendanceCount]);
 
+  const upcomingSessionGroups = useMemo(() => {
+    const sessions = overview?.sessions.upcoming ?? [];
+    const todayKey = localDateKey(new Date());
+    return sessions.reduce<Array<{ key: string; label: string; sessions: typeof sessions }>>((groups, session) => {
+      const startDate = session.startsAt ? new Date(session.startsAt) : null;
+      const dateKey = !startDate || Number.isNaN(startDate.getTime()) ? 'unknown' : localDateKey(startDate);
+      const label = dateKey === todayKey
+        ? t('overview.today')
+        : !startDate || Number.isNaN(startDate.getTime())
+          ? t('overview.scheduledSessions')
+          : startDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const existing = groups.find((group) => group.key === dateKey);
+      if (existing) existing.sessions.push(session);
+      else groups.push({ key: dateKey, label, sessions: [session] });
+      return groups;
+    }, []);
+  }, [overview?.sessions.upcoming, t]);
+
+  const activityGroups = useMemo(() => {
+    const items = overview?.activity ?? [];
+    const todayKey = new Date().toDateString();
+    return items.reduce<Array<{ key: string; label: string; items: typeof items }>>((groups, item) => {
+      const createdAt = new Date(item.createdAt);
+      const key = Number.isNaN(createdAt.getTime()) ? 'unknown' : createdAt.toDateString();
+      const label = key === todayKey
+        ? t('overview.today')
+        : Number.isNaN(createdAt.getTime())
+          ? t('overview.recentActivity')
+          : createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const existing = groups.find((group) => group.key === key);
+      if (existing) existing.items.push(item);
+      else groups.push({ key, label, items: [item] });
+      return groups;
+    }, []);
+  }, [overview?.activity, t]);
+
   const overviewCourseTypeLabel = (value?: string | null) => {
     return value ? enumLabel(value, courseTypeLabelKeys, t) : t('overview.courseTypeDefault');
   };
@@ -463,6 +465,10 @@ export function OverviewPage() {
   };
   const activityActionLabel = (value?: string | null) => {
     return enumLabel(value, activityActionLabelKeys, t, t('overview.tenantTarget'));
+  };
+  const activitySubjectLabel = (metadata?: Record<string, unknown> | null) => {
+    const subject = metadata?.courseTitle ?? metadata?.groupTitle ?? metadata?.sessionTitle ?? metadata?.title ?? metadata?.name;
+    return typeof subject === 'string' && subject.trim() ? subject.trim() : null;
   };
 
   if (!activeTenant) return <EmptyState title={t('overview.noTenantAssignedTitle')} detail={t('overview.noTenantAssignedDetail')} />;
@@ -516,9 +522,64 @@ export function OverviewPage() {
           </>
         )}
       />
-      <StatGrid items={stats} />
+      {canManageMembers ? (
+        <section className="overview-admin-command-center" aria-label={t('overview.tenantOverview')}>
+          <div className="overview-admin-command-main">
+            <div className="overview-admin-command-heading">
+              <span className="ui-kicker">{t('overview.primaryActions')}</span>
+              <h2>{primaryOverviewAction?.title ?? t('overview.workspaceClear')}</h2>
+              <p>{primaryOverviewAction?.detail ?? t('overview.adminAllClearDetail')}</p>
+              <div className="overview-admin-command-actions">
+                <Link className="primary-link-button" to={primaryOverviewAction?.to ?? '/operations'}>{t('student.open')}</Link>
+                <Link className="secondary-link-button" to="/operations"><FiGrid /> {t('overview.openOperations')}</Link>
+              </div>
+            </div>
+            <div className="overview-admin-metrics" aria-label={t('overview.workspaceReadiness')}>
+              {stats.map((item) => (
+                <article className="overview-admin-metric" key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  {item.hint ? <small>{item.hint}</small> : null}
+                </article>
+              ))}
+            </div>
+          </div>
+          <div className="overview-admin-queue">
+            <div className="section-heading-row compact">
+              <div>
+                <h2>{t('overview.adminAttentionQueue')}</h2>
+                <span>{priorityItems.length ? t('overview.activeItemCount', { count: priorityItems.length }) : t('overview.noAdminBlockers')}</span>
+              </div>
+            </div>
+            <div className="overview-admin-queue-list">
+              {priorityItems.length ? priorityItems.slice(0, 5).map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link className={`overview-admin-queue-item ${item.tone}`} to={item.to} key={`${item.to}-${item.title}`}>
+                    <Icon aria-hidden="true" />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                  </Link>
+                );
+              }) : (
+                <article className="overview-admin-queue-item info static">
+                  <FiCheckSquare aria-hidden="true" />
+                  <span>
+                    <strong>{t('overview.workspaceClear')}</strong>
+                    <small>{t('overview.adminAllClearDetail')}</small>
+                  </span>
+                </article>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : (
+        <StatGrid items={stats} />
+      )}
 
-      {primaryOverviewAction && PrimaryOverviewIcon ? (
+      {!canManageMembers && primaryOverviewAction && PrimaryOverviewIcon ? (
         <Link className={`overview-next-action ${primaryOverviewAction.tone}`} to={primaryOverviewAction.to} aria-label={primaryOverviewAction.title}>
           <span className="ui-icon-tile overview-action-icon"><PrimaryOverviewIcon /></span>
           <span>
@@ -530,7 +591,6 @@ export function OverviewPage() {
         </Link>
       ) : null}
 
-      {!canManageMembers ? (
       <section className="overview-today-strip" aria-label={t('overview.todayOperations')}>
         <div className="overview-today-heading">
           <span className="ui-kicker">{t('overview.today')}</span>
@@ -560,8 +620,8 @@ export function OverviewPage() {
           })}
         </div>
       </section>
-      ) : null}
 
+      {!canManageMembers ? (
       <section className={`overview-priority-strip ${priorityItems.length ? '' : 'all-clear'}`} aria-label={t('overview.needsAttention')}>
         {priorityItems.length ? (
           <>
@@ -602,59 +662,27 @@ export function OverviewPage() {
           </>
         )}
       </section>
-
-      {canManageMembers ? (
-        <Suspense fallback={<div className="overview-insight-empty">{t('overview.insightsLoading')}</div>}>
-          <OverviewInsights
-            timeSeries={timeSeries}
-            workloadChartData={workloadChartData}
-            setupProgress={statNumber(overview.setup.progress)}
-            insightsLoading={insightsLoading}
-            insightsError={insightsError}
-          />
-        </Suspense>
       ) : null}
 
       {canManageMembers ? (
         <div className="settings-grid overview-lower-grid overview-admin-grid">
-          <section className="settings-panel">
-            <div className="section-heading-row">
-              <div>
-                <h2>{t('overview.workspaceReadiness')}</h2>
-                <span>{t('overview.configured', { percent: overview.setup.progress })}</span>
-              </div>
-            </div>
-            <div className="progress-cell overview-progress">
-              <span style={{ width: `${overview.setup.progress}%` }} />
-              <strong>{overview.setup.progress}%</strong>
-            </div>
-            <div className="stack-list">
-              {overview.setup.items.map((item) => {
-                const itemCopy = getReadinessItemCopy(item, t);
-                return (
-                  <article className="stack-list-item" key={item.label}>
-                    <div>
-                      <strong>{itemCopy.label}</strong>
-                      <span>{itemCopy.hint}</span>
-                    </div>
-                    <strong>{itemCopy.value}</strong>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
           <section className="settings-panel overview-setup-checklist">
-            <div className="section-heading-row">
+            <div className="section-heading-row compact">
               <div>
                 <h2>{t('overview.setupChecklist.title')}</h2>
                 <span>{incompleteSetupCount ? t('overview.setupChecklist.remaining', { count: incompleteSetupCount }) : t('overview.setupChecklist.complete')}</span>
               </div>
-              <FiCheckSquare />
+              <button type="button" className="link-button" onClick={() => setShowCompletedSetup((current) => !current)}>
+                {showCompletedSetup ? t('overview.setupChecklist.hideCompleted') : t('overview.setupChecklist.showCompleted')}
+              </button>
             </div>
-            <div className="stack-list">
-              {adminSetupChecklist.map((item) => (
-                <Link className={`stack-list-item setup-checklist-item ${item.complete ? 'complete' : 'current'}`} to={item.to} key={item.key}>
+            <div className="progress-cell overview-progress setup-progress">
+              <span style={{ width: `${overview.setup.progress}%` }} />
+              <strong>{overview.setup.progress}%</strong>
+            </div>
+            <div className="overview-setup-list">
+              {visibleSetupChecklist.map((item) => (
+                <Link className={`setup-checklist-item ${item.complete ? 'complete' : 'current'}`} to={item.to} key={item.key}>
                   <FiCheckSquare aria-hidden="true" />
                   <div>
                     <strong>{t(item.labelKey)}</strong>
@@ -665,43 +693,53 @@ export function OverviewPage() {
                   </span>
                 </Link>
               ))}
+              {!visibleSetupChecklist.length ? (
+                <article className="setup-checklist-item complete static">
+                  <FiCheckSquare aria-hidden="true" />
+                  <div>
+                    <strong>{t('overview.setupChecklist.complete')}</strong>
+                    <span>{t('overview.adminAllClearDetail')}</span>
+                  </div>
+                </article>
+              ) : null}
             </div>
           </section>
 
-          <section className="settings-panel">
+          <section className="settings-panel overview-workload-panel">
             <div className="section-heading-row">
               <div>
                 <h2>{t('navigation.operations')}</h2>
                 <span>{t('overview.adminOperationsDetail')}</span>
               </div>
-              <FiGrid />
+              <Link className="link-button" to="/operations">{t('overview.openOperations')}</Link>
             </div>
-            <div className="stat-grid compact session-stat-grid">
-              <section className="stat-tile"><span>{t('navigation.courses')}</span><strong>{overview.stats.courses ?? 0}</strong></section>
-              <section className="stat-tile"><span>{t('navigation.groups')}</span><strong>{overview.stats.activeGroups ?? 0}</strong></section>
-              <section className="stat-tile"><span>{t('overview.pendingCourses')}</span><strong>{overview.stats.pendingCourses ?? 0}</strong></section>
-              <section className="stat-tile"><span>{t('overview.unmarked')}</span><strong>{attendanceEnabled ? overview.sessions.unmarkedAttendance : t('overview.disabled')}</strong></section>
+            <div className="overview-workload-list">
+              <Link className="overview-workload-row primary" to="/operations">
+                <FiGrid aria-hidden="true" />
+                <span>
+                  <strong>{t('overview.openOperations')}</strong>
+                  <small>{t('overview.openOperationsDetail')}</small>
+                </span>
+              </Link>
+              <div className="overview-workload-row">
+                <span>{t('navigation.courses')}</span>
+                <strong>{overview.stats.courses ?? 0}</strong>
+              </div>
+              <div className="overview-workload-row">
+                <span>{t('navigation.groups')}</span>
+                <strong>{overview.stats.activeGroups ?? 0}</strong>
+              </div>
+              <div className="overview-workload-row">
+                <span>{t('overview.pendingCourses')}</span>
+                <strong>{overview.stats.pendingCourses ?? 0}</strong>
+              </div>
+              <div className="overview-workload-row">
+                <span>{t('overview.unmarked')}</span>
+                <strong>{attendanceEnabled ? overview.sessions.unmarkedAttendance : t('overview.disabled')}</strong>
+              </div>
             </div>
-            <Link className="secondary-link-button" to="/operations"><FiGrid /> {t('overview.openOperations')}</Link>
           </section>
 
-          {certificatesEnabled && canManageCertificates ? (
-            <section className="settings-panel">
-              <div className="section-heading-row">
-                <div>
-                  <h2>{t('navigation.certificates')}</h2>
-                  <span>{t('overview.certificatesWorkload')}</span>
-                </div>
-                <Link className="link-button" to="/certificates">{t('student.open')}</Link>
-              </div>
-              <div className="stat-grid compact session-stat-grid">
-                <section className="stat-tile"><span>{t('overview.pending')}</span><strong>{overview.certificates.pending}</strong></section>
-                <section className="stat-tile"><span>{t('overview.notIssued')}</span><strong>{overview.certificates.waiting ?? overview.certificates.eligibleWaiting}</strong></section>
-                <section className="stat-tile"><span>{t('overview.issued')}</span><strong>{overview.certificates.issued}</strong></section>
-                <section className="stat-tile"><span>{t('overview.needsConfig')}</span><strong>{overview.certificates.coursesWithoutConfig}</strong></section>
-              </div>
-            </section>
-          ) : null}
         </div>
       ) : null}
 
@@ -771,39 +809,91 @@ export function OverviewPage() {
           ) : null}
         </section>
 
-        <aside className="settings-panel workflow-context-panel overview-upcoming-panel">
-          <div className="section-heading-row compact">
-            <div>
-              <h2>{t('student.upcomingSessions')}</h2>
-              <span>{t('overview.scheduledToday', { count: overview.sessions.today })}</span>
-            </div>
-          </div>
-          <div className="stack-list">
-            {overview.sessions.upcoming.map((session) => (
-              <article className="stack-list-item" key={session.id}>
+        <div className="overview-side-stack">
+          {canManageMembers && certificatesEnabled && canManageCertificates ? (
+            <section className="settings-panel overview-workload-panel certificate-workload-panel compact">
+              <div className="section-heading-row compact">
                 <div>
-                  <strong>{session.title}</strong>
-                  <span className="overview-session-meta">
-                    <span>{formatDate(session.startsAt)}</span>
-                    <span className={`status-badge ${session.status || 'scheduled'}`}>{overviewStatusLabel(session.status)}</span>
-                  </span>
-                  {session.groupName || session.courseTitle ? (
-                    <span className="overview-session-context">{session.courseTitle ?? t('student.courseNotSet')} · {session.groupName ?? t('student.groupNotSet')}</span>
-                  ) : null}
+                  <h2>{t('navigation.certificates')}</h2>
+                  <span>{t('overview.certificatesWorkload')}</span>
                 </div>
-                <Link className="link-button" to="/sessions">{t('student.open')}</Link>
-              </article>
-            ))}
-            {!overview.sessions.upcoming.length ? (
-              <EmptyState
-                title={t('student.sessionsEmptyTitle')}
-                detail={t('student.sessionsEmptyDetail')}
-                action={<Link className="secondary-link-button" to="/sessions">{t('overview.openSessions')}</Link>}
-              />
-            ) : null}
-          </div>
-        </aside>
+                <Link className="link-button" to="/certificates">{t('overview.configureCertificates')}</Link>
+              </div>
+              <Link className="overview-certificate-focus" to="/certificates">
+                <strong>{overview.certificates.coursesWithoutConfig}</strong>
+                <span>{t('overview.certificateSetupDetail', { count: overview.certificates.coursesWithoutConfig })}</span>
+              </Link>
+              <div className="overview-workload-list compact certificate-secondary-list">
+                <div className="overview-workload-row">
+                  <span>{t('overview.notIssued')}</span>
+                  <strong>{overview.certificates.waiting ?? overview.certificates.eligibleWaiting}</strong>
+                </div>
+                <div className="overview-workload-row">
+                  <span>{t('overview.pending')}</span>
+                  <strong>{overview.certificates.pending}</strong>
+                </div>
+                <div className="overview-workload-row">
+                  <span>{t('overview.issued')}</span>
+                  <strong>{overview.certificates.issued}</strong>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <aside className="settings-panel workflow-context-panel overview-upcoming-panel">
+            <div className="section-heading-row compact">
+              <div>
+                <h2>{t('student.upcomingSessions')}</h2>
+                <span>{t('overview.upcomingSessionsCount', { count: overview.sessions.upcoming.length })}</span>
+              </div>
+              <Link className="link-button" to="/sessions">{t('overview.viewAll')}</Link>
+            </div>
+            <div className="stack-list overview-session-list">
+              {upcomingSessionGroups.map((group) => (
+                <section className="overview-session-date-group" key={group.key}>
+                  <h3>{group.label}</h3>
+                  <div className="stack-list">
+                    {group.sessions.map((session) => (
+                      <article className="stack-list-item" key={session.id}>
+                        <div>
+                          <strong>{session.title}</strong>
+                          <span className="overview-session-meta">
+                            <span>{formatDate(session.startsAt)}</span>
+                            <span className={`status-badge ${session.status || 'scheduled'}`}>{overviewStatusLabel(session.status)}</span>
+                          </span>
+                          {session.groupName || session.courseTitle ? (
+                            <span className="overview-session-context">{session.courseTitle ?? t('student.courseNotSet')} · {session.groupName ?? t('student.groupNotSet')}</span>
+                          ) : null}
+                        </div>
+                        <Link className="overview-session-open-link" to="/sessions">{t('student.open')}</Link>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {!overview.sessions.upcoming.length ? (
+                <EmptyState
+                  title={t('student.sessionsEmptyTitle')}
+                  detail={t('student.sessionsEmptyDetail')}
+                  action={<Link className="secondary-link-button" to="/sessions">{t('overview.openSessions')}</Link>}
+                />
+              ) : null}
+            </div>
+          </aside>
+        </div>
       </div>
+
+      {canManageMembers ? (
+        <Suspense fallback={<div className="overview-insight-empty">{t('overview.insightsLoading')}</div>}>
+          <OverviewInsights
+            timeSeries={timeSeries}
+            workloadChartData={workloadChartData}
+            setupProgress={statNumber(overview.setup.progress)}
+            insightsLoading={insightsLoading}
+            insightsError={insightsError}
+          />
+        </Suspense>
+      ) : null}
 
       <div className="settings-grid overview-lower-grid">
         {!canManageMembers ? (
@@ -883,16 +973,34 @@ export function OverviewPage() {
 
       {canViewActivity ? (
         <section className="settings-panel full overview-activity-panel">
-          <h2>{t('overview.recentActivity')}</h2>
-          <div className="stack-list activity-timeline">
-            {overview.activity.map((item) => (
-              <article className="stack-list-item" key={item.id}>
-                <div>
-                  <strong>{activityActionLabel(item.action)}</strong>
-                  <span>{item.actorFullName || item.actorEmail || t('overview.system')} · {formatDate(item.createdAt)}</span>
+          <div className="section-heading-row compact">
+            <div>
+              <h2>{t('overview.recentActivity')}</h2>
+              <span>{overview.activity.length ? t('overview.activeItemCount', { count: overview.activity.length }) : t('overview.activityEmptyTitle')}</span>
+            </div>
+          </div>
+          <div className="activity-timeline">
+            {activityGroups.map((group) => (
+              <section className="activity-date-group" key={group.key}>
+                <h3>{group.label}</h3>
+                <div className="activity-feed-list">
+                  {group.items.map((item) => {
+                    const subject = activitySubjectLabel(item.metadata);
+                    return (
+                      <article className="activity-feed-item" key={item.id}>
+                        <span className="activity-feed-dot" aria-hidden="true" />
+                        <div className="activity-feed-copy">
+                          <div className="activity-feed-title-row">
+                            <strong>{subject ? `${subject} · ${activityActionLabel(item.action)}` : activityActionLabel(item.action)}</strong>
+                            <span className="status-badge neutral">{activityActionLabel(item.targetType || item.targetId || t('overview.tenantTarget'))}</span>
+                          </div>
+                          <span>{item.actorFullName || item.actorEmail || t('overview.system')} · {formatDate(item.createdAt)}</span>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-                <strong>{activityActionLabel(item.targetType || item.targetId || t('overview.tenantTarget'))}</strong>
-              </article>
+              </section>
             ))}
             {!overview.activity.length ? <EmptyState title={t('overview.activityEmptyTitle')} detail={t('overview.activityEmptyDetail')} /> : null}
           </div>

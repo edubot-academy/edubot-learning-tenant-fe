@@ -1,7 +1,17 @@
 import type { AxiosAdapter } from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearCurrentLocale } from '../i18n/locale';
-import { api, createIndividualCourseGroup, createTenantCourse, publishTenantCourse, searchUsers, tenantStore, tokenStore } from './api';
+import {
+  api,
+  approveCertificate,
+  createIndividualCourseGroup,
+  createTenantCourse,
+  issueCourseCertificate,
+  publishTenantCourse,
+  searchUsers,
+  tenantStore,
+  tokenStore,
+} from './api';
 
 describe('api browser stores', () => {
   const defaultAdapter = api.defaults.adapter;
@@ -276,5 +286,77 @@ describe('api browser stores', () => {
 
     expect(requestUrl).toBe('/courses/501/publish');
     expect(requestMethod).toBe('patch');
+  });
+
+  it('posts certificate issue requests with the selected student display name', async () => {
+    let requestUrl = '';
+    let requestBody: Record<string, unknown> | null = null;
+    api.defaults.adapter = async (config) => {
+      requestUrl = config.url ?? '';
+      requestBody = JSON.parse(String(config.data || '{}')) as Record<string, unknown>;
+      return {
+        data: { id: 701, publicId: 'CERT-701', studentId: 201, courseId: 101, status: 'issued' },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    await issueCourseCertificate(101, {
+      studentId: 201,
+      studentFullName: 'Aida Student',
+      issuerDisplayName: 'EduPro Admin',
+      issuerTitle: 'Instructor',
+      certificateLanguage: 'en',
+      pageOrientation: 'landscape',
+      note: 'Manual issue',
+    });
+
+    expect(requestUrl).toBe('/courses/101/certificates/issue');
+    expect(requestBody).toMatchObject({
+      studentId: 201,
+      studentFullName: 'Aida Student',
+      issuerDisplayName: 'EduPro Admin',
+      issuerTitle: 'Instructor',
+      certificateLanguage: 'en',
+      pageOrientation: 'landscape',
+      note: 'Manual issue',
+    });
+  });
+
+  it('posts certificate approval requests with certificate display overrides', async () => {
+    let requestUrl = '';
+    let requestBody: Record<string, unknown> | null = null;
+    api.defaults.adapter = async (config) => {
+      requestUrl = config.url ?? '';
+      requestBody = JSON.parse(String(config.data || '{}')) as Record<string, unknown>;
+      return {
+        data: { id: 701, publicId: 'CERT-701', studentId: 201, courseId: 101, status: 'issued' },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    await approveCertificate(701, {
+      studentFullName: 'Aida Student',
+      issuerDisplayName: 'EduPro Instructor',
+      issuerTitle: 'Teacher',
+      certificateLanguage: 'ky',
+      pageOrientation: 'portrait',
+      reason: 'Approved',
+    });
+
+    expect(requestUrl).toBe('/certificates/701/approve');
+    expect(requestBody).toMatchObject({
+      studentFullName: 'Aida Student',
+      issuerDisplayName: 'EduPro Instructor',
+      issuerTitle: 'Teacher',
+      certificateLanguage: 'ky',
+      pageOrientation: 'portrait',
+      reason: 'Approved',
+    });
   });
 });

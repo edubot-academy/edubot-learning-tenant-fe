@@ -14,6 +14,7 @@ import {
   getCourseCertificateSettings,
   issueCourseCertificate,
   listCourseCertificates,
+  listCourseGroups,
   listCourseStudents,
   listTenantCourses,
   previewCourseCertificate,
@@ -52,6 +53,8 @@ type CertificateDecision = {
   certificate: CourseCertificate;
   action: 'approve' | 'reject' | 'revoke';
 };
+
+const ROSTER_PAGE_LIMIT = 100;
 
 function getPreviewRootNode(doc?: Document | null) {
   if (!doc?.body) return null;
@@ -142,6 +145,16 @@ function fitExactPreviewFrame(iframe: HTMLIFrameElement | null) {
   };
 }
 
+async function listAllCourseStudents(courseId: number) {
+  const firstPage = await listCourseStudents(courseId, { page: 1, limit: ROSTER_PAGE_LIMIT });
+  const students = [...firstPage.students];
+  for (let page = 2; page <= firstPage.totalPages; page += 1) {
+    const nextPage = await listCourseStudents(courseId, { page, limit: ROSTER_PAGE_LIMIT });
+    students.push(...nextPage.students);
+  }
+  return students;
+}
+
 export function CertificatesPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -150,6 +163,7 @@ export function CertificatesPage() {
   const activeTenantId = activeTenant?.id;
   const canManageCertificateAdmin = canManageTenantCertificates(user, activeTenant);
   const canApproveAssignedCertificateRequests = canApproveAssignedCertificates(user, activeTenant);
+  const canApproveAssignedOnly = !canManageCertificateAdmin && canApproveAssignedCertificateRequests;
   const canManageCourseRules = canManageCertificateAdmin;
   const requestedCourseId = Number(searchParams.get('courseId')) || undefined;
   const requestedTab = searchParams.get('tab') as CertificateTab | null;
@@ -159,7 +173,7 @@ export function CertificatesPage() {
   const [courseSettings, setCourseSettings] = useState<CourseCertificateSettings | null>(null);
   const [certificates, setCertificates] = useState<CourseCertificate[]>([]);
   const [certificateQuery, setCertificateQuery] = useState('');
-  const [certificateStatus, setCertificateStatus] = useState('all');
+  const [certificateStatus, setCertificateStatus] = useState(canApproveAssignedOnly ? 'pending_approval' : 'all');
   const [studentSearch, setStudentSearch] = useState('');
   const [courseStudents, setCourseStudents] = useState<GroupStudent[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<number | undefined>();
@@ -234,12 +248,12 @@ export function CertificatesPage() {
     if (value === 'instructor') return t('members.roleInstructor');
     return t('certificates.none');
   };
-  const certificateStatusLabel = (value?: string | null) => {
+  const certificateStatusLabel = useCallback((value?: string | null) => {
     return enumLabel(value, {
       ...commonStatusLabelKeys,
       all: 'attendance.allStatuses',
     }, t);
-  };
+  }, [t]);
   const eligibilityLabel = (student?: GroupStudent | null) => (
     isStudentEligibleForCertificate(student) ? t('certificates.eligible') : t('certificates.notEligible')
   );
@@ -290,13 +304,14 @@ export function CertificatesPage() {
   }, [canManageCertificateAdmin, certificateTab]);
 
   useEffect(() => {
+    if (!courseId && requestedCourseId && (!courses.length || courses.some((course) => course.id === requestedCourseId))) return;
     const next = new URLSearchParams(searchParamsString);
     if (courseId) next.set('courseId', String(courseId)); else next.delete('courseId');
     next.set('tab', certificateTab);
     if (next.toString() !== searchParamsString) {
       setSearchParams(next, { replace: true });
     }
-  }, [certificateTab, courseId, searchParamsString, setSearchParams]);
+  }, [certificateTab, courseId, courses, courses.length, requestedCourseId, searchParamsString, setSearchParams]);
 
   useEffect(() => {
     setBranding(null);
@@ -307,11 +322,26 @@ export function CertificatesPage() {
     if (!activeTenantId) return;
     let cancelled = false;
     setLoading(true);
+    const currentUserId = user?.id;
     Promise.all([getCertificateBranding(activeTenantId), listTenantCourses(activeTenantId)])
-      .then(([nextBranding, nextCourses]) => {
+      .then(async ([nextBranding, nextCourses]) => {
+        if (cancelled) return;
+        const scopedCourses = canApproveAssignedOnly
+          ? (await Promise.all(nextCourses.map(async (course) => {
+              if (!currentUserId) return null;
+              if (course.instructor?.id === currentUserId) return course;
+              try {
+                const groups = await listCourseGroups(course.id);
+                const hasAssignedGroup = groups.some((group) => group.instructorId === currentUserId);
+                return hasAssignedGroup ? course : null;
+              } catch {
+                return null;
+              }
+            }))).filter((course): course is Course => Boolean(course))
+          : nextCourses;
         if (cancelled) return;
         setBranding(nextBranding);
-        setCourses(nextCourses);
+        setCourses(scopedCourses);
       })
       .catch(() => {
         if (!cancelled) toast.error(t('certificates.brandingLoadFailed'));
@@ -322,7 +352,7 @@ export function CertificatesPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, t]);
+  }, [activeTenantId, canApproveAssignedOnly, t, user?.id]);
 
   useEffect(() => {
     setCourseId((current) => {
@@ -337,7 +367,7 @@ export function CertificatesPage() {
     setCertificates([]);
     setCourseStudents([]);
     setCertificateQuery('');
-    setCertificateStatus('all');
+    setCertificateStatus(canApproveAssignedOnly ? 'pending_approval' : 'all');
     setSelectedStudentId(undefined);
     if (!courseId) return;
     let cancelled = false;
@@ -358,24 +388,23 @@ export function CertificatesPage() {
     return () => {
       cancelled = true;
     };
-  }, [courseId, t]);
+  }, [canApproveAssignedOnly, courseId, t]);
 
   useEffect(() => {
-    if (!courseId || certificateTab !== 'registry') return;
+    if (!courseId || certificateTab !== 'registry' || canApproveAssignedOnly) return;
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       setStudentLoading(true);
-      listCourseStudents(courseId, {
-        limit: 100,
-        q: studentSearch.trim() || undefined,
-        progressGte: studentProgressFilter === 'eligible' ? 100 : undefined,
-        progressLte: studentProgressFilter === 'blocked' ? 99 : undefined,
-      })
+      listAllCourseStudents(courseId)
         .then((result) => {
-          if (!cancelled) setCourseStudents(result.students);
+          if (!cancelled) setCourseStudents(result);
         })
-        .catch(() => {
-          if (!cancelled) toast.error(t('certificates.rosterLoadFailed'));
+        .catch((error) => {
+          if (!cancelled) {
+            const status = (error as { response?: { status?: number } })?.response?.status;
+            setCourseStudents([]);
+            if (status !== 403) toast.error(t('certificates.rosterLoadFailed'));
+          }
         })
         .finally(() => {
           if (!cancelled) setStudentLoading(false);
@@ -385,7 +414,7 @@ export function CertificatesPage() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [certificateTab, courseId, studentProgressFilter, studentSearch, t]);
+  }, [canApproveAssignedOnly, certificateTab, courseId, t]);
 
   const preview = useMemo(() => ({
     brandName: branding?.primaryBrandName || activeTenant?.name || t('settings.tenantNamePlaceholder'),
@@ -401,7 +430,7 @@ export function CertificatesPage() {
 
   const certificateStatuses = useMemo(() => {
     const statuses = Array.from(new Set(certificates.map((certificate) => certificate.status).filter(Boolean)));
-    return ['all', ...statuses];
+    return Array.from(new Set(['all', 'pending_approval', 'issued', 'rejected', 'revoked', ...statuses]));
   }, [certificates]);
 
   const certificateCounts = useMemo(() => (
@@ -415,19 +444,25 @@ export function CertificatesPage() {
   const issueStudentOptions = useMemo(() => {
     return filterIssueStudents(courseStudents, issueStudentQuery, issueStudentFilter);
   }, [courseStudents, issueStudentFilter, issueStudentQuery]);
+  const filteredCourseStudents = useMemo(() => {
+    return filterIssueStudents(courseStudents, studentSearch, studentProgressFilter);
+  }, [courseStudents, studentProgressFilter, studentSearch]);
   const visibleCourseStudents = useMemo(
-    () => courseStudents.slice(0, visibleStudentLimit),
-    [courseStudents, visibleStudentLimit],
+    () => filteredCourseStudents.slice(0, visibleStudentLimit),
+    [filteredCourseStudents, visibleStudentLimit],
   );
   const selectedCertificateCourse = useMemo(
     () => courses.find((course) => course.id === courseId),
     [courseId, courses],
   );
   const selectedCourseIsDelivery = selectedCertificateCourse?.courseType === 'offline' || selectedCertificateCourse?.courseType === 'online_live';
-  const canIssueCertificates = canManageCertificateAdmin;
+  const certificatesEnabledForCourse = courseSettings?.enabled ?? true;
+  const canIssueCertificates = canManageCertificateAdmin && certificatesEnabledForCourse;
   const canRevokeCertificates = canManageCertificateAdmin;
   const canRegenerateCertificates = canManageCertificateAdmin;
-  const canApproveCertificates = canManageCertificateAdmin || (canApproveAssignedCertificateRequests && courseSettings?.approvalMode === 'instructor');
+  const canApproveCertificates = certificatesEnabledForCourse && (
+    canManageCertificateAdmin || (canApproveAssignedCertificateRequests && courseSettings?.approvalMode === 'instructor')
+  );
   const rosterCounts = useMemo(() => {
     const eligible = courseStudents.filter((student) => isStudentEligibleForCertificate(student)).length;
     return {
@@ -467,6 +502,17 @@ export function CertificatesPage() {
   const filteredCertificates = useMemo(() => {
     return filterCertificates(certificates, certificateQuery, certificateStatus);
   }, [certificateQuery, certificateStatus, certificates]);
+  const certificateStatusFilterItems = useMemo(() => {
+    const keys = canApproveAssignedOnly
+      ? (['pending_approval', 'issued', 'rejected'] as const)
+      : (['total', 'issued', 'pending_approval', 'rejected', 'revoked'] as const);
+    return keys.map((key) => ({
+      key,
+      label: certificateStatusLabel(key),
+      count: certificateCounts[key] ?? 0,
+      active: certificateStatus === key || (key === 'total' && certificateStatus === 'all'),
+    }));
+  }, [canApproveAssignedOnly, certificateCounts, certificateStatus, certificateStatusLabel]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -627,13 +673,8 @@ export function CertificatesPage() {
 
   const reloadCertificateRoster = async (nextCourseId = courseId) => {
     if (!nextCourseId) return;
-    const result = await listCourseStudents(nextCourseId, {
-      limit: 100,
-      q: studentSearch.trim() || undefined,
-      progressGte: studentProgressFilter === 'eligible' ? 100 : undefined,
-      progressLte: studentProgressFilter === 'blocked' ? 99 : undefined,
-    });
-    setCourseStudents(result.students);
+    const students = await listAllCourseStudents(nextCourseId);
+    setCourseStudents(students);
   };
 
   const downloadIssuedCertificate = async (downloadUrl?: string | null, publicId?: string | null) => {
@@ -860,17 +901,19 @@ export function CertificatesPage() {
   return (
     <>
       <PageHeader
-        title={t('navigation.certificates')}
+        title={canApproveAssignedOnly ? t('certificates.approvalsTitle') : t('navigation.certificates')}
         eyebrow={activeTenant?.name}
         actions={certificateTab === 'branding' && canManageCertificateAdmin ? <button type="submit" form="certificate-branding-form" disabled={saving}>{saving ? t('courses.saving') : t('settings.saveBranding')}</button> : null}
       />
-      <WorkspaceTabs
-        tabs={visibleCertificateTabs}
-        activeTab={certificateTab}
-        onChange={setCertificateTab}
-        ariaLabel={t('certificates.workspace')}
-        className="certificate-workspace-tabs"
-      />
+      {!canApproveAssignedOnly ? (
+        <WorkspaceTabs
+          tabs={visibleCertificateTabs}
+          activeTab={certificateTab}
+          onChange={setCertificateTab}
+          ariaLabel={t('certificates.workspace')}
+          className="certificate-workspace-tabs"
+        />
+      ) : null}
       {certificateTab === 'branding' ? (
       <div className="workspace-grid certificate-workspace">
         <form id="certificate-branding-form" className="settings-grid certificate-settings-grid" onSubmit={onSubmit}>
@@ -1039,18 +1082,29 @@ export function CertificatesPage() {
       ) : null}
 
       {certificateTab !== 'branding' ? (
-      <section className="settings-panel full certificate-course-panel workflow-context-panel">
+      <section className={`settings-panel full certificate-course-panel workflow-context-panel ${canApproveAssignedOnly ? 'certificate-approval-inbox' : ''}`}>
         <div className="section-heading-row">
           <div>
-            <h2>{certificateTab === 'rules' ? t('certificates.courseCertificateRules') : t('certificates.registry')}</h2>
-            <span>{visibleCertificateTabs.find((tab) => tab.key === certificateTab)?.description}</span>
+            <h2>{canApproveAssignedOnly ? t('certificates.pendingApprovalQueue') : certificateTab === 'rules' ? t('certificates.courseCertificateRules') : t('certificates.registry')}</h2>
+            <span>{canApproveAssignedOnly ? t('certificates.pendingApprovalQueueDetail') : visibleCertificateTabs.find((tab) => tab.key === certificateTab)?.description}</span>
           </div>
         </div>
-        <div className="filters-row">
-          <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
-            <option value="">{t('courses.selectCourse')}</option>
-            {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
-          </select>
+        <div className="certificate-course-selector-row">
+          <label>
+            <span>{t('courses.course')}</span>
+            <select value={courseId ?? ''} onChange={(event) => setCourseId(Number(event.target.value) || undefined)}>
+              <option value="">{t('courses.selectCourse')}</option>
+              {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+            </select>
+          </label>
+          {courseSettings && !canApproveAssignedOnly ? (
+            <div className="certificate-context-pills" aria-label={t('certificates.courseCertificateWorkspace')}>
+              <span>{courseTypeLabel(selectedCertificateCourse?.courseType)}</span>
+              <span>{certificatesEnabledForCourse ? t('certificates.enableCertificates') : t('certificates.disabled')}</span>
+              <span>{selectedCourseIsDelivery ? t('certificates.manual') : issueModeLabel(courseSettings.issueMode ?? 'auto')}</span>
+              <span>{approvalModeLabel(courseSettings.approvalMode)}</span>
+            </div>
+          ) : null}
         </div>
 
         {courseLoading ? <LoadingState label={t('certificates.loadingCourseCertificates')} /> : null}
@@ -1064,66 +1118,84 @@ export function CertificatesPage() {
         {!courseLoading && courseSettings ? (
           <div className="workspace-grid certificate-course-grid single">
             {certificateTab === 'rules' ? (
-            <form className="settings-panel embedded-panel" onSubmit={saveCourseSettings}>
-              <div className="two-col">
-                <label className="checkbox-row">
-                  <input
-                    disabled={!canManageCertificateAdmin}
-                    type="checkbox"
-                    checked={courseSettings.enabled ?? true}
-                    onChange={(event) => setCourseSettings({ ...courseSettings, enabled: event.target.checked })}
-                  />
-                  {t('certificates.enableCertificates')}
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    disabled={!canManageCertificateAdmin}
-                    type="checkbox"
-                    checked={courseSettings.allowReissue ?? false}
-                    onChange={(event) => setCourseSettings({ ...courseSettings, allowReissue: event.target.checked })}
-                  />
-                  {t('certificates.allowReissue')}
-                </label>
-              </div>
-              <div className="two-col">
+            <form className="certificate-rules-form" onSubmit={saveCourseSettings}>
+              <section className="certificate-rule-card">
+                <div className="section-heading-row compact">
+                  <div>
+                    <h3>{t('certificates.issueMode')}</h3>
+                    <span>{t('certificates.rulesTabDetail')}</span>
+                  </div>
+                </div>
+                <div className="two-col">
+                  <label className="checkbox-row">
+                    <input
+                      disabled={!canManageCertificateAdmin}
+                      type="checkbox"
+                      checked={courseSettings.enabled ?? true}
+                      onChange={(event) => setCourseSettings({ ...courseSettings, enabled: event.target.checked })}
+                    />
+                    {t('certificates.enableCertificates')}
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      disabled={!canManageCertificateAdmin}
+                      type="checkbox"
+                      checked={courseSettings.allowReissue ?? false}
+                      onChange={(event) => setCourseSettings({ ...courseSettings, allowReissue: event.target.checked })}
+                    />
+                    {t('certificates.allowReissue')}
+                  </label>
+                </div>
+                <div className="two-col">
+                  <label>
+                    {t('certificates.issueMode')}
+                    <select disabled={!canManageCourseRules || selectedCourseIsDelivery} value={selectedCourseIsDelivery ? 'manual' : courseSettings.issueMode ?? 'auto'} onChange={(event) => setCourseSettings({ ...courseSettings, issueMode: event.target.value as 'manual' | 'auto' })}>
+                      {!selectedCourseIsDelivery ? <option value="auto">{t('certificates.auto')}</option> : null}
+                      <option value="manual">{t('certificates.manual')}</option>
+                    </select>
+                    {selectedCourseIsDelivery ? <span className="muted-text">{t('certificates.deliveryManualOnly')}</span> : null}
+                  </label>
+                  <label>
+                    {t('certificates.approval')}
+                    <select disabled={!canManageCourseRules} value={courseSettings.approvalMode ?? 'none'} onChange={(event) => setCourseSettings({ ...courseSettings, approvalMode: event.target.value as 'none' | 'instructor' | 'admin' })}>
+                      <option value="none">{t('certificates.none')}</option>
+                      <option value="instructor">{t('members.roleInstructor')}</option>
+                      <option value="admin">{t('certificates.ownerCompanyAdmin')}</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section className="certificate-rule-card">
+                <div className="section-heading-row compact">
+                  <div>
+                    <h3>{t('certificates.logoStyle')}</h3>
+                    <span>{t('certificates.displayValuesDetail')}</span>
+                  </div>
+                </div>
                 <label>
-                  {t('certificates.issueMode')}
-                  <select disabled={!canManageCourseRules || selectedCourseIsDelivery} value={selectedCourseIsDelivery ? 'manual' : courseSettings.issueMode ?? 'auto'} onChange={(event) => setCourseSettings({ ...courseSettings, issueMode: event.target.value as 'manual' | 'auto' })}>
-                    {!selectedCourseIsDelivery ? <option value="auto">{t('certificates.auto')}</option> : null}
-                    <option value="manual">{t('certificates.manual')}</option>
-                  </select>
-                  {selectedCourseIsDelivery ? <span className="muted-text">{t('certificates.deliveryManualOnly')}</span> : null}
+                  {t('certificates.certificateTitle')}
+                  <input disabled={!canManageCourseRules} value={courseSettings.certificateTitle ?? ''} onChange={(event) => setCourseSettings({ ...courseSettings, certificateTitle: event.target.value })} placeholder={branding.certificateTitle || t('certificates.certificateOfAchievement')} />
                 </label>
                 <label>
-                  {t('certificates.approval')}
-                  <select disabled={!canManageCourseRules} value={courseSettings.approvalMode ?? 'none'} onChange={(event) => setCourseSettings({ ...courseSettings, approvalMode: event.target.value as 'none' | 'instructor' | 'admin' })}>
-                    <option value="none">{t('certificates.none')}</option>
-                    <option value="instructor">{t('members.roleInstructor')}</option>
-                    <option value="admin">{t('certificates.ownerCompanyAdmin')}</option>
-                  </select>
+                  {t('certificates.secondaryBrand')}
+                  <input disabled={!canManageCourseRules} value={courseSettings.secondaryBrandName ?? ''} onChange={(event) => setCourseSettings({ ...courseSettings, secondaryBrandName: event.target.value })} placeholder={t('certificates.partnerSponsorName')} />
                 </label>
-              </div>
-              <label>
-                {t('certificates.certificateTitle')}
-                <input disabled={!canManageCourseRules} value={courseSettings.certificateTitle ?? ''} onChange={(event) => setCourseSettings({ ...courseSettings, certificateTitle: event.target.value })} placeholder={branding.certificateTitle || t('certificates.certificateOfAchievement')} />
-              </label>
-              <label>
-                {t('certificates.secondaryBrand')}
-                <input disabled={!canManageCourseRules} value={courseSettings.secondaryBrandName ?? ''} onChange={(event) => setCourseSettings({ ...courseSettings, secondaryBrandName: event.target.value })} placeholder={t('certificates.partnerSponsorName')} />
-              </label>
-              <label>
-                {t('certificates.signatureImage')}
-                <input disabled={!canManageCourseRules} type="file" accept="image/*" onChange={(event) => void uploadSignature(event.target.files?.[0])} />
-                {courseSettingsErrors.signature ? <span className="field-error">{courseSettingsErrors.signature}</span> : null}
-                {courseSettings.signatureAssetUrl ? <span className="muted-text">{t('certificates.signatureUploaded')}</span> : null}
-              </label>
-              <label>
-                {t('certificates.secondaryBrandLogo')}
-                <input disabled={!canManageCourseRules} type="file" accept="image/*" onChange={(event) => void uploadSecondaryLogo(event.target.files?.[0])} />
-                {courseSettingsErrors.secondaryLogo ? <span className="field-error">{courseSettingsErrors.secondaryLogo}</span> : null}
-                {courseSettings.secondaryBrandLogoUrl ? <span className="muted-text">{t('certificates.secondaryLogoUploaded')}</span> : null}
-              </label>
-              <div className="two-col">
+                <div className="two-col">
+                  <label>
+                    {t('certificates.signatureImage')}
+                    <input disabled={!canManageCourseRules} type="file" accept="image/*" onChange={(event) => void uploadSignature(event.target.files?.[0])} />
+                    {courseSettingsErrors.signature ? <span className="field-error">{courseSettingsErrors.signature}</span> : null}
+                    {courseSettings.signatureAssetUrl ? <span className="muted-text">{t('certificates.signatureUploaded')}</span> : null}
+                  </label>
+                  <label>
+                    {t('certificates.secondaryBrandLogo')}
+                    <input disabled={!canManageCourseRules} type="file" accept="image/*" onChange={(event) => void uploadSecondaryLogo(event.target.files?.[0])} />
+                    {courseSettingsErrors.secondaryLogo ? <span className="field-error">{courseSettingsErrors.secondaryLogo}</span> : null}
+                    {courseSettings.secondaryBrandLogoUrl ? <span className="muted-text">{t('certificates.secondaryLogoUploaded')}</span> : null}
+                  </label>
+                </div>
+                <div className="two-col">
                 <label>
                   {t('certificates.certificateLanguage')}
                   <select disabled={!canManageCourseRules} value={courseSettings.certificateLanguage ?? ''} onChange={(event) => setCourseSettings({ ...courseSettings, certificateLanguage: (event.target.value || null) as CourseCertificateSettings['certificateLanguage'] })}>
@@ -1141,8 +1213,8 @@ export function CertificatesPage() {
                     <option value="portrait">{t('certificates.portrait')}</option>
                   </select>
                 </label>
-              </div>
-              <div className="two-col">
+                </div>
+                <div className="two-col">
                 <label>
                   {t('settings.primaryColor')}
                   <span className="color-input-row">
@@ -1179,37 +1251,46 @@ export function CertificatesPage() {
                   </span>
                   {courseSettingsErrors.accentColor ? <span className="field-error">{courseSettingsErrors.accentColor}</span> : null}
                 </label>
-              </div>
-              <div className="two-col">
-                <label className="checkbox-row">
-                  <input
-                    disabled={!canManageCourseRules}
-                    type="checkbox"
-                    checked={courseSettings.eligibilityAttendanceRequired ?? selectedCourseIsDelivery}
-                    onChange={(event) => setCourseSettings({ ...courseSettings, eligibilityAttendanceRequired: event.target.checked })}
-                  />
-                  {t('certificates.requireAttendance')}
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    disabled={!canManageCourseRules}
-                    type="checkbox"
-                    checked={courseSettings.eligibilityHomeworkRequired ?? false}
-                    onChange={(event) => setCourseSettings({ ...courseSettings, eligibilityHomeworkRequired: event.target.checked })}
-                  />
-                  {t('certificates.requireHomework')}
-                </label>
-                <label className="checkbox-row">
-                  <input
-                    disabled={!canManageCourseRules}
-                    type="checkbox"
-                    checked={courseSettings.eligibilityActivitiesRequired ?? false}
-                    onChange={(event) => setCourseSettings({ ...courseSettings, eligibilityActivitiesRequired: event.target.checked })}
-                  />
-                  {t('certificates.requireActivities')}
-                </label>
-              </div>
-              <div className="three-col">
+                </div>
+              </section>
+
+              <section className="certificate-rule-card">
+                <div className="section-heading-row compact">
+                  <div>
+                    <h3>{t('certificates.studentEligibility')}</h3>
+                    <span>{t('certificates.studentEligibilityDetail')}</span>
+                  </div>
+                </div>
+                <div className="three-col">
+                  <label className="checkbox-row">
+                    <input
+                      disabled={!canManageCourseRules}
+                      type="checkbox"
+                      checked={courseSettings.eligibilityAttendanceRequired ?? selectedCourseIsDelivery}
+                      onChange={(event) => setCourseSettings({ ...courseSettings, eligibilityAttendanceRequired: event.target.checked })}
+                    />
+                    {t('certificates.requireAttendance')}
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      disabled={!canManageCourseRules}
+                      type="checkbox"
+                      checked={courseSettings.eligibilityHomeworkRequired ?? false}
+                      onChange={(event) => setCourseSettings({ ...courseSettings, eligibilityHomeworkRequired: event.target.checked })}
+                    />
+                    {t('certificates.requireHomework')}
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      disabled={!canManageCourseRules}
+                      type="checkbox"
+                      checked={courseSettings.eligibilityActivitiesRequired ?? false}
+                      onChange={(event) => setCourseSettings({ ...courseSettings, eligibilityActivitiesRequired: event.target.checked })}
+                    />
+                    {t('certificates.requireActivities')}
+                  </label>
+                </div>
+                <div className="three-col">
                 <label>
                   {t('certificates.attendancePercent')}
                   <input
@@ -1261,62 +1342,99 @@ export function CertificatesPage() {
                   />
                   {courseSettingsErrors.activities ? <span className="field-error">{courseSettingsErrors.activities}</span> : null}
                 </label>
-              </div>
+                </div>
+              </section>
               {canManageCourseRules ? <button type="submit" disabled={saving}>{saving ? t('courses.saving') : t('certificates.saveCourseSettings')}</button> : null}
             </form>
             ) : null}
 
             {certificateTab === 'registry' ? (
-            <div className="settings-panel embedded-panel workflow-context-panel compact">
-              <div className="section-heading-row compact">
-                <div>
-                  <h2>{t('certificates.courseCertificateWorkspace')}</h2>
-                  <span>{selectedCertificateCourse?.title ?? t('courses.selectCourse')}</span>
+            <div className={`settings-panel embedded-panel workflow-context-panel compact ${canApproveAssignedOnly ? 'certificate-approval-panel' : ''}`}>
+              {canApproveAssignedOnly ? (
+                <div className="certificate-instructor-context">
+                  <div>
+                    <span>{t('courses.course')}</span>
+                    <strong>{selectedCertificateCourse?.title ?? t('courses.selectCourse')}</strong>
+                  </div>
+                  <div className="certificate-context-pills" aria-label={t('certificates.courseCertificateWorkspace')}>
+                    <span>{courseTypeLabel(selectedCertificateCourse?.courseType)}</span>
+                    <span>{selectedCourseIsDelivery ? t('certificates.manual') : issueModeLabel(courseSettings.issueMode ?? 'auto')}</span>
+                    <span>{approvalModeLabel(courseSettings.approvalMode)}</span>
+                    <span>{courseSettings.allowReissue ? t('certificates.reissueAllowedShort') : t('certificates.reissueLockedShort')}</span>
+                  </div>
                 </div>
-              </div>
-              <div className="definition-grid">
-                <span>{t('courses.type')}</span><strong>{courseTypeLabel(selectedCertificateCourse?.courseType)}</strong>
-                <span>{t('certificates.issueMode')}</span><strong>{selectedCourseIsDelivery ? t('certificates.manual') : issueModeLabel(courseSettings.issueMode ?? 'auto')}</strong>
-                <span>{t('certificates.approval')}</span><strong>{approvalModeLabel(courseSettings.approvalMode)}</strong>
-                <span>{t('certificates.reissue')}</span><strong>{courseSettings.allowReissue ? t('certificates.allowed') : t('certificates.locked')}</strong>
-              </div>
-              <CountFilterRow
-                className="certificate-summary-row"
-                ariaLabel={t('certificates.rosterFilters')}
-                items={[
-                  { key: 'all', label: t('courses.studentsLower'), count: rosterCounts.total, active: studentProgressFilter === 'all' },
-                  { key: 'eligible', label: t('certificates.eligible'), count: rosterCounts.eligible, active: studentProgressFilter === 'eligible' },
-                  { key: 'blocked', label: t('certificates.notEligible'), count: rosterCounts.blocked, active: studentProgressFilter === 'blocked' },
-                  { key: 'issued', label: t('certificates.statusIssued'), count: rosterCounts.issued, active: false },
-                  { key: 'pending', label: t('overview.pending'), count: rosterCounts.pending, active: false },
-                ]}
-                onSelect={(key) => {
-                  if (key === 'eligible' || key === 'blocked' || key === 'all') {
-                    setStudentProgressFilter(key);
-                  }
-                }}
-              />
-              <div className="three-col certificate-rule-summary">
-                <div className="metric-card">
-                  <span>{t('navigation.attendance')}</span>
-                  <strong>{courseSettings.eligibilityAttendanceRequired ? `${courseSettings.eligibilityAttendancePercent ?? 80}%` : t('certificates.optional')}</strong>
+              ) : (
+                <>
+                  <div className="certificate-admin-command-bar">
+                    <div>
+                      <h2>{t('certificates.courseCertificateWorkspace')}</h2>
+                      <span>{selectedCertificateCourse?.title ?? t('courses.selectCourse')}</span>
+                      <div className="certificate-context-pills" aria-label={t('certificates.courseCertificateWorkspace')}>
+                        <span>{courseTypeLabel(selectedCertificateCourse?.courseType)}</span>
+                        <span>{selectedCourseIsDelivery ? t('certificates.manual') : issueModeLabel(courseSettings.issueMode ?? 'auto')}</span>
+                        <span>{approvalModeLabel(courseSettings.approvalMode)}</span>
+                        <span>{courseSettings.allowReissue ? t('certificates.reissueAllowedShort') : t('certificates.reissueLockedShort')}</span>
+                      </div>
+                    </div>
+                    <div className="certificate-admin-command-actions">
+                      {canIssueCertificates ? (
+                        <button type="button" className="primary-button" disabled={!courseId || issuing} onClick={openIssueModal}>
+                          {t('certificates.issueCertificate')}
+                        </button>
+                      ) : null}
+                      {canRegenerateCertificates ? (
+                        <button type="button" className="secondary-button" disabled={regenerating || !issuedCertificateCount} onClick={() => requestRegenerateIssuedCertificates()}>
+                          {regenerating ? t('certificates.regenerating') : t('certificates.regenerateIssuedPdfs')}
+                        </button>
+                      ) : null}
+                      <button type="button" className="secondary-button" onClick={() => setRegistryPreviewOpen((current) => !current)}>
+                        {registryPreviewOpen ? t('certificates.hidePreview') : t('certificates.previewCertificate')}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+              {!certificatesEnabledForCourse ? (
+                <div className={`certificate-disabled-banner ${canApproveAssignedOnly ? 'certificate-disabled-note' : ''}`}>
+                  <p>{t('certificates.disabledCourseNote')}</p>
+                  {canManageCertificateAdmin ? <button type="button" className="secondary-button" onClick={() => setCertificateTab('rules')}>{t('certificates.courseRules')}</button> : null}
                 </div>
-                <div className="metric-card">
-                  <span>{t('navigation.homework')}</span>
-                  <strong>{courseSettings.eligibilityHomeworkRequired ? `${courseSettings.eligibilityHomeworkPercent ?? 100}%` : t('certificates.optional')}</strong>
-                </div>
-                <div className="metric-card">
-                  <span>{t('certificates.activities')}</span>
-                  <strong>{courseSettings.eligibilityActivitiesRequired ? `${courseSettings.eligibilityActivitiesPercent ?? 100}%` : t('certificates.optional')}</strong>
-                </div>
-              </div>
-              <div className="certificate-registry-tools">
-                <button type="button" className="secondary-button" onClick={() => setRegistryPreviewOpen((current) => !current)}>
-                  {registryPreviewOpen ? t('certificates.hidePreview') : t('certificates.previewCertificate')}
-                </button>
-                <span>{t('certificates.registryPreviewNote')}</span>
-              </div>
-              {registryPreviewOpen ? (
+              ) : null}
+              {!canApproveAssignedOnly ? (
+                <>
+                  <CountFilterRow
+                    className="certificate-summary-row"
+                    ariaLabel={t('certificates.rosterFilters')}
+                    items={[
+                      { key: 'all', label: t('courses.studentsLower'), count: rosterCounts.total, active: studentProgressFilter === 'all' },
+                      { key: 'eligible', label: t('certificates.eligible'), count: rosterCounts.eligible, active: studentProgressFilter === 'eligible' },
+                      { key: 'blocked', label: t('certificates.notEligible'), count: rosterCounts.blocked, active: studentProgressFilter === 'blocked' },
+                      { key: 'issued', label: t('certificates.statusIssued'), count: rosterCounts.issued, active: false },
+                      { key: 'pending', label: t('overview.pending'), count: rosterCounts.pending, active: false },
+                    ]}
+                    onSelect={(key) => {
+                      if (key === 'eligible' || key === 'blocked' || key === 'all') {
+                        setStudentProgressFilter(key);
+                      }
+                    }}
+                  />
+                  <div className="three-col certificate-rule-summary">
+                    <div className="metric-card">
+                      <span>{t('navigation.attendance')}</span>
+                      <strong>{courseSettings.eligibilityAttendanceRequired ? `${courseSettings.eligibilityAttendancePercent ?? 80}%` : t('certificates.optional')}</strong>
+                    </div>
+                    <div className="metric-card">
+                      <span>{t('navigation.homework')}</span>
+                      <strong>{courseSettings.eligibilityHomeworkRequired ? `${courseSettings.eligibilityHomeworkPercent ?? 100}%` : t('certificates.optional')}</strong>
+                    </div>
+                    <div className="metric-card">
+                      <span>{t('certificates.activities')}</span>
+                      <strong>{courseSettings.eligibilityActivitiesRequired ? `${courseSettings.eligibilityActivitiesPercent ?? 100}%` : t('certificates.optional')}</strong>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+              {!canApproveAssignedOnly && registryPreviewOpen ? (
               <aside className="certificate-preview-panel embedded-panel">
                 <div className="section-heading-row compact">
                   <div>
@@ -1366,8 +1484,9 @@ export function CertificatesPage() {
                 {exactPreviewError ? <span className="field-error">{exactPreviewError}</span> : null}
               </aside>
               ) : null}
-              <div className="certificate-registry-grid">
-              <section className="certificate-registry-section">
+              <div className={`certificate-registry-grid ${canApproveAssignedOnly ? 'approval-only' : 'admin-flow'}`}>
+              {!canApproveAssignedOnly ? (
+              <section className="certificate-registry-section certificate-roster-section">
               <div className="section-heading-row compact">
                 <div>
                   <h2>{t('certificates.studentEligibility')}</h2>
@@ -1390,7 +1509,7 @@ export function CertificatesPage() {
               {!studentLoading ? (
                 <div className="stack-list">
                   {visibleCourseStudents.map((student) => (
-                    <article key={student.id} className="stack-list-item">
+                    <article key={student.id} className="stack-list-item certificate-student-row">
                       <div>
                         <strong>{student.fullName || student.email || studentFallback(student.id)}</strong>
                         <span>
@@ -1420,13 +1539,13 @@ export function CertificatesPage() {
                       </div>
                     </article>
                   ))}
-                  {!courseStudents.length ? (
+                  {!filteredCourseStudents.length ? (
                     <EmptyState
                       title={t('certificates.noEnrolledStudentsTitle')}
                       detail={t('certificates.noEnrolledStudentsDetail')}
                     />
                   ) : null}
-                  {courseStudents.length > visibleStudentLimit ? (
+                  {filteredCourseStudents.length > visibleStudentLimit ? (
                     <button type="button" className="secondary-button" onClick={() => setVisibleStudentLimit((current) => current + 12)}>
                       {t('certificates.showMoreStudents')}
                     </button>
@@ -1434,10 +1553,18 @@ export function CertificatesPage() {
                 </div>
               ) : null}
               </section>
+              ) : null}
 
-              <section className="certificate-registry-section">
-              <h2>{t('navigation.certificates')}</h2>
-              <div className="page-actions">
+              <section className="certificate-registry-section certificate-ledger-section">
+              {!canApproveAssignedOnly ? (
+                <div className="section-heading-row compact">
+                  <div>
+                    <h2>{t('navigation.certificates')}</h2>
+                    <span>{t('certificates.registryTabDetail')}</span>
+                  </div>
+                </div>
+              ) : null}
+              {canApproveAssignedOnly ? <div className="page-actions">
                 {canIssueCertificates || canRegenerateCertificates ? (
                   <>
                     {canIssueCertificates ? (
@@ -1452,18 +1579,14 @@ export function CertificatesPage() {
                     ) : null}
                   </>
                 ) : null}
-              </div>
+              </div> : null}
               <CountFilterRow
-                className="certificate-summary-row"
+                className={`certificate-summary-row ${canApproveAssignedOnly ? 'compact-status-row' : 'certificate-status-filters'}`}
                 ariaLabel={t('certificates.statusFilters')}
-                items={(['total', 'issued', 'pending_approval', 'rejected', 'revoked'] as const).map((key) => ({
-                  key,
-                  label: certificateStatusLabel(key),
-                  count: certificateCounts[key] ?? 0,
-                  active: certificateStatus === key || (key === 'total' && certificateStatus === 'all'),
-                }))}
+                items={certificateStatusFilterItems}
                 onSelect={(key) => setCertificateStatus(key === 'total' ? 'all' : key)}
               />
+              {certificates.length ? (
               <div className="filters-row certificate-filters">
                 <input
                   value={certificateQuery}
@@ -1476,6 +1599,7 @@ export function CertificatesPage() {
                   ))}
                 </select>
               </div>
+              ) : null}
               <div className="stack-list">
                 {filteredCertificates.slice(0, visibleCertificateLimit).map((certificate) => (
                   <article key={certificate.id} className="stack-list-item certificate-registry-item">
@@ -1518,21 +1642,29 @@ export function CertificatesPage() {
                   </article>
                 ))}
                 {!certificates.length ? (
-                  <EmptyState
-                    title={t('certificates.emptyCertificatesTitle')}
-                    detail={t('certificates.emptyCertificatesDetail')}
-                    action={canManageCertificateAdmin ? (
-                      <button type="button" className="secondary-button" onClick={() => setCertificateTab('rules')}>
-                        {courseSettings?.enabled ? t('certificates.courseRules') : t('certificates.enableCertificates')}
-                      </button>
-                    ) : null}
-                  />
+                  <div className="certificate-quiet-empty">
+                    <EmptyState
+                      title={canApproveAssignedOnly ? t('certificates.emptyApprovalsTitle') : t('certificates.emptyCertificatesTitle')}
+                      detail={canApproveAssignedOnly ? t('certificates.emptyApprovalsDetail') : t('certificates.emptyCertificatesDetail')}
+                      action={canManageCertificateAdmin ? (
+                        courseSettings?.enabled ? (
+                          <button type="button" className="secondary-button" disabled={!courseId || issuing} onClick={openIssueModal}>
+                            {t('certificates.issueCertificate')}
+                          </button>
+                        ) : (
+                          <button type="button" className="secondary-button" onClick={() => setCertificateTab('rules')}>
+                            {t('certificates.enableCertificates')}
+                          </button>
+                        )
+                      ) : null}
+                    />
+                  </div>
                 ) : null}
                 {certificates.length > 0 && !filteredCertificates.length ? (
                   <EmptyState
                     title={t('certificates.noMatchesTitle')}
                     detail={t('certificates.noMatchesDetail')}
-                    action={<button type="button" className="secondary-button" onClick={() => { setCertificateQuery(''); setCertificateStatus('all'); }}>{t('courses.clearFilters')}</button>}
+                    action={<button type="button" className="secondary-button" onClick={() => { setCertificateQuery(''); setCertificateStatus(canApproveAssignedOnly ? 'pending_approval' : 'all'); }}>{t('courses.clearFilters')}</button>}
                   />
                 ) : null}
                 {filteredCertificates.length > visibleCertificateLimit ? (

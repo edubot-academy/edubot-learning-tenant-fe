@@ -920,6 +920,7 @@ export async function issueCourseCertificate(
 }
 
 export async function approveCertificate(certificateId: number, payload: {
+  studentFullName?: string;
   issuerDisplayName?: string;
   issuerTitle?: string;
   certificateLanguage?: 'en' | 'ru' | 'ky';

@@ -1112,7 +1112,7 @@ export async function createStudentSupportRequest(payload: {
 export async function submitStudentHomework(
   sessionId: number,
   homeworkId: number,
-  payload: { answerText?: string; attachmentUrl?: string },
+  payload: { answerText?: string; linkUrl?: string; attachmentUrl?: string; attachmentKey?: string },
 ) {
   const { data } = await api.post(`/student/sessions/${sessionId}/homework/${homeworkId}/submissions`, payload);
   return data;

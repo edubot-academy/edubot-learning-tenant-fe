@@ -78,6 +78,12 @@ describe('StudentDashboardPage loading', () => {
     vi.mocked(api.getStudentResourcesPage).mockResolvedValue({ items: [], page: 1, totalPages: 1 });
     vi.mocked(api.getStudentSessionDetail).mockResolvedValue(null);
     vi.mocked(api.getStudentSupportOptions).mockResolvedValue(null);
+    vi.mocked(api.createStudentSupportRequest).mockResolvedValue({});
+    vi.mocked(api.listStudentCourses).mockImplementation(() => {
+      const load = deferred<Array<{ id: number; title: string }>>();
+      courseLoads.push(load);
+      return load.promise;
+    });
     vi.mocked(api.listStudentHomework).mockResolvedValue([]);
     vi.mocked(api.listStudentRecordings).mockResolvedValue([]);
     vi.mocked(api.listStudentReminders).mockResolvedValue([]);
@@ -154,7 +160,7 @@ describe('StudentDashboardPage loading', () => {
 
     render(<MemoryRouter><StudentDashboardPage view="todo" /></MemoryRouter>);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start task' }));
     const submit = screen.getByRole('button', { name: 'Submit' });
     expect(submit).toBeDisabled();
 
@@ -181,7 +187,7 @@ describe('StudentDashboardPage loading', () => {
     render(<MemoryRouter><StudentDashboardPage view="todo" /></MemoryRouter>);
 
     fireEvent.click(await screen.findByRole('button', { name: /Submitted/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start task' }));
 
     expect(screen.getByText('Submission history')).toBeInTheDocument();
     expect(screen.getAllByText('Latest answer').length).toBeGreaterThan(0);
@@ -203,7 +209,7 @@ describe('StudentDashboardPage loading', () => {
 
     render(<MemoryRouter><StudentDashboardPage view="todo" /></MemoryRouter>);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start task' }));
 
     expect(screen.queryByLabelText('Answer')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Attachment link')).not.toBeInTheDocument();
@@ -233,7 +239,7 @@ describe('StudentDashboardPage loading', () => {
 
     render(<MemoryRouter><StudentDashboardPage view="todo" /></MemoryRouter>);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start task' }));
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['pdf'], 'evidence.pdf', { type: 'application/pdf' });
     await act(async () => {
@@ -255,6 +261,7 @@ describe('StudentDashboardPage loading', () => {
   });
 
   it('filters materials by resource type and shows load more when more items are available', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
     vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
       items: Array.from({ length: 13 }, (_, index) => ({
       id: `resource-${index}`,
@@ -287,6 +294,106 @@ describe('StudentDashboardPage loading', () => {
     expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined });
   });
 
+  it('keeps material filters visible when the selected type has no results', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
+      items: [
+        { id: 'resource-1', title: 'Resource 1', url: 'https://example.test/resource-1', sessionId: 1, sessionTitle: 'Session 1', courseId: 101, courseTitle: 'Math' },
+      ],
+      page: 1,
+      totalPages: 1,
+      total: 1,
+    });
+    vi.mocked(api.getStudentRecordingsPage).mockResolvedValue({
+      items: [],
+      page: 1,
+      totalPages: 1,
+      total: 0,
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="materials" /></MemoryRouter>);
+
+    expect(await screen.findByText('Resource 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recordings' }));
+
+    expect(await screen.findByText('No materials match these filters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Resources' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Recordings' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Course')).toBeInTheDocument();
+  });
+
+  it('shows every enrolled course on the courses page', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue(
+      Array.from({ length: 7 }, (_, index) => ({ id: index + 1, title: `Course ${index + 1}` })),
+    );
+
+    render(<MemoryRouter><StudentDashboardPage view="courses" /></MemoryRouter>);
+
+    expect(await screen.findByText('Course 1')).toBeInTheDocument();
+    expect(screen.getByText('Course 7')).toBeInTheDocument();
+  });
+
+  it('loads course-scoped fallback data when course detail is sparse', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.getStudentCourseDetail).mockResolvedValue({
+      course: { id: 101, title: 'Math', groupName: 'Group A' },
+      progress: { progressPercent: 30 },
+    });
+    vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
+      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2026-06-01T10:00:00.000Z' },
+    ]);
+    vi.mocked(api.listStudentTasks).mockResolvedValue([
+      { id: 701, sessionId: 501, courseId: 101, kind: 'activity', title: 'Algebra quiz', status: 'assigned' },
+    ]);
+    vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
+      items: [{ id: 'm1', sessionId: 501, courseId: 101, title: 'Formula sheet', url: 'https://example.test/formula.pdf' }],
+      page: 1,
+      totalPages: 1,
+      total: 1,
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="courseDetail" courseId={101} /></MemoryRouter>);
+
+    expect(await screen.findByText('Algebra live')).toBeInTheDocument();
+    expect(screen.getByText('Algebra quiz')).toBeInTheDocument();
+    expect(screen.getByText('Formula sheet')).toBeInTheDocument();
+    expect(api.listStudentTasks).toHaveBeenCalledWith({ limit: 50, courseId: 101 });
+    expect(api.getStudentResourcesPage).toHaveBeenCalledWith({ page: 1, limit: 50, courseId: 101 });
+  });
+
+  it('keeps homework link submissions separate from uploaded files', async () => {
+    vi.mocked(api.listStudentTasks).mockResolvedValue([]);
+    vi.mocked(api.listStudentHomework).mockResolvedValue([
+      {
+        id: 22,
+        sessionId: 220,
+        kind: 'homework',
+        title: 'Research link',
+        status: 'assigned',
+        submissionRequirements: { allowText: false, allowLink: true, allowFile: false },
+      },
+    ]);
+    vi.mocked(api.submitStudentHomework).mockResolvedValue({});
+
+    render(<MemoryRouter><StudentDashboardPage view="todo" /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Start task' }));
+    fireEvent.change(screen.getByLabelText('Attachment link'), { target: { value: 'https://example.test/research' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    });
+
+    expect(api.submitStudentHomework).toHaveBeenCalledWith(220, 22, {
+      answerText: undefined,
+      linkUrl: 'https://example.test/research',
+      attachmentUrl: undefined,
+      attachmentKey: undefined,
+    });
+  });
+
   it('hides attendance and certificates when progress feature flags are disabled', async () => {
     activeTenant = {
       id: 1,
@@ -305,9 +412,93 @@ describe('StudentDashboardPage loading', () => {
 
     render(<MemoryRouter><StudentDashboardPage view="progress" /></MemoryRouter>);
 
-    expect(await screen.findByText('Biology')).toBeInTheDocument();
+    expect(await screen.findAllByText('Biology')).not.toHaveLength(0);
     expect(screen.queryByRole('heading', { name: 'Attendance' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Certificates' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Grade history' })).toBeInTheDocument();
+  });
+
+  it('shows all progress courses returned by the progress summary', async () => {
+    vi.mocked(api.getStudentProgressSummary).mockResolvedValue({
+      courses: Array.from({ length: 10 }, (_, index) => ({
+        id: index + 1,
+        title: `Progress course ${index + 1}`,
+        progressPercent: index * 10,
+      })),
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="progress" /></MemoryRouter>);
+
+    expect((await screen.findAllByText('Progress course 1')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Progress course 10')).toBeInTheDocument();
+    expect(api.getStudentProgressSummary).toHaveBeenCalledWith();
+  });
+
+  it('submits support requests with selected learning context', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
+      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2026-06-01T10:00:00.000Z' },
+    ]);
+    vi.mocked(api.createStudentSupportRequest).mockResolvedValue({
+      id: 1,
+      category: 'task',
+      priority: 'high',
+      message: 'I cannot open the quiz',
+      status: 'open',
+      createdAt: '2026-06-01T10:00:00.000Z',
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="help" /></MemoryRouter>);
+
+    expect((await screen.findAllByText('Send request')).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText('What do you need help with?'), { target: { value: 'task' } });
+    fireEvent.change(screen.getByLabelText('How urgent is it?'), { target: { value: 'high' } });
+    fireEvent.change(screen.getByLabelText('Related course'), { target: { value: '101' } });
+    fireEvent.change(screen.getByLabelText('Related session'), { target: { value: '501' } });
+    fireEvent.change(screen.getByLabelText('Describe the issue'), { target: { value: 'I cannot open the quiz' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send request' }));
+    });
+
+    expect(api.createStudentSupportRequest).toHaveBeenCalledWith({
+      category: 'task',
+      priority: 'high',
+      courseId: 101,
+      sessionId: 501,
+      message: 'I cannot open the quiz',
+    });
+  });
+
+  it('keeps today usable when the home summary endpoint fails', async () => {
+    vi.mocked(api.getStudentHome).mockRejectedValue(new Error('home failed'));
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
+      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2026-06-01T10:00:00.000Z' },
+    ]);
+    vi.mocked(api.listStudentTasks).mockResolvedValue([
+      { id: 701, sessionId: 501, courseId: 101, kind: 'activity', title: 'Algebra quiz', status: 'assigned' },
+    ]);
+
+    render(<MemoryRouter><StudentDashboardPage view="today" /></MemoryRouter>);
+
+    expect((await screen.findAllByText('Algebra quiz')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Algebra live')).toBeInTheDocument();
+    expect(screen.queryByText('Could not load student workspace')).not.toBeInTheDocument();
+  });
+
+  it('keeps the help form usable when support options and history fail', async () => {
+    vi.mocked(api.getStudentSupportOptions).mockRejectedValue(new Error('options failed'));
+    vi.mocked(api.listStudentSupportRequests).mockRejectedValue(new Error('history failed'));
+    vi.mocked(api.listStudentCourses).mockResolvedValue([]);
+
+    render(<MemoryRouter><StudentDashboardPage view="help" /></MemoryRouter>);
+
+    expect((await screen.findAllByText('Send request')).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('What do you need help with?')).toBeInTheDocument();
+    expect(screen.getByLabelText('Describe the issue')).toBeInTheDocument();
+    expect(screen.getByText('Could not load Support options. Retry or continue with the rest of the workspace.')).toBeInTheDocument();
+    expect(screen.getByText('Could not load Your requests. Retry or continue with the rest of the workspace.')).toBeInTheDocument();
+    expect(screen.queryByText('Could not load student workspace')).not.toBeInTheDocument();
   });
 });

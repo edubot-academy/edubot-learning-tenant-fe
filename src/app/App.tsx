@@ -8,6 +8,7 @@ import { useTenant } from '../features/tenant/TenantProvider';
 import { EmptyState, LoadingState } from '../components/DataState';
 import { isTenantFeatureEnabled, type TenantFeatureKey } from '../features/tenant/tenantFeatures';
 import { getStudentAccess } from '../services/shellApi';
+import type { StudentAccessState } from '../types/domain';
 import {
   canManageTenantBranding,
   canManageAssignedAttendance,
@@ -194,6 +195,22 @@ function AccessDeniedState({
   );
 }
 
+function StudentAccessBlockedState({ access }: { access: StudentAccessState | null }) {
+  const { t } = useTranslation();
+  const detail = access?.message
+    || (access?.pendingEnrollmentCount
+      ? t('errors.studentAccessPendingDetail')
+      : t('errors.studentAccessInactiveDetail'));
+
+  return (
+    <EmptyState
+      title={t('errors.studentAccessInactiveTitle')}
+      detail={detail}
+      action={<Link className="secondary-link-button" to="/settings">{t('navigation.settings')}</Link>}
+    />
+  );
+}
+
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
@@ -230,6 +247,7 @@ function StudentRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
   const [accessState, setAccessState] = useState<'loading' | 'allowed' | 'denied'>('loading');
+  const [studentAccess, setStudentAccess] = useState<StudentAccessState | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,9 +257,12 @@ function StudentRoute({ children }: { children: React.ReactNode }) {
     }
 
     setAccessState('loading');
+    setStudentAccess(null);
     getStudentAccess()
-      .then(() => {
-        if (!cancelled) setAccessState('allowed');
+      .then((access) => {
+        if (cancelled) return;
+        setStudentAccess(access);
+        setAccessState(access?.hasActiveAccess === false ? 'denied' : 'allowed');
       })
       .catch(() => {
         if (!cancelled) setAccessState('denied');
@@ -252,11 +273,12 @@ function StudentRoute({ children }: { children: React.ReactNode }) {
     };
   }, [activeTenant, user]);
 
-  if (!isTenantStudent(user, activeTenant) || accessState === 'denied') {
+  if (!isTenantStudent(user, activeTenant)) {
     return <AccessDeniedState detailKey="errors.studentOnlyDetail" to="/" actionKey="actions.goToOverview" />;
   }
+  if (accessState === 'denied') return <StudentAccessBlockedState access={studentAccess} />;
 
-  return accessState === 'allowed' ? children : <LoadingState label="Loading" />;
+  return accessState === 'allowed' ? children : <LoadingState label={i18n.t('student.loading')} />;
 }
 
 function StudentCourseDetailRoute() {

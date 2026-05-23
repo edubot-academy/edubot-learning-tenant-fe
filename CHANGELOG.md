@@ -19,6 +19,39 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.15.0 - 2026-05-24
+
+### Added
+
+- Added course-scoped student detail data so course pages can show fallback sessions, tasks, resources, recordings, and progress even when the detail endpoint is sparse.
+- Added student help request context selectors for related course and session, with support request history and clearer support form states.
+- Added student setup-link actions in group rosters, including copy, open, resend, and setup-link modal flows for newly created or enrolled students.
+- Added student notification language and timezone preferences with dirty-state tracking.
+
+### Changed
+
+- Redesigned the student dashboard, progress, materials, help, and settings experiences with denser learning summaries, clearer task states, improved empty states, and responsive styling.
+- Updated student task prioritization to use review, submission, and attempt state instead of only the top-level task status.
+- Updated student access routing to show a dedicated inactive or pending enrollment state instead of a generic access-denied screen.
+- Updated homework submission payloads so text, link URLs, attachment URLs, and uploaded attachment keys remain distinct.
+- Updated English, Kyrgyz, and Russian localization for the new student, settings, access, and group onboarding copy.
+- Package version updated to `1.15.0`.
+
+### Fixed
+
+- Fixed student progress so all returned progress courses are shown instead of limiting the list to the first eight.
+- Fixed optional student endpoint failures so home summary, support options, and support history errors do not block otherwise usable dashboard or help-page content.
+- Fixed material filters so they remain visible when the selected material type has no results.
+- Fixed student attendance summary counts so late attendance is counted as attended and only absences count as missed.
+- Fixed group roster resend controls so resend invite appears only for students with an active setup link.
+
+### Tests
+
+- Added regression coverage for student course detail fallbacks, material filters, progress list size, support request context, optional endpoint failures, homework link submissions, task state priority, and group setup-link resend visibility.
+- `npm run lint` passes.
+- `npm test` passes with 34 test files and 202 tests.
+- `npm run build` passes.
+
 ## 1.14.0 - 2026-05-23
 
 ### Added

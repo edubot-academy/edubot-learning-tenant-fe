@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiAward, FiBell, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiFileText, FiHelpCircle, FiPlayCircle } from 'react-icons/fi';
+import { FiArrowLeft, FiAward, FiBell, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiFileText, FiHelpCircle, FiPlayCircle } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
@@ -20,6 +20,7 @@ import {
   getStudentResourcesPage,
   getStudentSessionDetail,
   getStudentSupportOptions,
+  listStudentAttendance,
   listStudentCourses,
   listStudentHomework,
   listStudentReminders,
@@ -59,7 +60,7 @@ import type {
   StudentTaskSubmissionRequirements,
 } from '../../types/domain';
 import type { StudentPagedResponse } from '../../services/api';
-import { isCurrentStudentLoad, nextStudentLoadId, prioritizeStudentTasks, settledStudentValue, sortOpenStudentTasks, studentTaskDueDate } from './studentDashboardData';
+import { isCurrentStudentLoad, nextStudentLoadId, prioritizeStudentTasks, settledStudentValue, sortOpenStudentTasks, studentTaskDueDate, studentTaskState } from './studentDashboardData';
 
 type StudentMaterialListItem = {
   kind: 'resource' | 'recording';
@@ -72,6 +73,7 @@ export type StudentDashboardView = 'today' | 'todo' | 'courses' | 'courseDetail'
 type TodoFilter = 'open' | 'overdue' | 'submitted' | 'needs_revision' | 'completed';
 type MaterialFilter = 'all' | 'resources' | 'recordings';
 type CertificateStatusFilter = 'all' | 'issued' | 'pending' | 'rejected' | 'revoked';
+type StudentSectionError = 'courses' | 'sessions' | 'homework' | 'tasks' | 'materials' | 'progress' | 'certificates' | 'attendance' | 'supportOptions' | 'supportRequests' | 'notifications' | 'reminders' | 'courseDetail' | 'sessionDetail';
 
 function isActivityTask(task: StudentTaskItem | StudentHomeworkItem): task is StudentTaskItem {
   return task.kind === 'activity' || task.kind === 'quiz' || 'taskType' in task || 'activityType' in task;
@@ -158,8 +160,15 @@ function supportOptionValue(option: string | { id?: string; value?: string; labe
   return typeof option === 'string' ? option : option.id ?? option.value ?? option.label ?? '';
 }
 
-function supportOptionLabel(option: string | { id?: string; value?: string; label?: string }) {
-  return typeof option === 'string' ? readable(option) : option.label ?? readable(option.value ?? option.id);
+function supportOptionLabel(option: string | { id?: string; value?: string; label?: string }, translate?: (key: string) => string) {
+  const value = supportOptionValue(option).toLowerCase();
+  const translationKey = value ? `student.supportOption.${value}` : '';
+  if (translationKey && translate) {
+    const translated = translate(translationKey);
+    if (translated !== translationKey) return translated;
+  }
+  const label = typeof option === 'string' ? readable(option) : option.label ?? readable(option.value ?? option.id);
+  return label ? label.charAt(0).toUpperCase() + label.slice(1) : label;
 }
 
 function courseId(course: StudentCourseSummary) {
@@ -210,8 +219,29 @@ function progressLabel(value: number, labels: { completed: string; notStarted: s
   return labels.inProgress;
 }
 
+function materialTitle(item: StudentMaterialListItem, fallback: string) {
+  const { kind, session, material } = item;
+  return (kind === 'resource'
+    ? material?.title ?? session.sessionTitle ?? session.title
+    : session.sessionTitle ?? session.title ?? material?.title) ?? fallback;
+}
+
+function materialUrl(item: StudentMaterialListItem) {
+  const { kind, session, material } = item;
+  if (kind === 'recording') return typeof session.url === 'string' ? session.url : material?.url ?? null;
+  return material?.url ?? session.materials?.find((entry) => entry.url)?.url ?? null;
+}
+
+function materialTypeText(item: StudentMaterialListItem, fallback: string) {
+  const value = item.kind === 'recording' ? 'recording' : item.material?.type;
+  if (value) return readable(value).toUpperCase();
+  const url = materialUrl(item) ?? '';
+  const extension = url.split('?')[0]?.split('.').pop();
+  return extension && extension.length <= 5 ? extension.toUpperCase() : fallback;
+}
+
 function rawTaskStatus(task: StudentTaskItem | StudentHomeworkItem) {
-  return String(isActivityTask(task) ? task.status ?? '' : task.reviewState ?? task.status ?? '').toLowerCase();
+  return studentTaskState(task);
 }
 
 function taskFilterKey(task: StudentTaskItem | StudentHomeworkItem, now = Date.now()): TodoFilter {
@@ -226,6 +256,10 @@ function taskFilterKey(task: StudentTaskItem | StudentHomeworkItem, now = Date.n
 
 function settledValue<T>(result: PromiseSettledResult<T>, fallback: T) {
   return settledStudentValue(result, fallback);
+}
+
+function isRejected(result: PromiseSettledResult<unknown>) {
+  return result.status === 'rejected';
 }
 
 export function StudentDashboardPage({
@@ -253,6 +287,7 @@ export function StudentDashboardPage({
   const [supportOptions, setSupportOptions] = useState<StudentSupportOptions | null>(null);
   const [supportRequests, setSupportRequests] = useState<StudentSupportRequest[]>([]);
   const [notifications, setNotifications] = useState<StudentNotification[]>([]);
+  const [sectionErrors, setSectionErrors] = useState<Set<StudentSectionError>>(new Set());
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [notificationPage, setNotificationPage] = useState(1);
   const [notificationTotalPages, setNotificationTotalPages] = useState(1);
@@ -266,6 +301,8 @@ export function StudentDashboardPage({
   const [materialVisibleCount, setMaterialVisibleCount] = useState(12);
   const [resourcePage, setResourcePage] = useState(1);
   const [recordingPage, setRecordingPage] = useState(1);
+  const [resourceTotal, setResourceTotal] = useState(0);
+  const [recordingTotal, setRecordingTotal] = useState(0);
   const [certificatePage, setCertificatePage] = useState(1);
   const [certificateTotalPages, setCertificateTotalPages] = useState(1);
   const [hasMoreResources, setHasMoreResources] = useState(false);
@@ -274,7 +311,13 @@ export function StudentDashboardPage({
   const [loadingMoreCertificates, setLoadingMoreCertificates] = useState(false);
   const [certificateStatusFilter, setCertificateStatusFilter] = useState<CertificateStatusFilter>('all');
   const [certificateCourseFilter, setCertificateCourseFilter] = useState('all');
-  const [supportForm, setSupportForm] = useState({ category: 'general', priority: 'medium' as 'high' | 'medium' | 'low', message: '' });
+  const [supportForm, setSupportForm] = useState({
+    category: 'general',
+    priority: 'medium' as 'high' | 'medium' | 'low',
+    courseId: 'none',
+    sessionId: 'none',
+    message: '',
+  });
   const [submitting, setSubmitting] = useState(false);
   const [loadingMoreNotifications, setLoadingMoreNotifications] = useState(false);
   const studentLoadIdRef = useRef(0);
@@ -288,6 +331,8 @@ export function StudentDashboardPage({
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
   const certificatesEnabled = isTenantFeatureEnabled(activeTenant, 'certificates.enabled');
   const attendanceEnabled = isTenantFeatureEnabled(activeTenant, 'attendance.enabled');
+  const supportMessageLength = supportForm.message.trim().length;
+  const canSubmitSupportRequest = supportMessageLength > 0 && !submitting;
   const selectedMaterialCourseId = useMemo(() => {
     if (materialCourseFilter === 'all') return undefined;
     const numeric = Number(materialCourseFilter);
@@ -305,12 +350,15 @@ export function StudentDashboardPage({
     studentLoadIdRef.current = loadId;
     startStudentLoad();
     const shouldLoadHome = view === 'today';
-    const shouldLoadCourses = view === 'today' || view === 'courses' || view === 'help';
-    const shouldLoadTasks = view === 'today' || view === 'todo';
-    const shouldLoadMaterials = view === 'materials';
-    const shouldLoadResourceMaterials = shouldLoadMaterials && materialFilter !== 'recordings';
-    const shouldLoadRecordingMaterials = shouldLoadMaterials && materialFilter !== 'resources';
+    const shouldLoadSessions = view === 'today' || view === 'courseDetail' || view === 'help';
+    const shouldLoadCourses = view === 'today' || view === 'courses' || view === 'materials' || view === 'courseDetail' || view === 'help';
+    const shouldLoadHomework = homeworkEnabled && (view === 'today' || view === 'todo' || view === 'courseDetail');
+    const shouldLoadTasks = view === 'today' || view === 'todo' || view === 'courseDetail';
+    const shouldLoadMaterials = view === 'materials' || view === 'courseDetail';
+    const shouldLoadResourceMaterials = shouldLoadMaterials && (view === 'courseDetail' || materialFilter !== 'recordings');
+    const shouldLoadRecordingMaterials = shouldLoadMaterials && (view === 'courseDetail' || materialFilter !== 'resources');
     const shouldLoadProgress = view === 'progress';
+    const shouldLoadAttendance = attendanceEnabled && (view === 'today' || view === 'progress');
     const shouldLoadCertificates = view === 'progress' && certificatesEnabled;
     const shouldLoadCourseDetail = view === 'courseDetail' && typeof activeCourseId === 'number';
     const shouldLoadSessionDetail = view === 'sessionDetail' && typeof activeSessionId === 'number';
@@ -320,19 +368,19 @@ export function StudentDashboardPage({
     Promise.allSettled([
       shouldLoadHome ? getStudentHome({ limit: 8 }) : Promise.resolve(null),
       shouldLoadCourses ? listStudentCourses() : Promise.resolve([]),
-      shouldLoadHome ? listStudentUpcomingSessions({ limit: 6 }) : Promise.resolve([]),
-      Promise.resolve([]),
+      shouldLoadSessions ? listStudentUpcomingSessions({ limit: view === 'today' ? 6 : 50, courseId: view === 'courseDetail' ? activeCourseId : undefined }) : Promise.resolve([]),
+      shouldLoadHomework ? listStudentHomework({ limit: view === 'today' ? 8 : 50, courseId: view === 'courseDetail' ? activeCourseId : undefined }) : Promise.resolve([]),
       shouldLoadCertificates ? getStudentCertificatesPage({
         page: 1,
         limit: 20,
         courseId: selectedCertificateCourseId,
         status: certificateStatusFilter === 'all' ? undefined : certificateStatusFilter,
       }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
-      Promise.resolve([]),
-      shouldLoadTasks ? listStudentTasks({ limit: 50 }) : Promise.resolve([]),
-      shouldLoadResourceMaterials ? getStudentResourcesPage({ page: 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
-      shouldLoadRecordingMaterials ? getStudentRecordingsPage({ page: 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
-      shouldLoadProgress ? getStudentProgressSummary({ limit: 8 }) : Promise.resolve(null),
+      shouldLoadAttendance ? listStudentAttendance({ limit: view === 'today' ? 8 : 20 }) : Promise.resolve([]),
+      shouldLoadTasks ? listStudentTasks({ limit: 50, courseId: view === 'courseDetail' ? activeCourseId : undefined }) : Promise.resolve([]),
+      shouldLoadResourceMaterials ? getStudentResourcesPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
+      shouldLoadRecordingMaterials ? getStudentRecordingsPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
+      shouldLoadProgress ? getStudentProgressSummary() : Promise.resolve(null),
       shouldLoadCourseDetail ? getStudentCourseDetail(activeCourseId) : Promise.resolve(null),
       shouldLoadSessionDetail ? getStudentSessionDetail(activeSessionId) : Promise.resolve(null),
       shouldLoadSupport ? getStudentSupportOptions() : Promise.resolve(null),
@@ -394,6 +442,8 @@ export function StudentDashboardPage({
         setRecordings(nextRecordings);
         setResourcePage(nextResourcesPage.page ?? 1);
         setRecordingPage(nextRecordingsPage.page ?? 1);
+        setResourceTotal(nextResourcesPage.total ?? nextResources.length);
+        setRecordingTotal(nextRecordingsPage.total ?? nextRecordings.length);
         setHasMoreResources(shouldLoadResourceMaterials ? (nextResourcesPage.page ?? 1) < (nextResourcesPage.totalPages ?? 1) : false);
         setHasMoreRecordings(shouldLoadRecordingMaterials ? (nextRecordingsPage.page ?? 1) < (nextRecordingsPage.totalPages ?? 1) : false);
         setMaterialVisibleCount(12);
@@ -408,7 +458,40 @@ export function StudentDashboardPage({
         setNotificationUnreadCount(nextUnreadCount.count ?? 0);
         setReminders(nextReminders);
 
-        const rejectedCount = [homeResult, coursesResult, sessionsResult, homeworkResult, certificatesResult, attendanceResult, tasksResult, resourcesResult, recordingsResult, progressResult, courseDetailResult, sessionDetailResult, supportOptionsResult, supportRequestsResult, notificationsResult, notificationUnreadCountResult, remindersResult]
+        const nextSectionErrors = new Set<StudentSectionError>();
+        if (shouldLoadCourses && isRejected(coursesResult)) nextSectionErrors.add('courses');
+        if (shouldLoadSessions && isRejected(sessionsResult)) nextSectionErrors.add('sessions');
+        if (shouldLoadHomework && isRejected(homeworkResult)) nextSectionErrors.add('homework').add('tasks');
+        if (shouldLoadCertificates && isRejected(certificatesResult)) nextSectionErrors.add('certificates');
+        if (shouldLoadAttendance && isRejected(attendanceResult)) nextSectionErrors.add('attendance');
+        if (shouldLoadTasks && isRejected(tasksResult)) nextSectionErrors.add('tasks');
+        if ((shouldLoadResourceMaterials && isRejected(resourcesResult)) || (shouldLoadRecordingMaterials && isRejected(recordingsResult))) nextSectionErrors.add('materials');
+        if (shouldLoadProgress && isRejected(progressResult)) nextSectionErrors.add('progress');
+        if (shouldLoadCourseDetail && isRejected(courseDetailResult)) nextSectionErrors.add('courseDetail');
+        if (shouldLoadSessionDetail && isRejected(sessionDetailResult)) nextSectionErrors.add('sessionDetail');
+        if (shouldLoadSupport && isRejected(supportOptionsResult)) nextSectionErrors.add('supportOptions');
+        if (shouldLoadSupport && isRejected(supportRequestsResult)) nextSectionErrors.add('supportRequests');
+        if (shouldLoadNotifications && (isRejected(notificationsResult) || isRejected(notificationUnreadCountResult))) nextSectionErrors.add('notifications');
+        if (shouldLoadNotifications && isRejected(remindersResult)) nextSectionErrors.add('reminders');
+        setSectionErrors(nextSectionErrors);
+
+        const criticalResults = [
+          coursesResult,
+          sessionsResult,
+          homeworkResult,
+          certificatesResult,
+          attendanceResult,
+          tasksResult,
+          resourcesResult,
+          recordingsResult,
+          progressResult,
+          courseDetailResult,
+          sessionDetailResult,
+          notificationsResult,
+          notificationUnreadCountResult,
+          remindersResult,
+        ];
+        const rejectedCount = criticalResults
           .filter((result) => result.status === 'rejected')
           .length;
         succeedStudentLoad(rejectedCount);
@@ -502,7 +585,9 @@ export function StudentDashboardPage({
       } else {
         await submitStudentHomework(selectedTask.sessionId, selectedTask.id, {
           answerText: submitForm.answerText.trim() || undefined,
-          attachmentUrl: submitForm.attachmentKey.trim() || submitForm.attachmentUrl.trim() || submitForm.linkUrl.trim() || undefined,
+          linkUrl: submitForm.linkUrl.trim() || undefined,
+          attachmentUrl: submitForm.attachmentUrl.trim() || undefined,
+          attachmentKey: submitForm.attachmentKey.trim() || undefined,
         });
       }
       await reloadStudentData();
@@ -529,6 +614,8 @@ export function StudentDashboardPage({
       const created = await createStudentSupportRequest({
         category: supportForm.category,
         priority: supportForm.priority,
+        courseId: supportForm.courseId !== 'none' ? Number(supportForm.courseId) : undefined,
+        sessionId: supportForm.sessionId !== 'none' ? Number(supportForm.sessionId) : undefined,
         message,
       });
       setSupportRequests((current) => [created, ...current]);
@@ -601,8 +688,8 @@ export function StudentDashboardPage({
     setLoadingMoreMaterials(true);
     try {
       const [nextResourcesPage, nextRecordingsPage] = await Promise.all([
-        shouldLoadResources ? getStudentResourcesPage({ page: resourcePage + 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: resourcePage, totalPages: resourcePage }),
-        shouldLoadRecordings ? getStudentRecordingsPage({ page: recordingPage + 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: recordingPage, totalPages: recordingPage }),
+        shouldLoadResources ? getStudentResourcesPage({ page: resourcePage + 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: resourcePage, total: resources.length, totalPages: resourcePage }),
+        shouldLoadRecordings ? getStudentRecordingsPage({ page: recordingPage + 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: recordingPage, total: recordings.length, totalPages: recordingPage }),
       ]);
       const nextResources = nextResourcesPage.items ?? [];
       const nextRecordings = nextRecordingsPage.items ?? [];
@@ -614,6 +701,8 @@ export function StudentDashboardPage({
         setRecordings((current) => [...current, ...nextRecordings]);
         setRecordingPage(nextRecordingsPage.page ?? recordingPage + 1);
       }
+      setResourceTotal(nextResourcesPage.total ?? resourceTotal);
+      setRecordingTotal(nextRecordingsPage.total ?? recordingTotal);
       setMaterialVisibleCount((current) => current + 12);
       setHasMoreResources((nextResourcesPage.page ?? resourcePage) < (nextResourcesPage.totalPages ?? resourcePage));
       setHasMoreRecordings((nextRecordingsPage.page ?? recordingPage) < (nextRecordingsPage.totalPages ?? recordingPage));
@@ -665,8 +754,13 @@ export function StudentDashboardPage({
     return Math.round((positive / attendance.length) * 100);
   }, [attendance]);
 
+  const attendedAttendanceCount = useMemo(
+    () => attendance.filter((record) => record.status === 'present' || record.status === 'late').length,
+    [attendance],
+  );
+
   const missedAttendanceCount = useMemo(
-    () => attendance.filter((record) => record.status === 'absent' || record.status === 'late').length,
+    () => attendance.filter((record) => record.status === 'absent').length,
     [attendance],
   );
 
@@ -676,10 +770,10 @@ export function StudentDashboardPage({
       return !['approved', 'submitted', 'completed'].includes(status);
     }).length;
     return [
-      { label: t('navigation.courses'), value: courses.length, icon: FiBookOpen },
-      { label: t('student.upcomingSessions'), value: sessions.length, icon: FiCalendar },
-      ...(attendanceEnabled ? [{ label: t('navigation.attendance'), value: attendance.length ? `${attendanceRate}%` : t('states.notSet'), icon: FiCheckCircle }] : []),
       ...(homeworkEnabled ? [{ label: t('student.openHomework'), value: pendingHomework, icon: FiFileText }] : []),
+      { label: t('student.upcomingSessions'), value: sessions.length, icon: FiCalendar },
+      { label: t('navigation.courses'), value: courses.length, icon: FiBookOpen },
+      ...(attendanceEnabled ? [{ label: t('navigation.attendance'), value: attendance.length ? `${attendanceRate}%` : t('states.notSet'), icon: FiCheckCircle }] : []),
       ...(certificatesEnabled ? [{ label: t('navigation.certificates'), value: certificates.length, icon: FiAward }] : []),
     ];
   }, [attendance.length, attendanceEnabled, attendanceRate, certificates.length, certificatesEnabled, courses.length, homework, homeworkEnabled, sessions.length, t]);
@@ -778,7 +872,7 @@ export function StudentDashboardPage({
         eyebrow: t('student.continueLearning'),
         title: primaryTask.title ?? t('student.openYourNextTask'),
         detail: `${displayText(taskContext(primaryTask), t('student.courseNotSet'))} · ${dueText(studentTaskDueDate(primaryTask))}`,
-        action: <button type="button" onClick={() => selectTask(primaryTask)}>{t('student.openTask')}</button>,
+        action: <button type="button" onClick={() => selectTask(primaryTask)}>{t('student.startTask')}</button>,
         icon: FiCheckCircle,
       }
       : {
@@ -790,12 +884,55 @@ export function StudentDashboardPage({
         icon: FiCheckCircle,
       };
 
-  const averageProgress = useMemo(() => {
-    if (!courses.length) return 0;
-    const total = courses.reduce((sum, course) => sum + (course.progressPercent ?? course.progress ?? 0), 0);
-    return Math.round(total / courses.length);
-  }, [courses]);
   const progressCourses = progressSummary?.courses?.length ? progressSummary.courses : courses;
+  const averageProgress = useMemo(() => {
+    if (!progressCourses.length) return 0;
+    const total = progressCourses.reduce((sum, course) => sum + (course.progressPercent ?? course.progress ?? 0), 0);
+    return Math.round(total / progressCourses.length);
+  }, [progressCourses]);
+  const progressGuidance = progressCourses.length
+    ? averageProgress <= 0
+      ? t('student.progressStartHint')
+      : averageProgress >= 100
+        ? t('student.progressCompleteHint')
+        : t('student.progressContinueHint')
+    : t('student.progressEnrollments');
+  const firstProgressCourse = progressCourses[0] ?? null;
+  const firstProgressCourseId = firstProgressCourse?.courseId ?? firstProgressCourse?.id;
+  const firstProgressCourseTitle = firstProgressCourse?.title ?? firstProgressCourse?.courseTitle ?? t('student.courseProgress');
+  const progressNextDetail = firstProgressCourse
+    ? averageProgress <= 0
+      ? t('student.progressOpenFirstCourse')
+      : t('student.progressResumeCourse')
+    : t('student.progressEnrollments');
+  const progressSummaryItems = [
+    {
+      label: t('student.averageProgressLabel'),
+      value: `${averageProgress}%`,
+      detail: progressGuidance,
+      icon: FiPlayCircle,
+    },
+    {
+      label: t('navigation.courses'),
+      value: String(progressCourses.length || courses.length),
+      detail: t((progressCourses.length || courses.length) === 1 ? 'student.activeCourse' : 'student.activeCourses'),
+      icon: FiBookOpen,
+    },
+    ...(attendanceEnabled ? [{
+      label: t('navigation.attendance'),
+      value: attendance.length ? `${attendedAttendanceCount}/${attendance.length}` : t('states.notSet'),
+      detail: attendance.length
+        ? t('student.attendanceRatio', { attended: attendedAttendanceCount, total: attendance.length })
+        : t('student.noAttendanceTitle'),
+      icon: FiCheckCircle,
+    }] : []),
+    ...(certificatesEnabled ? [{
+      label: t('navigation.certificates'),
+      value: String(certificates.length),
+      detail: certificates.length ? t('student.certificatesIssued', { count: certificates.length }) : t('student.certificatesEmptyTitle'),
+      icon: FiAward,
+    }] : []),
+  ];
   const certificateCourseOptions = useMemo(() => {
     const options = new Map<string, string>();
     progressCourses.forEach((course) => {
@@ -812,12 +949,41 @@ export function StudentDashboardPage({
       .map(([value, label]) => ({ value, label }))
       .sort((first, second) => first.label.localeCompare(second.label));
   }, [certificates, progressCourses]);
+  const supportCourseOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    courses.forEach((course) => {
+      const id = courseId(course);
+      const title = courseTitle(course, '');
+      if (id && title) options.set(String(id), title);
+    });
+    sessions.forEach((session) => {
+      if (session.courseId && session.courseTitle) options.set(String(session.courseId), session.courseTitle);
+    });
+    return Array.from(options.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((first, second) => first.label.localeCompare(second.label));
+  }, [courses, sessions]);
+  const supportSessionOptions = useMemo(() => {
+    return sessions
+      .filter((session) => supportForm.courseId === 'none' || String(session.courseId) === supportForm.courseId)
+      .map((session, index) => ({
+        value: String(session.id ?? session.sessionId ?? ''),
+        label: `${session.title ?? session.sessionTitle ?? t('student.sessionFallback', { number: index + 1 })}${session.startsAt ? ` · ${formatDate(session.startsAt)}` : ''}`,
+      }))
+      .filter((session) => session.value);
+  }, [sessions, supportForm.courseId, t]);
+  const hasActiveCertificateFilter = certificateStatusFilter !== 'all' || certificateCourseFilter !== 'all';
   const materialItems = useMemo<StudentMaterialListItem[]>(() => [
     ...resources.map((item, index) => normalizeMaterialItem(item, 'resource', index)),
     ...recordings.map((item, index) => normalizeMaterialItem(item, 'recording', index)),
   ], [recordings, resources]);
   const materialCourseOptions = useMemo(() => {
     const options = new Map<string, string>();
+    courses.forEach((course) => {
+      const id = courseId(course);
+      const title = courseTitle(course, '');
+      if (id && title) options.set(String(id), title);
+    });
     materialItems.forEach(({ session }) => {
       if (!session.courseTitle) return;
       options.set(String(session.courseId ?? session.courseTitle), session.courseTitle);
@@ -825,7 +991,7 @@ export function StudentDashboardPage({
     return Array.from(options.entries())
       .map(([value, label]) => ({ value, label }))
       .sort((first, second) => first.label.localeCompare(second.label));
-  }, [materialItems]);
+  }, [courses, materialItems]);
   const filteredMaterialItems = useMemo(() => materialItems.filter(({ kind, session }) => {
     if (materialFilter === 'resources' && kind !== 'resource') return false;
     if (materialFilter === 'recordings' && kind !== 'recording') return false;
@@ -834,26 +1000,38 @@ export function StudentDashboardPage({
   }), [materialCourseFilter, materialFilter, materialItems]);
   const visibleMaterialItems = useMemo(() => filteredMaterialItems.slice(0, materialVisibleCount), [filteredMaterialItems, materialVisibleCount]);
   const canLoadMoreMaterials = materialVisibleCount < filteredMaterialItems.length || (materialFilter !== 'recordings' && hasMoreResources) || (materialFilter !== 'resources' && hasMoreRecordings);
+  const loadedMaterialTotal = filteredMaterialItems.length;
+  const serverMaterialTotal = materialFilter === 'resources'
+    ? resourceTotal
+    : materialFilter === 'recordings'
+      ? recordingTotal
+      : resourceTotal + recordingTotal;
+  const materialDisplayTotal = Math.max(loadedMaterialTotal, serverMaterialTotal);
+  const hasActiveMaterialFilter = materialFilter !== 'all' || materialCourseFilter !== 'all';
+  const showMaterialToolbar = materialItems.length > 0 || materialCourseOptions.length > 0 || hasActiveMaterialFilter;
   const selectedCourseSessions = useMemo(() => {
     if (courseDetail?.sessions?.length) return courseDetail.sessions;
+    if (typeof activeCourseId === 'number') return sessions;
     if (!selectedCourseTitle) return [];
     return sessions.filter((session) => session.courseTitle === selectedCourseTitle);
-  }, [courseDetail?.sessions, selectedCourseTitle, sessions]);
+  }, [activeCourseId, courseDetail?.sessions, selectedCourseTitle, sessions]);
   const selectedCourseMaterials = useMemo(() => {
-    if (courseDetail?.materials && Array.isArray(courseDetail.materials)) {
+    if (Array.isArray(courseDetail?.materials) || Array.isArray(courseDetail?.recordings)) {
       return [
-        ...courseDetail.materials.map((item, index) => normalizeMaterialItem(item, 'resource', index)),
+        ...(courseDetail?.materials ?? []).map((item, index) => normalizeMaterialItem(item, 'resource', index)),
         ...(courseDetail.recordings ?? []).map((item, index) => normalizeMaterialItem(item, 'recording', index)),
       ];
     }
+    if (typeof activeCourseId === 'number') return materialItems.slice(0, 20);
     if (!selectedCourseTitle) return [];
     return materialItems.filter(({ session }) => session.courseTitle === selectedCourseTitle).slice(0, 8);
-  }, [courseDetail?.materials, courseDetail?.recordings, materialItems, selectedCourseTitle]);
+  }, [activeCourseId, courseDetail?.materials, courseDetail?.recordings, materialItems, selectedCourseTitle]);
   const selectedCourseTasks = useMemo(() => {
     if (courseDetail?.tasks?.length) return courseDetail.tasks;
+    if (typeof activeCourseId === 'number') return studentWorkItems.slice(0, 20);
     if (!selectedCourseTitle) return [];
     return studentWorkItems.filter((task) => taskContext(task) === selectedCourseTitle).slice(0, 8);
-  }, [courseDetail?.tasks, selectedCourseTitle, studentWorkItems]);
+  }, [activeCourseId, courseDetail?.tasks, selectedCourseTitle, studentWorkItems]);
   const selectedSessionTasks = useMemo(() => {
     if (sessionDetail?.tasks?.length || sessionDetail?.homework?.length) {
       return [...(sessionDetail.tasks ?? []), ...(sessionDetail.homework ?? [])];
@@ -881,9 +1059,22 @@ export function StudentDashboardPage({
       || (selectedTaskRequirements.allowLink && Boolean(submitForm.linkUrl.trim()))
       || (selectedTaskRequirements.allowFile && Boolean(submitForm.attachmentUrl.trim() || submitForm.attachmentKey.trim()));
   const PrimaryActionIcon = primaryAction.icon;
+  const visibleNotifications = notifications.slice(0, 3);
+  const visibleReminders = reminders.slice(0, 4);
+  const hasTodayUpdates = visibleNotifications.length > 0 || visibleReminders.length > 0;
+  const reminderDetail = (reminder: StudentReminder) => {
+    if (reminder.kind === 'session') return t('student.sessionScheduled');
+    if (reminder.kind === 'task') return t('student.taskWaiting');
+    return reminder.message ?? '';
+  };
+  const reminderActionLabel = (reminder: StudentReminder) => {
+    if (reminder.kind === 'session') return t('student.sessionDetails');
+    if (reminder.kind === 'task') return t('student.startTask');
+    return t('student.open');
+  };
   const pageTitle = {
     today: t('student.today'),
-    todo: t('student.toDo'),
+    todo: t('student.tasks'),
     courses: t('navigation.courses'),
     courseDetail: selectedCourseTitle || t('student.courseDetail'),
     sessionDetail: selectedSessionTitle || t('student.sessionDetail'),
@@ -891,6 +1082,190 @@ export function StudentDashboardPage({
     progress: t('student.progress'),
     help: t('student.help'),
   }[view];
+  const pageHeaderActions = view === 'courseDetail'
+    ? <Link className="secondary-link-button student-back-link" to="/student/courses"><FiArrowLeft aria-hidden="true" /> {t('student.backToCourses')}</Link>
+    : view === 'sessionDetail'
+      ? <Link className="secondary-link-button student-back-link" to="/student/today"><FiArrowLeft aria-hidden="true" /> {t('student.backToToday')}</Link>
+      : undefined;
+  const sectionError = (section: StudentSectionError, label: string) => (
+    sectionErrors.has(section)
+      ? <ErrorState message={t('student.sectionCouldNotLoad', { section: label })} action={<button type="button" className="secondary-button" onClick={retryStudentLoad}>{t('actions.retry')}</button>} />
+      : null
+  );
+  const taskSection = (
+    <section className={`content-section student-task-section ${view === 'todo' ? 'student-task-page-section' : ''}`}>
+      <div className="section-heading-row">
+        <div>
+          <h2>{t('student.tasks')}</h2>
+          <span>{t('student.openTasksNeedAttention', { count: openWorkItems.length })}</span>
+        </div>
+      </div>
+      {sectionError('tasks', t('student.tasks')) ?? (
+        <>
+          {view === 'todo' && studentWorkItems.length ? (
+            <CountFilterRow
+              className="student-filter-row student-task-filter-row"
+              ariaLabel={t('student.taskFilters')}
+              items={(['open', 'overdue', 'submitted', 'needs_revision', 'completed'] as const).map((key) => ({
+                key,
+                label: t(`student.taskFilter.${key}`),
+                count: todoCounts[key],
+                active: todoFilter === key,
+              }))}
+              onSelect={setTodoFilter}
+            />
+          ) : null}
+          {!studentWorkItems.length ? <EmptyState title={t('student.tasksEmptyTitle')} detail={t('student.tasksEmptyDetail')} /> : !filteredWorkItems.length ? (
+            <EmptyState title={t('student.tasksFilteredEmptyTitle')} detail={t('student.tasksFilteredEmptyDetail')} />
+          ) : (
+            <div className="student-task-list">
+              {filteredWorkItems.map((task, index) => (
+                <article className="student-task-card" key={task.id ?? index}>
+                  <div className="student-task-main">
+                    <strong>{task.title ?? (isActivityTask(task) ? activityTypeLabel(task.type, t('student.activity')) : t('student.homeworkFallback', { number: index + 1 }))}</strong>
+                    <div className="student-task-meta">
+                      <span className="student-task-course">{displayText(taskContext(task), t('student.courseNotSet'))}</span>
+                      <span className="student-task-due"><FiClock /> {dueText(studentTaskDueDate(task))}</span>
+                      <small>{isActivityTask(task) ? activityTypeLabel(task.type ?? task.taskType ?? task.activityType, t('student.activity')) : t('navigation.homework')}</small>
+                    </div>
+                    {taskSubmission(task)?.reviewComment ? <small>{t('student.review')}: {taskSubmission(task)?.reviewComment}</small> : null}
+                    {taskSubmission(task)?.score != null || (isActivityTask(task) && taskAttempt(task)?.score != null) ? (
+                      <small>{t('student.score')}: {taskSubmission(task)?.score ?? (isActivityTask(task) ? taskAttempt(task)?.score : null)}</small>
+                    ) : null}
+                  </div>
+                  <div className="student-task-action">
+                    <span className={`status-badge ${statusClass(isActivityTask(task) ? task.status : task.reviewState ?? task.status)}`}>{statusLabel(isActivityTask(task) ? task.status : task.reviewState ?? task.status, t('student.open'))}</span>
+                    <button
+                      type="button"
+                      className={`student-task-start-button${view === 'today' && primaryTask && task.id === primaryTask.id ? ' secondary' : ''}`}
+                      onClick={() => selectTask(task)}
+                    >
+                      {t('student.startTask')}
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {view === 'todo' && filteredWorkItems.length === studentWorkItems.length ? (
+                <p className="student-task-list-note">{t('student.tasksListComplete')}</p>
+              ) : null}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+  const todayOverview = (
+    <>
+      <section className="student-home-hero">
+        <div className="student-home-main">
+          <article className="student-priority-card">
+            <div className="student-priority-icon"><PrimaryActionIcon /></div>
+            <div className="student-priority-copy">
+              <span className="eyebrow">{t('student.todayPriority')}</span>
+              <h2>{primaryAction.title}</h2>
+              <p>{primaryAction.detail}</p>
+            </div>
+            <div className="student-priority-actions">{primaryAction.action}</div>
+          </article>
+
+          <section className="student-summary-strip" aria-label={t('student.learningSummary')}>
+            {stats.map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <article className="student-summary-item" key={stat.label}>
+                  <Icon aria-hidden="true" />
+                  <span>{stat.label}</span>
+                  <strong>{stat.value}</strong>
+                </article>
+              );
+            })}
+          </section>
+        </div>
+
+        <div className="student-home-side">
+          <article className="student-compact-card">
+            <div className="student-panel-heading compact">
+              <FiClock />
+              <h2>{t('student.nextLiveSession')}</h2>
+            </div>
+            <strong>{nextSession?.title ?? nextSession?.sessionTitle ?? t('student.noUpcomingSession')}</strong>
+            <span>{nextSession ? `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(nextSession.startsAt)}` : t('student.nothingDueDetail')}</span>
+            <div className="student-compact-actions">
+              {nextSession?.liveJoinUrl ? (
+                <a className="secondary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.joinSession')}</a>
+              ) : nextSession?.id ? (
+                <Link className="secondary-link-button" to={`/student/sessions/${nextSession.id}`}>{t('student.sessionDetails')}</Link>
+              ) : (
+                <span className="status-badge approved">{t('student.clear')}</span>
+              )}
+            </div>
+          </article>
+
+          <article className="student-compact-card student-home-progress-card">
+            <div className="student-panel-heading compact">
+              <FiPlayCircle />
+              <h2>{t('student.courseProgress')}</h2>
+            </div>
+            <strong>{averageProgress}% {t('student.averageProgress')}</strong>
+            <span>{progressGuidance}</span>
+            <div className="progress-cell student-focus-progress">
+              <span style={{ width: `${Math.max(0, Math.min(100, averageProgress))}%` }} />
+            </div>
+          </article>
+        </div>
+      </section>
+    </>
+  );
+  const updatesSection = (
+    <section className="content-section full student-updates-section">
+      <div className="section-heading-row">
+        <div className="student-panel-heading">
+          <FiBell />
+          <h2>{t('student.updates')}</h2>
+        </div>
+        {notificationUnreadCount ? (
+          <button type="button" className="secondary-button" onClick={markAllNotificationsRead}>{t('student.markAllRead')}</button>
+        ) : <span className="status-badge approved">{t('student.allCaughtUp')}</span>}
+      </div>
+      {sectionError('notifications', t('student.notifications')) ?? sectionError('reminders', t('student.reminders')) ?? (!hasTodayUpdates ? (
+        <EmptyState title={t('student.updatesEmptyTitle')} detail={t('student.updatesEmptyDetail')} />
+      ) : (
+        <div className="student-update-list">
+          {visibleReminders.map((reminder, index) => (
+            <article className="student-update-row" key={`reminder-${reminder.id ?? index}`}>
+              <div className="student-update-type"><FiClock /></div>
+              <div>
+                <strong>{reminder.title ?? t('student.reminder')}</strong>
+                <span>{displayText(reminder.courseTitle, t('student.courseNotSet'))} · {dateText(reminder.dueAt, t('student.noDueDate'))}</span>
+                {reminderDetail(reminder) ? <small>{reminderDetail(reminder)}</small> : null}
+              </div>
+              {reminder.actionUrl ? <Link className="secondary-link-button" to={reminder.actionUrl}>{reminderActionLabel(reminder)}</Link> : null}
+            </article>
+          ))}
+          {visibleNotifications.map((notification, index) => (
+            <article className={`student-update-row ${notification.isRead ? 'read' : 'unread'}`} key={`notification-${notification.id ?? index}`}>
+              <div className="student-update-type"><FiBell /></div>
+              <div>
+                <strong>{notification.title ?? t('student.notification')}</strong>
+                <span>{notification.body ?? displayText(notification.type, t('student.notification'))}</span>
+                <small>{dateText(notification.createdAt, t('student.dateNotScheduled'))}</small>
+              </div>
+              <button type="button" className="secondary-button" disabled={notification.isRead} onClick={() => void markNotificationRead(notification)}>
+                {notification.isRead ? t('student.read') : t('student.markRead')}
+              </button>
+            </article>
+          ))}
+          {notificationPage < notificationTotalPages ? (
+            <div className="student-load-more-row">
+              <button type="button" className="secondary-button" disabled={loadingMoreNotifications} onClick={() => void loadMoreNotifications()}>
+                {loadingMoreNotifications ? t('student.notificationsLoading') : t('student.loadMoreNotifications')}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </section>
+  );
 
   useEffect(() => {
     setMaterialVisibleCount(12);
@@ -900,7 +1275,7 @@ export function StudentDashboardPage({
 
   return (
     <>
-      <PageHeader title={pageTitle} eyebrow={activeTenant?.name} />
+      <PageHeader title={pageTitle} eyebrow={activeTenant?.name} actions={pageHeaderActions} />
 
       {studentLoad.failed ? (
         <ErrorState
@@ -909,210 +1284,86 @@ export function StudentDashboardPage({
         />
       ) : null}
 
-      {view === 'today' ? (
-      <section className="student-focus-grid">
-        <article className="student-focus-card primary">
-          <div className="student-focus-icon"><PrimaryActionIcon /></div>
-          <div>
-            <span className="eyebrow">{primaryAction.eyebrow}</span>
-            <h2>{primaryAction.title}</h2>
-            <p>{primaryAction.detail}</p>
-          </div>
-          <div className="student-focus-actions">{primaryAction.action}</div>
-        </article>
+      {view === 'today' ? todayOverview : null}
 
-        {primaryAction.kind !== 'session' ? (
-        <article className="student-focus-card">
-          <div className="student-focus-icon"><FiClock /></div>
-          <div>
-            <span className="eyebrow">{t('student.nextLiveSession')}</span>
-            <h2>{nextSession?.title ?? nextSession?.sessionTitle ?? t('student.noUpcomingSession')}</h2>
-            <p>{nextSession ? `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(nextSession.startsAt)}` : t('student.nothingDueDetail')}</p>
-          </div>
-          {nextSession?.liveJoinUrl ? (
-            <a className="secondary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.join')}</a>
-          ) : (
-            <span className="muted-text">{nextSession ? readable(nextSession.groupName) : t('student.clear')}</span>
-          )}
-        </article>
-        ) : null}
-
-        <article className="student-focus-card">
-          <div className="student-focus-icon"><FiPlayCircle /></div>
-          <div>
-            <span className="eyebrow">{t('student.courseProgress')}</span>
-            <h2>{averageProgress}% {t('student.averageProgress')}</h2>
-            <p>{courses.length ? `${courses.length} ${t(courses.length === 1 ? 'student.activeCourse' : 'student.activeCourses')} · ${progressText(averageProgress)}` : t('student.progressEnrollments')}</p>
-          </div>
-          <div className="progress-cell student-focus-progress">
-            <span style={{ width: `${Math.max(0, Math.min(100, averageProgress))}%` }} />
-            <strong>{averageProgress}%</strong>
-          </div>
-        </article>
-      </section>
-      ) : null}
-
-      {view === 'today' || view === 'progress' ? (
-      <div className="stat-grid compact student-stat-grid">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
+      {view === 'progress' ? (
+      <section className="student-progress-summary" aria-label={t('student.learningHealth')}>
+        {progressSummaryItems.map((item) => {
+          const Icon = item.icon;
           return (
-            <section className="stat-tile" key={stat.label}>
-              <Icon />
-              <span>{stat.label}</span>
-              <strong>{stat.value}</strong>
-            </section>
+            <article className="student-progress-summary-item" key={item.label}>
+              <Icon aria-hidden="true" />
+              <div>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+                <small>{item.detail}</small>
+              </div>
+            </article>
           );
         })}
-      </div>
-      ) : null}
-
-      {view === 'today' ? (
-        <section className="content-section full student-reminder-section">
-          <div className="section-heading-row">
-            <div className="student-panel-heading">
-              <FiBell />
-              <h2>{t('student.reminders')}</h2>
-            </div>
-            <span className="status-badge pending">{t('student.reminderCount', { count: reminders.length })}</span>
-          </div>
-          {!reminders.length ? <EmptyState title={t('student.remindersEmptyTitle')} detail={t('student.remindersEmptyDetail')} /> : (
-            <div className="stack-list">
-              {reminders.map((reminder, index) => (
-                <article className="stack-list-item student-reminder-item" key={reminder.id ?? index}>
-                  <div>
-                    <strong>{reminder.title ?? t('student.reminder')}</strong>
-                    <span>{displayText(reminder.courseTitle, t('student.courseNotSet'))} · {dateText(reminder.dueAt, t('student.noDueDate'))}</span>
-                    {reminder.message ? <small>{reminder.message}</small> : null}
-                  </div>
-                  <div className="student-material-actions">
-                    <span className={`status-badge ${statusClass(reminder.priority ?? reminder.status)}`}>{displayText(reminder.status, t('student.pending'))}</span>
-                    {reminder.actionUrl ? <Link className="secondary-link-button" to={reminder.actionUrl}>{t('student.open')}</Link> : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      ) : null}
-
-      {view === 'today' ? (
-        <section className="content-section full student-notification-section">
-          <div className="section-heading-row">
-            <div className="student-panel-heading">
-              <FiBell />
-              <h2>{t('student.notifications')}</h2>
-            </div>
-            {notificationUnreadCount ? (
-              <button type="button" className="secondary-button" onClick={markAllNotificationsRead}>{t('student.markAllRead')}</button>
-            ) : <span className="status-badge approved">{t('student.allCaughtUp')}</span>}
-          </div>
-          {!notifications.length ? <EmptyState title={t('student.notificationsEmptyTitle')} detail={t('student.notificationsEmptyDetail')} /> : (
-            <>
-              <div className="stack-list">
-                {notifications.map((notification, index) => (
-                  <article className={`stack-list-item student-notification-item ${notification.isRead ? 'read' : 'unread'}`} key={notification.id ?? index}>
-                    <div>
-                      <strong>{notification.title ?? t('student.notification')}</strong>
-                      <span>{notification.body ?? displayText(notification.type, t('student.notification'))}</span>
-                      <small>{dateText(notification.createdAt, t('student.dateNotScheduled'))}</small>
-                    </div>
-                    <button type="button" className="secondary-button" disabled={notification.isRead} onClick={() => void markNotificationRead(notification)}>
-                      {notification.isRead ? t('student.read') : t('student.markRead')}
-                    </button>
-                  </article>
-                ))}
-              </div>
-              {notificationPage < notificationTotalPages ? (
-                <div className="student-load-more-row">
-                  <button type="button" className="secondary-button" disabled={loadingMoreNotifications} onClick={() => void loadMoreNotifications()}>
-                    {loadingMoreNotifications ? t('student.notificationsLoading') : t('student.loadMoreNotifications')}
-                  </button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </section>
-      ) : null}
-
-      {view === 'today' || view === 'todo' ? (
-      <section className="content-section student-task-section">
-        <div className="section-heading-row">
-          <div>
-            <h2>{t('student.tasks')}</h2>
-            <span>{t('student.openTasksNeedAttention', { count: openWorkItems.length })}</span>
-          </div>
-        </div>
-        {view === 'todo' && studentWorkItems.length ? (
-          <CountFilterRow
-            className="student-filter-row"
-            ariaLabel={t('student.taskFilters')}
-            items={(['open', 'overdue', 'submitted', 'needs_revision', 'completed'] as const).map((key) => ({
-              key,
-              label: t(`student.taskFilter.${key}`),
-              count: todoCounts[key],
-              active: todoFilter === key,
-            }))}
-            onSelect={setTodoFilter}
-          />
-        ) : null}
-        {!studentWorkItems.length ? <EmptyState title={t('student.tasksEmptyTitle')} detail={t('student.tasksEmptyDetail')} /> : !filteredWorkItems.length ? (
-          <EmptyState title={t('student.tasksFilteredEmptyTitle')} detail={t('student.tasksFilteredEmptyDetail')} />
-        ) : (
-          <div className="student-task-list">
-            {filteredWorkItems.map((task, index) => (
-              <article className="student-task-card" key={task.id ?? index}>
-                <div>
-                  <strong>{task.title ?? (isActivityTask(task) ? activityTypeLabel(task.type, t('student.activity')) : t('student.homeworkFallback', { number: index + 1 }))}</strong>
-                  <span>{displayText(taskContext(task), t('student.courseNotSet'))} · {dueText(studentTaskDueDate(task))}</span>
-                  <small>{isActivityTask(task) ? activityTypeLabel(task.type ?? task.taskType ?? task.activityType, t('student.activity')) : t('navigation.homework')}</small>
-                  {taskSubmission(task)?.reviewComment ? <small>{t('student.review')}: {taskSubmission(task)?.reviewComment}</small> : null}
-                  {taskSubmission(task)?.score != null || (isActivityTask(task) && taskAttempt(task)?.score != null) ? (
-                    <small>{t('student.score')}: {taskSubmission(task)?.score ?? (isActivityTask(task) ? taskAttempt(task)?.score : null)}</small>
-                  ) : null}
-                </div>
-                <div className="student-task-action">
-                  <span className={`status-badge ${statusClass(isActivityTask(task) ? task.status : task.reviewState ?? task.status)}`}>{statusLabel(isActivityTask(task) ? task.status : task.reviewState ?? task.status, t('student.open'))}</span>
-                  <button type="button" className="secondary-button" onClick={() => selectTask(task)}>{t('student.open')}</button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
       </section>
       ) : null}
+
+      {view === 'progress' ? (
+        <section className="student-progress-next-step" aria-label={t('student.progressNextStep')}>
+          <div className="student-priority-icon">
+            <FiPlayCircle aria-hidden="true" />
+          </div>
+          <div className="student-progress-next-copy">
+            <span>{t('student.progressNextStep')}</span>
+            <strong>{firstProgressCourse ? firstProgressCourseTitle : t('student.coursesEmptyTitle')}</strong>
+            <p>{progressNextDetail}</p>
+          </div>
+          {firstProgressCourseId ? (
+            <Link className="primary-link-button" to={`/student/courses/${firstProgressCourseId}`}>{t('student.openCourse')}</Link>
+          ) : (
+            <span className="status-badge pending">{t('student.notStarted')}</span>
+          )}
+        </section>
+      ) : null}
+
+      {view === 'today' ? taskSection : null}
+      {view === 'today' ? updatesSection : null}
+
+      {view === 'todo' ? taskSection : null}
 
       <div className="student-workspace-grid">
         {view === 'courses' ? (
-        <section className="content-section">
+        <section className="content-section full student-courses-section">
           <div className="student-panel-heading">
             <FiBookOpen />
             <h2>{t('student.myCourses')}</h2>
           </div>
-          {!courses.length ? <EmptyState title={t('student.coursesEmptyTitle')} detail={t('student.coursesEmptyDetail')} /> : (
-            <div className="stack-list">
-              {courses.slice(0, 6).map((course, index) => {
+          {sectionError('courses', t('navigation.courses')) ?? (!courses.length ? <EmptyState title={t('student.coursesEmptyTitle')} detail={t('student.coursesEmptyDetail')} /> : (
+            <div className="student-course-grid">
+              {courses.map((course, index) => {
                 const progress = course.progressPercent ?? course.progress ?? 0;
                 const id = courseId(course);
+                const normalizedProgress = Math.max(0, Math.min(100, progress));
                 return (
-                  <article className="stack-list-item" key={course.id ?? course.courseId ?? index}>
-                    <div>
+                  <article className="student-course-card" key={course.id ?? course.courseId ?? index}>
+                    <div className="student-course-card-main">
                       <strong>{courseTitle(course, t('student.courseFallback', { number: index + 1 }))}</strong>
                       <span>{displayText(course.groupName, t('student.groupNotAssigned'))}</span>
-                      <span>{statusLabel(course.status, t('student.activeStatus'))} · {progressText(progress)}</span>
+                      <div className="student-course-badges">
+                        <span className="status-badge approved">{statusLabel(course.status, t('student.activeStatus'))}</span>
+                        <span>{progressLabel(normalizedProgress, { completed: t('student.completed'), notStarted: t('student.notStarted'), inProgress: t('student.inProgress') })}</span>
+                      </div>
+                    </div>
+                    <div className="student-course-progress" aria-label={t('student.courseProgress')}>
+                      <div className="student-course-progress-track">
+                        <span style={{ width: `${normalizedProgress}%` }} />
+                      </div>
+                      <strong>{Math.round(normalizedProgress)}%</strong>
                     </div>
                     <div className="student-course-actions">
-                      <div className="progress-cell">
-                        <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
-                        <strong>{Math.round(progress)}%</strong>
-                      </div>
-                      {id ? <Link className="secondary-link-button" to={`/student/courses/${id}`}>{t('student.openCourse')}</Link> : null}
+                      {id ? <Link className="primary-link-button" to={`/student/courses/${id}`}>{t('student.openCourse')}</Link> : null}
                     </div>
                   </article>
                 );
               })}
             </div>
-          )}
+          ))}
         </section>
         ) : null}
 
@@ -1183,28 +1434,29 @@ export function StudentDashboardPage({
                   <FiFileText />
                   <h2>{t('student.materials')}</h2>
                 </div>
-                {!selectedCourseMaterials.length ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : (
+                {sectionError('materials', t('student.materials')) ?? (!selectedCourseMaterials.length ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : (
                   <div className="stack-list">
-                    {selectedCourseMaterials.map(({ kind, session, key }, index) => (
+                    {selectedCourseMaterials.map(({ kind, session, key, material }, index) => (
                       <article className="stack-list-item" key={key}>
                         <div>
-                          <strong>{session.sessionTitle ?? session.title ?? (kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }))}</strong>
+                          <strong>{(kind === 'resource' ? material?.title ?? session.sessionTitle ?? session.title : session.sessionTitle ?? session.title ?? material?.title) ?? (kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }))}</strong>
                           <span>{dateText(session.startsAt)}</span>
-                          <small>{kind === 'recording' ? t('student.recording') : t('student.resource')}</small>
+                          <small>{kind === 'recording' ? t('student.recording') : displayText(material?.type, t('student.resource'))}</small>
                         </div>
                         <div className="student-material-actions">
                           {session.id ? <Link className="secondary-link-button" to={`/student/sessions/${session.id}`}>{t('student.sessionDetails')}</Link> : null}
+                          {kind === 'resource' && material?.url ? <a className="secondary-link-button" href={material.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
                           {kind === 'recording' && typeof session.url === 'string' ? <a className="secondary-link-button" href={session.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
                         </div>
                       </article>
                     ))}
                   </div>
-                )}
+                ))}
               </section>
             </>
           ) : (
             <section className="content-section full">
-              <EmptyState title={t('student.courseNotFoundTitle')} detail={t('student.courseNotFoundDetail')} action={<Link className="secondary-link-button" to="/student/courses">{t('navigation.courses')}</Link>} />
+              {sectionError('courseDetail', t('student.courseDetail')) ?? <EmptyState title={t('student.courseNotFoundTitle')} detail={t('student.courseNotFoundDetail')} action={<Link className="secondary-link-button" to="/student/courses">{t('navigation.courses')}</Link>} />}
             </section>
           )
         ) : null}
@@ -1249,7 +1501,7 @@ export function StudentDashboardPage({
                   <FiFileText />
                   <h2>{t('student.materials')}</h2>
                 </div>
-                {!selectedSessionMaterials.length && !selectedSession.materials?.length && !selectedSession.url && !('recordingUrl' in selectedSession && selectedSession.recordingUrl) ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : (
+                {sectionError('materials', t('student.materials')) ?? (!selectedSessionMaterials.length && !selectedSession.materials?.length && !selectedSession.url && !('recordingUrl' in selectedSession && selectedSession.recordingUrl) ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : (
                   <div className="stack-list">
                     {selectedSession.materials?.map((material, index) => (
                       <article className="stack-list-item" key={`${material.url ?? material.title}-${index}`}>
@@ -1260,6 +1512,15 @@ export function StudentDashboardPage({
                         {material.url ? <a className="secondary-link-button" href={material.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
                       </article>
                     ))}
+                    {!selectedSession.materials?.length ? selectedSessionMaterials.map(({ kind, key, material }) => (
+                      <article className="stack-list-item" key={key}>
+                        <div>
+                          <strong>{material?.title ?? (kind === 'recording' ? t('student.recording') : t('student.resource'))}</strong>
+                          <span>{kind === 'recording' ? t('student.recording') : displayText(material?.type, t('student.resource'))}</span>
+                        </div>
+                        {material?.url ? <a className="secondary-link-button" href={material.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
+                      </article>
+                    )) : null}
                     {(selectedSession.url || ('recordingUrl' in selectedSession && selectedSession.recordingUrl)) ? (
                       <article className="stack-list-item">
                         <div>
@@ -1270,7 +1531,7 @@ export function StudentDashboardPage({
                       </article>
                     ) : null}
                   </div>
-                )}
+                ))}
               </section>
 
               <section className="content-section">
@@ -1296,18 +1557,14 @@ export function StudentDashboardPage({
             </>
           ) : (
             <section className="content-section full">
-              <EmptyState title={t('student.sessionNotFoundTitle')} detail={t('student.sessionNotFoundDetail')} action={<Link className="secondary-link-button" to="/student/today">{t('student.today')}</Link>} />
+              {sectionError('sessionDetail', t('student.sessionDetail')) ?? <EmptyState title={t('student.sessionNotFoundTitle')} detail={t('student.sessionNotFoundDetail')} action={<Link className="secondary-link-button" to="/student/today">{t('student.today')}</Link>} />}
             </section>
           )
         ) : null}
 
         {view === 'materials' ? (
-        <section className="content-section">
-          <div className="student-panel-heading">
-            <FiFileText />
-            <h2>{t('student.materials')}</h2>
-          </div>
-          {materialItems.length ? (
+        <section className="content-section full student-materials-section">
+          {showMaterialToolbar ? (
             <div className="student-filter-toolbar">
               <div className="segmented-control" aria-label={t('student.materialTypeFilter')}>
                 {(['all', 'resources', 'recordings'] as const).map((option) => (
@@ -1332,66 +1589,45 @@ export function StudentDashboardPage({
               ) : null}
             </div>
           ) : null}
-          {!materialItems.length ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : !filteredMaterialItems.length ? (
+          {sectionError('materials', t('student.materials')) ?? (!materialItems.length && !hasActiveMaterialFilter ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : !filteredMaterialItems.length ? (
             <EmptyState title={t('student.materialsFilteredEmptyTitle')} detail={t('student.materialsFilteredEmptyDetail')} />
           ) : (
-            <div className="stack-list">
-              {visibleMaterialItems.map(({ kind, session, key }, index) => (
-                <article className="stack-list-item" key={key}>
-                  <div>
-                    <strong>{session.sessionTitle ?? session.title ?? (kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }))}</strong>
+            <div className="student-material-list">
+              {visibleMaterialItems.map((item, index) => {
+                const { kind, session, key } = item;
+                const title = materialTitle(item, kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }));
+                const typeText = materialTypeText(item, kind === 'recording' ? t('student.recording') : t('student.resource'));
+                const openUrl = materialUrl(item);
+                const MaterialIcon = kind === 'recording' ? FiPlayCircle : FiFileText;
+                return (
+                <article className="student-material-row" key={key}>
+                  <div className="student-material-type" aria-hidden="true">
+                    <MaterialIcon />
+                    <span>{typeText}</span>
+                  </div>
+                  <div className="student-material-copy">
+                    <strong>{title}</strong>
                     <span>{displayText(session.courseTitle, t('student.courseNotSet'))} · {dateText(session.startsAt)}</span>
-                    <small>{kind === 'recording' ? t('student.recording') : t('student.resource')}</small>
                   </div>
                   <div className="student-material-actions">
-                    {session.id ? <Link className="secondary-link-button" to={`/student/sessions/${session.id}`}>{t('student.sessionDetails')}</Link> : null}
-                    {kind === 'resource' ? session.materials?.slice(0, 3).map((material, materialIndex) => (
-                      material.url ? (
-                        <a className="secondary-link-button" key={`${material.url}-${materialIndex}`} href={material.url} target="_blank" rel="noreferrer">
-                          {material.title ?? displayText(material.type, t('student.open'))}
-                        </a>
-                      ) : null
-                    )) : null}
-                    {kind === 'recording' && typeof session.url === 'string' ? <a className="secondary-link-button" href={session.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
+                    {openUrl ? <a className="primary-link-button" href={openUrl} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
+                    {session.id ? <Link className="secondary-link-button subtle" to={`/student/sessions/${session.id}`}>{t('student.sessionDetails')}</Link> : null}
                   </div>
                 </article>
-              ))}
-              <div className="student-pagination-row">
-                <span>{t('student.showingMaterials', { shown: visibleMaterialItems.length, total: filteredMaterialItems.length })}</span>
+              );
+              })}
+              {canLoadMoreMaterials || materialDisplayTotal > 1 ? (
+              <div className="student-pagination-row student-material-pagination">
+                <span>{t('student.showingMaterials', { shown: visibleMaterialItems.length, total: materialDisplayTotal })}</span>
                 {canLoadMoreMaterials ? (
                   <button type="button" className="secondary-button" disabled={loadingMoreMaterials} onClick={() => void loadMoreMaterials()}>
                     {loadingMoreMaterials ? t('student.loadingMoreMaterials') : t('student.loadMoreMaterials')}
                   </button>
                 ) : null}
               </div>
+              ) : null}
             </div>
-          )}
-        </section>
-        ) : null}
-
-        {view === 'today' ? (
-        <section className="content-section">
-          <div className="student-panel-heading">
-            <FiCalendar />
-            <h2>{t('student.upcomingSessions')}</h2>
-          </div>
-          {!sessions.length ? <EmptyState title={t('student.sessionsEmptyTitle')} detail={t('student.sessionsEmptyDetail')} /> : (
-            <div className="stack-list">
-              {sessions.map((session, index) => (
-                <article className="stack-list-item" key={session.id ?? index}>
-                  <div>
-                    <strong>{session.title ?? t('student.sessionFallback', { number: index + 1 })}</strong>
-                    <span>{displayText(session.courseTitle, t('student.courseNotSet'))} · {dateText(session.startsAt)}</span>
-                    <small>{displayText(session.groupName, t('student.groupNotSet'))}</small>
-                  </div>
-                  <div className="student-material-actions">
-                    {session.id ? <Link className="secondary-link-button" to={`/student/sessions/${session.id}`}>{t('student.sessionDetails')}</Link> : null}
-                    {session.liveJoinUrl ? <a className="secondary-link-button" href={session.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.join')}</a> : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
+          ))}
         </section>
         ) : null}
 
@@ -1401,48 +1637,46 @@ export function StudentDashboardPage({
               <FiPlayCircle />
               <h2>{t('student.courseProgress')}</h2>
             </div>
-            {!progressCourses.length ? <EmptyState title={t('student.coursesEmptyTitle')} detail={t('student.progressEnrollments')} /> : (
+            {sectionError('progress', t('student.progress')) ?? (!progressCourses.length ? <EmptyState title={t('student.coursesEmptyTitle')} detail={t('student.progressEnrollments')} /> : (
               <div className="stack-list">
-                {progressCourses.slice(0, 8).map((course, index) => {
-                  const progress = course.progressPercent ?? course.progress ?? 0;
-                  return (
-                    <article className="stack-list-item" key={course.id ?? course.courseId ?? index}>
-                      <div>
-                        <strong>{course.title ?? course.courseTitle ?? t('student.courseFallback', { number: index + 1 })}</strong>
-                        <span>{displayText(course.groupName, t('student.groupNotAssigned'))}</span>
-                        <span>{progressText(progress)}{typeof course.attendanceRate === 'number' ? ` · ${t('navigation.attendance')} ${Math.round(course.attendanceRate)}%` : ''}</span>
-                        <div className="student-milestone-row">
-                          {[0, 50, 100].map((milestone) => (
-                            <span className={`student-milestone ${progress >= milestone ? 'complete' : ''}`} key={milestone}>
-                              {milestone === 0 ? t('student.milestoneStarted') : milestone === 50 ? t('student.milestoneHalfway') : t('student.milestoneComplete')}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="progress-cell">
-                        <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
-                        <strong>{Math.round(progress)}%</strong>
-                      </div>
-                    </article>
-                  );
+	                {progressCourses.map((course, index) => {
+	                  const progress = course.progressPercent ?? course.progress ?? 0;
+                    const normalizedProgress = Math.max(0, Math.min(100, progress));
+                    const id = course.courseId ?? course.id;
+	                  return (
+	                    <article className={`student-progress-course-row${normalizedProgress <= 0 ? ' not-started' : ''}`} key={course.id ?? course.courseId ?? index}>
+	                      <div className="student-progress-course-copy">
+	                        <strong>{course.title ?? course.courseTitle ?? t('student.courseFallback', { number: index + 1 })}</strong>
+	                        <span>{displayText(course.groupName, t('student.groupNotAssigned'))}</span>
+	                        <small>{progressText(progress)}{typeof course.attendanceRate === 'number' ? ` · ${t('navigation.attendance')} ${Math.round(course.attendanceRate)}%` : ''}</small>
+                          <div className="student-progress-track" aria-label={t('student.courseProgress')}>
+                            <span style={{ width: `${normalizedProgress}%` }} />
+                          </div>
+	                      </div>
+	                      <div className="student-progress-course-side">
+	                        <strong>{Math.round(progress)}%</strong>
+                          {id ? <Link className="secondary-link-button subtle" to={`/student/courses/${id}`}>{t('student.openCourse')}</Link> : null}
+	                      </div>
+	                    </article>
+	                  );
                 })}
               </div>
-            )}
+            ))}
           </section>
         ) : null}
 
         {attendanceEnabled && view === 'progress' ? (
-          <section className="content-section">
+          <section className="content-section student-progress-attendance-section">
             <div className="student-panel-heading">
               <FiCheckCircle />
               <h2>{t('navigation.attendance')}</h2>
             </div>
-            {!attendance.length ? <EmptyState title={t('student.noAttendanceTitle')} detail={t('student.noAttendanceDetail')} /> : (
-              <>
-                <div className="student-attendance-summary">
-                  <strong>{attendanceRate}%</strong>
-                  <span>{missedAttendanceCount} {t('student.attendanceRecent')}</span>
-                </div>
+            {sectionError('attendance', t('navigation.attendance')) ?? (!attendance.length ? <EmptyState title={t('student.noAttendanceTitle')} detail={t('student.noAttendanceDetail')} /> : (
+	              <>
+	                <div className="student-attendance-summary">
+	                  <strong>{t('student.attendanceRatio', { attended: attendedAttendanceCount, total: attendance.length })}</strong>
+	                  <span>{missedAttendanceCount ? t('student.missedSessions', { count: missedAttendanceCount }) : t('student.attendanceClear')}</span>
+	                </div>
                 <div className="stack-list">
                   {attendance.slice(0, 6).map((record, index) => (
                     <article className="stack-list-item" key={record.id ?? `${record.sessionId}-${index}`}>
@@ -1456,7 +1690,7 @@ export function StudentDashboardPage({
                   ))}
                 </div>
               </>
-            )}
+            ))}
           </section>
         ) : null}
 
@@ -1482,12 +1716,13 @@ export function StudentDashboardPage({
         ) : null}
 
         {certificatesEnabled && view === 'progress' ? (
-          <section className="content-section">
+          <section className={`content-section student-certificates-section${!certificates.length ? ' certificate-quiet-empty' : ''}`}>
             <div className="student-panel-heading">
               <FiAward />
               <h2>{t('navigation.certificates')}</h2>
             </div>
-            <div className="student-filter-toolbar">
+            {certificates.length || hasActiveCertificateFilter ? (
+            <div className="student-filter-toolbar student-certificate-filter-toolbar">
               <div className="segmented-control" aria-label={t('navigation.certificates')}>
                 {(['all', 'issued', 'pending', 'rejected', 'revoked'] as const).map((option) => (
                   <button
@@ -1496,7 +1731,7 @@ export function StudentDashboardPage({
                     className={certificateStatusFilter === option ? 'active' : ''}
                     onClick={() => setCertificateStatusFilter(option)}
                   >
-                    {option === 'all' ? t('student.materialFilter.all') : readable(option)}
+                    {t(`student.certificateFilter.${option}`)}
                   </button>
                 ))}
               </div>
@@ -1510,7 +1745,8 @@ export function StudentDashboardPage({
                 </label>
               ) : null}
             </div>
-            {!certificates.length ? <EmptyState title={t('student.certificatesEmptyTitle')} detail={t('student.certificatesEmptyDetail')} /> : (
+            ) : null}
+            {sectionError('certificates', t('navigation.certificates')) ?? (!certificates.length ? <EmptyState title={t('student.certificatesEmptyTitle')} detail={t('student.certificatesEmptyDetail')} /> : (
               <div className="stack-list">
                 {certificates.map((certificate, index) => (
                   <article className="stack-list-item" key={certificate.id ?? certificate.publicId ?? index}>
@@ -1539,17 +1775,88 @@ export function StudentDashboardPage({
                   </div>
                 ) : null}
               </div>
-            )}
+            ))}
           </section>
         ) : null}
 
         {view === 'help' ? (
-          <section className="content-section full">
-            <div className="student-panel-heading">
+          <section className="content-section full student-help-section">
+            <div className="student-help-header">
+              <div className="student-panel-heading">
               <FiHelpCircle />
               <h2>{t('student.helpTitle')}</h2>
+              </div>
+              <p>{t('student.helpIntro')}</p>
             </div>
-            <div className="student-help-grid">
+            <div className="student-help-layout">
+            <form className="student-support-form" onSubmit={submitSupportRequest}>
+              <div className="student-support-form-heading">
+                <strong>{t('student.sendSupportRequest')}</strong>
+                <span>{t('student.supportFormHint')}</span>
+              </div>
+              {sectionError('supportOptions', t('student.supportOptions'))}
+              <div className="two-col">
+                <label>
+                  {t('student.supportCategoryPrompt')}
+                  <select value={supportForm.category} onChange={(event) => setSupportForm((current) => ({ ...current, category: event.target.value }))}>
+                    {(supportOptions?.categories?.length ? supportOptions.categories : ['general', 'course', 'task', 'schedule', 'access']).map((option) => {
+                      const value = supportOptionValue(option);
+                      return <option key={value} value={value}>{supportOptionLabel(option, t)}</option>;
+                    })}
+                  </select>
+                </label>
+                <label>
+                  {t('student.supportPriorityPrompt')}
+                  <select value={supportForm.priority} onChange={(event) => setSupportForm((current) => ({ ...current, priority: event.target.value as 'high' | 'medium' | 'low' }))}>
+                    {(supportOptions?.priorities?.length ? supportOptions.priorities : ['medium', 'high', 'low']).map((option) => {
+                      const value = supportOptionValue(option) as 'high' | 'medium' | 'low';
+                      return <option key={value} value={value}>{supportOptionLabel(option, t)}</option>;
+                    })}
+                  </select>
+                </label>
+                <label>
+                  {t('student.supportCoursePrompt')}
+                  <select
+                    value={supportForm.courseId}
+                    onChange={(event) => setSupportForm((current) => ({ ...current, courseId: event.target.value, sessionId: 'none' }))}
+                  >
+                    <option value="none">{t('student.supportNoCourse')}</option>
+                    {supportCourseOptions.map((course) => <option key={course.value} value={course.value}>{course.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  {t('student.supportSessionPrompt')}
+                  <select
+                    value={supportForm.sessionId}
+                    onChange={(event) => setSupportForm((current) => ({ ...current, sessionId: event.target.value }))}
+                    disabled={!supportSessionOptions.length}
+                  >
+                    <option value="none">{supportSessionOptions.length ? t('student.supportNoSession') : t('student.supportNoSessionsAvailable')}</option>
+                    {supportSessionOptions.map((session) => <option key={session.value} value={session.value}>{session.label}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label>
+                {t('student.supportMessagePrompt')}
+                <textarea
+                  value={supportForm.message}
+                  onChange={(event) => setSupportForm((current) => ({ ...current, message: event.target.value }))}
+                  rows={5}
+                  placeholder={t('student.supportMessagePlaceholder')}
+                />
+              </label>
+              <div className="student-support-form-footer">
+                <span className={supportMessageLength ? 'ready' : ''}>
+                  {supportMessageLength ? t('student.supportMessageReady') : t('student.supportMessageRequired')}
+                </span>
+                <small>{t('student.supportMessageCharacters', { count: supportMessageLength })}</small>
+              </div>
+              <div className="modal-actions">
+                <button type="submit" disabled={!canSubmitSupportRequest}>{submitting ? t('student.submitting') : t('student.sendSupportRequest')}</button>
+              </div>
+            </form>
+
+            <aside className="student-help-side">
               <article className="student-help-card">
                 <strong>{t('student.contactInstructor')}</strong>
                 <span>{courses.length ? t('student.contactInstructorDetail') : t('student.contactInstructorNoCourses')}</span>
@@ -1568,49 +1875,37 @@ export function StudentDashboardPage({
                 <strong>{t('student.blockedLearning')}</strong>
                 <span>{t('student.blockedLearningDetail')}</span>
               </article>
+            </aside>
+
+            <section className="student-support-history">
+              <div className="section-heading-row">
+                <div>
+                  <h2>{t('student.supportRequestHistory')}</h2>
+                  <span>{supportRequests.length ? t('student.supportRequestHistoryDetail') : t('student.supportRequestHistoryEmptyHint')}</span>
+                </div>
+              </div>
+              {sectionError('supportRequests', t('student.supportRequestHistory')) ?? (supportRequests.length ? (
+                <div className="stack-list">
+                  {supportRequests.map((request, index) => (
+                    <article className="stack-list-item" key={request.id ?? index}>
+                      <div>
+                        <strong>{request.message || t('student.supportRequest')}</strong>
+                        <span>{supportOptionLabel(request.category ?? t('student.supportCategory'), t)} · {dateText(request.createdAt, t('student.dateNotScheduled'))}</span>
+                      </div>
+                      <span className={`status-badge ${statusClass(request.status)}`}>{statusLabel(request.status, t('student.pending'))}</span>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="student-support-empty">
+                  <div>
+                    <strong>{t('student.supportRequestsEmptyTitle')}</strong>
+                    <span>{t('student.supportRequestsEmptyDetail')}</span>
+                  </div>
+                </div>
+              ))}
+            </section>
             </div>
-            <form className="student-support-form" onSubmit={submitSupportRequest}>
-              <div className="two-col">
-                <label>
-                  {t('student.supportCategory')}
-                  <select value={supportForm.category} onChange={(event) => setSupportForm((current) => ({ ...current, category: event.target.value }))}>
-                    {(supportOptions?.categories?.length ? supportOptions.categories : ['general', 'course', 'task', 'schedule', 'access']).map((option) => {
-                      const value = supportOptionValue(option);
-                      return <option key={value} value={value}>{supportOptionLabel(option)}</option>;
-                    })}
-                  </select>
-                </label>
-                <label>
-                  {t('student.supportPriority')}
-                  <select value={supportForm.priority} onChange={(event) => setSupportForm((current) => ({ ...current, priority: event.target.value as 'high' | 'medium' | 'low' }))}>
-                    {(supportOptions?.priorities?.length ? supportOptions.priorities : ['medium', 'high', 'low']).map((option) => {
-                      const value = supportOptionValue(option) as 'high' | 'medium' | 'low';
-                      return <option key={value} value={value}>{supportOptionLabel(option)}</option>;
-                    })}
-                  </select>
-                </label>
-              </div>
-              <label>
-                {t('student.supportMessage')}
-                <textarea value={supportForm.message} onChange={(event) => setSupportForm((current) => ({ ...current, message: event.target.value }))} rows={4} />
-              </label>
-              <div className="modal-actions">
-                <button type="submit" disabled={submitting || !supportForm.message.trim()}>{submitting ? t('student.submitting') : t('student.sendSupportRequest')}</button>
-              </div>
-            </form>
-            {supportRequests.length ? (
-              <div className="stack-list">
-                {supportRequests.map((request, index) => (
-                  <article className="stack-list-item" key={request.id ?? index}>
-                    <div>
-                      <strong>{request.message || t('student.supportRequest')}</strong>
-                      <span>{displayText(request.category, t('student.supportCategory'))} · {dateText(request.createdAt, t('student.dateNotScheduled'))}</span>
-                    </div>
-                    <span className={`status-badge ${statusClass(request.status)}`}>{statusLabel(request.status, t('student.pending'))}</span>
-                  </article>
-                ))}
-              </div>
-            ) : null}
           </section>
         ) : null}
       </div>

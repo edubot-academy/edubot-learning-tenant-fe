@@ -25,6 +25,7 @@ export function CountFilterRow<T extends string>({
           type="button"
           key={item.key}
           className={item.active ? 'active' : ''}
+          data-count={item.count}
           aria-pressed={item.active}
           onClick={() => onSelect(item.key)}
         >

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCurrentStudentLoad, nextStudentLoadId, prioritizeStudentTasks, settledStudentValue, sortOpenStudentTasks } from './studentDashboardData';
+import { isCurrentStudentLoad, nextStudentLoadId, prioritizeStudentTasks, settledStudentValue, sortOpenStudentTasks, studentTaskState } from './studentDashboardData';
 
 const now = Date.parse('2026-05-13T12:00:00.000Z');
 
@@ -24,6 +24,18 @@ describe('student dashboard data helpers', () => {
     ];
 
     expect(prioritizeStudentTasks(tasks, now).map((task) => task.id)).toEqual([3, 2, 1]);
+  });
+
+  it('uses review and submission state when deciding task priority', () => {
+    const tasks = [
+      { id: 1, title: 'Submitted homework', status: 'assigned', mySubmission: { status: 'submitted' }, kind: 'homework' },
+      { id: 1, title: 'Open activity', status: 'assigned', dueAt: '2026-05-12T09:00:00.000Z', kind: 'activity' },
+      { id: 2, title: 'Needs revision', status: 'submitted', reviewState: 'needs_revision', kind: 'homework' },
+    ];
+
+    expect(studentTaskState(tasks[0])).toBe('submitted');
+    expect(studentTaskState(tasks[2])).toBe('needs_revision');
+    expect(prioritizeStudentTasks(tasks, now).map((task) => task.title)).toEqual(['Open activity', 'Needs revision', 'Submitted homework']);
   });
 
   it('returns fallback values for failed optional student endpoints', () => {

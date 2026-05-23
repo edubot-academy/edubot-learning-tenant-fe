@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { FiArrowRight, FiCalendar, FiCheckSquare, FiClipboard, FiEdit2, FiPlus, FiUsers } from 'react-icons/fi';
+import { FiArrowRight, FiCalendar, FiCheckSquare, FiClipboard, FiCopy, FiEdit2, FiExternalLink, FiPlus, FiRefreshCw, FiTrash2, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
@@ -19,6 +19,7 @@ import {
   listTenantMembers,
   previewGeneratedSessions,
   removeUserFromGroup,
+  resendTenantInvitation,
   searchUsers,
   updateCourseGroup,
 } from '../../services/api';
@@ -49,6 +50,15 @@ const emptyStudentInviteForm = {
   fullName: '',
   email: '',
   sendEmail: false,
+};
+
+type StudentSetupLinkResult = {
+  userId?: number;
+  fullName?: string;
+  email?: string;
+  setupLink?: string;
+  expiresAt?: string;
+  emailSent?: boolean;
 };
 
 type GroupWorkspaceTab = 'overview' | 'students' | 'sessions' | 'settings';
@@ -90,6 +100,7 @@ export function GroupsPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<number | undefined>();
   const [studentSearchAttempted, setStudentSearchAttempted] = useState(false);
   const [studentInviteForm, setStudentInviteForm] = useState(emptyStudentInviteForm);
+  const [studentSetupLink, setStudentSetupLink] = useState<StudentSetupLinkResult | null>(null);
   const [groupForm, setGroupForm] = useState<GroupForm>(() => emptyGroupForm(defaultTimezone));
   const [createErrors, setCreateErrors] = useState<GroupValidationErrors>({});
   const [generationRange, setGenerationRange] = useState({ fromDate: '', toDate: '' });
@@ -106,6 +117,7 @@ export function GroupsPage() {
   const [savingGroup, setSavingGroup] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [removingStudentId, setRemovingStudentId] = useState<number | undefined>();
+  const [resendingSetupUserId, setResendingSetupUserId] = useState<number | undefined>();
   const [generationLoading, setGenerationLoading] = useState(false);
   const savingGroupRef = useRef(false);
 
@@ -130,6 +142,22 @@ export function GroupsPage() {
       })),
     [members],
   );
+  const studentSetupByUserId = useMemo(() => {
+    const map = new Map<number, StudentSetupLinkResult>();
+    members.forEach((member) => {
+      const setupLink = member.invitation?.setupLink ?? member.onboarding?.setupLink;
+      if (!setupLink) return;
+      map.set(member.userId, {
+        userId: member.userId,
+        fullName: member.fullName ?? member.user?.fullName,
+        email: member.email ?? member.user?.email,
+        setupLink,
+        expiresAt: member.invitation?.expiresAt ?? member.onboarding?.expiresAt ?? undefined,
+        emailSent: member.invitation?.emailSent ?? member.onboarding?.emailSent ?? undefined,
+      });
+    });
+    return map;
+  }, [members]);
   const filteredCourses = useMemo(() => {
     const normalized = courseQuery.trim().toLowerCase();
     return normalized
@@ -367,6 +395,61 @@ export function GroupsPage() {
     setStudents(nextStudents);
   };
 
+  const reloadMembers = async () => {
+    if (!activeTenantId || (!canAssignInstructor && !canManageEnrollment)) return;
+    setMembers(await listTenantMembers(activeTenantId));
+  };
+
+  const copyStudentSetupLink = async (setupLink = studentSetupLink?.setupLink) => {
+    if (!setupLink) return;
+    try {
+      await navigator.clipboard.writeText(setupLink);
+      toast.success(t('members.inviteLinkCopied'));
+    } catch {
+      toast.error(t('members.inviteLinkCopyFailed'));
+    }
+  };
+
+  const resendStudentSetupLink = async (setup: StudentSetupLinkResult) => {
+    if (!activeTenantId || !setup.userId) return;
+    setResendingSetupUserId(setup.userId);
+    try {
+      const result = await resendTenantInvitation(activeTenantId, setup.userId, { sendEmail: true });
+      const nextSetup: StudentSetupLinkResult = {
+        userId: result.user?.id ?? setup.userId,
+        fullName: result.user?.fullName ?? setup.fullName,
+        email: result.user?.email ?? setup.email,
+        setupLink: result.onboarding?.setupLink ?? setup.setupLink,
+        expiresAt: result.onboarding?.expiresAt ?? setup.expiresAt,
+        emailSent: result.onboarding?.emailSent ?? true,
+      };
+      if (nextSetup.setupLink) setStudentSetupLink(nextSetup);
+      await reloadMembers();
+      toast.success(result.onboarding?.emailSent ? t('members.inviteResent') : t('members.inviteLinkRegenerated'));
+    } catch {
+      toast.error(t('members.inviteResendFailed'));
+    } finally {
+      setResendingSetupUserId(undefined);
+    }
+  };
+
+  const captureStudentSetupLink = (member: {
+    userId?: number;
+    fullName?: string;
+    email?: string;
+    onboarding?: { setupLink?: string; expiresAt?: string; emailSent?: boolean } | null;
+  }) => {
+    if (!member.onboarding?.setupLink) return;
+    setStudentSetupLink({
+      userId: member.userId,
+      fullName: member.fullName,
+      email: member.email,
+      setupLink: member.onboarding.setupLink,
+      expiresAt: member.onboarding.expiresAt,
+      emailSent: member.onboarding.emailSent,
+    });
+  };
+
   const toPayload = () => ({
     name: groupForm.name.trim(),
     code: groupForm.code.trim() || undefined,
@@ -439,6 +522,7 @@ export function GroupsPage() {
           sendEmail: studentInviteForm.sendEmail,
         });
         individualStudentId = member.userId;
+        captureStudentSetupLink(member);
       }
       const saved = groupForm.deliveryMode === 'individual'
         ? (await createIndividualCourseGroup({
@@ -461,6 +545,7 @@ export function GroupsPage() {
           courseId,
         });
       await reloadGroups(courseId, saved.id);
+      if (groupForm.deliveryMode === 'individual' && enrollmentMode === 'new') await reloadMembers();
       setIsCreateOpen(false);
       setStudentQuery('');
       setStudentResults([]);
@@ -595,6 +680,8 @@ export function GroupsPage() {
       });
       await enrollUser({ courseId, groupId, userId: member.userId });
       await reloadGroupDetail(groupId);
+      await reloadMembers();
+      captureStudentSetupLink(member);
       setStudentInviteForm(emptyStudentInviteForm);
       setIsEnrollmentOpen(false);
       toast.success(member.onboarding?.emailSent ? t('groups.studentInvitedEnrolled') : t('groups.studentCreatedEnrolled'));
@@ -888,12 +975,12 @@ export function GroupsPage() {
               <span>{selectedIndividualStudentName || selectedCourse?.title || t('courses.selectedCourse')}</span>
             </div>
             <div className="page-actions group-action-bar">
+              <Link className="primary-link-button" to={nextSessionLink}><FiCalendar /> {t('navigation.sessions')}</Link>
+              <Link className="secondary-link-button" to={attendanceLink}><FiCheckSquare /> {t('navigation.attendance')}</Link>
+              <Link className="secondary-link-button" to={homeworkLink}><FiClipboard /> {t('navigation.homework')}</Link>
               {canCoordinateGroups ? (
                 <button type="button" className="secondary-button" onClick={() => { setGroupForm(groupToForm(selectedGroup, defaultTimezone)); setCreateErrors({}); setIsEditOpen(true); }}><FiEdit2 /> {t('groups.editGroup')}</button>
               ) : null}
-              <Link className="secondary-link-button" to={nextSessionLink}><FiCalendar /> {t('navigation.sessions')}</Link>
-              <Link className="secondary-link-button" to={attendanceLink}><FiCheckSquare /> {t('navigation.attendance')}</Link>
-              <Link className="secondary-link-button" to={homeworkLink}><FiClipboard /> {t('navigation.homework')}</Link>
             </div>
           </div>
           {nextBestAction ? (
@@ -1008,16 +1095,40 @@ export function GroupsPage() {
                 ) : null}
               </div>
               <div className="stack-list">
-                {students.map((student) => (
-                  <article key={student.userId} className="stack-list-item">
-                    <div><strong>{student.fullName || student.email || t('courses.studentFallback', { id: student.userId })}</strong><span>{student.email || t('groups.noEmail')} · {t('groups.progressPercent', { percent: Math.round(student.progressPercent ?? 0) })}</span></div>
-                    {canManageEnrollment ? (
-                      <button type="button" className="link-button danger" onClick={() => setStudentToRemove(student)} disabled={removingStudentId === student.userId}>
-                        {removingStudentId === student.userId ? t('groups.removing') : t('groups.remove')}
-                      </button>
-                    ) : null}
-                  </article>
-                ))}
+                {students.map((student) => {
+                  const setup = studentSetupByUserId.get(student.userId);
+                  return (
+                    <article key={student.userId} className="stack-list-item group-student-row">
+                      <div className="group-student-main">
+                        <strong>{student.fullName || student.email || t('courses.studentFallback', { id: student.userId })}</strong>
+                        <span>{student.email || t('groups.noEmail')}</span>
+                        <span className="group-student-progress">{t('groups.progressPercent', { percent: Math.round(student.progressPercent ?? 0) })}</span>
+                      </div>
+                      <div className="group-student-actions">
+                        {setup?.setupLink ? (
+                          <>
+                            <button type="button" className="icon-button" aria-label={t('members.copyLink')} title={t('members.copyLink')} onClick={() => void copyStudentSetupLink(setup.setupLink)}>
+                              <FiCopy />
+                            </button>
+                            <a className="icon-button" aria-label={t('groups.openSetupLink')} title={t('groups.openSetupLink')} href={setup.setupLink} target="_blank" rel="noreferrer">
+                              <FiExternalLink />
+                            </a>
+                          </>
+                        ) : null}
+                        {canManageEnrollment && setup ? (
+                          <button type="button" className="icon-button" aria-label={t('members.resendInvite')} title={t('members.resendInvite')} onClick={() => void resendStudentSetupLink(setup)} disabled={resendingSetupUserId === student.userId}>
+                            <FiRefreshCw className={resendingSetupUserId === student.userId ? 'spin-icon' : undefined} />
+                          </button>
+                        ) : null}
+                        {canManageEnrollment ? (
+                          <button type="button" className="icon-button danger" aria-label={t('groups.removeStudent')} title={t('groups.removeStudent')} onClick={() => setStudentToRemove(student)} disabled={removingStudentId === student.userId}>
+                            <FiTrash2 />
+                          </button>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
                 {!students.length ? (
                   <EmptyState
                     title={t('groups.noStudentsTitle')}
@@ -1206,6 +1317,39 @@ export function GroupsPage() {
             <button type="button" className="danger-button" onClick={() => void removeStudent(studentToRemove)} disabled={removingStudentId === studentToRemove.userId}>
               {removingStudentId === studentToRemove.userId ? t('groups.removing') : t('groups.removeStudent')}
             </button>
+          </div>
+        </Modal>
+      ) : null}
+      {studentSetupLink?.setupLink ? (
+        <Modal labelledBy="student-setup-link-title" onClose={() => setStudentSetupLink(null)}>
+          <div className="modal-header-block">
+            <span>{studentSetupLink.fullName || studentSetupLink.email || t('courses.student')}</span>
+            <h2 id="student-setup-link-title">{t('groups.studentSetupLinkReady')}</h2>
+            <p>{t('groups.studentSetupLinkDetail')}</p>
+          </div>
+          <div className="invite-link-panel">
+            <strong>{t('members.setupLink')}</strong>
+            <span>{studentSetupLink.setupLink}</span>
+            <div className="setup-link-actions">
+              <button type="button" className="icon-button" aria-label={t('members.copyLink')} title={t('members.copyLink')} onClick={() => void copyStudentSetupLink()}>
+                <FiCopy />
+              </button>
+              <a className="icon-button" aria-label={t('groups.openSetupLink')} title={t('groups.openSetupLink')} href={studentSetupLink.setupLink} target="_blank" rel="noreferrer">
+                <FiExternalLink />
+              </a>
+            </div>
+            <small>
+              {studentSetupLink.emailSent ? `${t('members.emailSent')} ` : ''}
+              {t('members.expires', { date: studentSetupLink.expiresAt ? formatDate(studentSetupLink.expiresAt) : t('members.soon') })}
+            </small>
+            {studentSetupLink.userId ? (
+              <button type="button" className="link-button setup-link-resend" onClick={() => void resendStudentSetupLink(studentSetupLink)} disabled={resendingSetupUserId === studentSetupLink.userId}>
+                <FiRefreshCw className={resendingSetupUserId === studentSetupLink.userId ? 'spin-icon' : undefined} /> {resendingSetupUserId === studentSetupLink.userId ? t('groups.resendingInvite') : t('members.resendInvite')}
+              </button>
+            ) : null}
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="primary-button" onClick={() => setStudentSetupLink(null)}>{t('actions.done')}</button>
           </div>
         </Modal>
       ) : null}

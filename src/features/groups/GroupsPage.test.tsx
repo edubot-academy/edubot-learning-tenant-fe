@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
   listTenantMembers: vi.fn(),
   previewGeneratedSessions: vi.fn(),
   removeUserFromGroup: vi.fn(),
+  resendTenantInvitation: vi.fn(),
   searchUsers: vi.fn(),
   updateCourseGroup: vi.fn(),
 }));
@@ -430,5 +431,32 @@ describe('GroupsPage individual delivery', () => {
 
     expect(await screen.findByRole('tab', { name: 'Students' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('heading', { name: 'Roster' })).toBeInTheDocument();
+  });
+
+  it('shows setup resend only for students with an active setup link', async () => {
+    api.listCourseGroups.mockResolvedValue([individualGroup]);
+    api.listGroupStudents.mockResolvedValue([
+      { userId: 201, fullName: 'Aida Student', email: 'aida@example.test', progressPercent: 40 },
+    ]);
+
+    renderPage('/?courseId=101&groupId=301&tab=students');
+
+    expect(await screen.findByRole('heading', { name: 'Roster' })).toBeInTheDocument();
+    expect((await screen.findAllByText('Aida Student')).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('Resend invite')).not.toBeInTheDocument();
+
+    cleanup();
+
+    api.listTenantMembers.mockResolvedValue([{ ...studentMember, onboarding: { setupLink: 'https://setup.example.test/aida' } }]);
+    api.listCourseGroups.mockResolvedValue([individualGroup]);
+    api.listGroupStudents.mockResolvedValue([
+      { userId: 201, fullName: 'Aida Student', email: 'aida@example.test', progressPercent: 40 },
+    ]);
+
+    renderPage('/?courseId=101&groupId=301&tab=students');
+
+    expect(await screen.findByRole('heading', { name: 'Roster' })).toBeInTheDocument();
+    expect((await screen.findAllByText('Aida Student')).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Resend invite')).toBeInTheDocument();
   });
 });

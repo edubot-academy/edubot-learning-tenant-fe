@@ -87,6 +87,16 @@ const emptyNotificationSettings = {
   timezone: null as string | null,
 };
 
+function notificationSettingsFromApi(settings: Partial<typeof emptyNotificationSettings> | null | undefined) {
+  return {
+    notifyByEmail: settings?.notifyByEmail !== false,
+    notifyByWhatsApp: settings?.notifyByWhatsApp === true,
+    notifyByTelegram: settings?.notifyByTelegram === true,
+    language: typeof settings?.language === 'string' ? settings.language : null,
+    timezone: typeof settings?.timezone === 'string' ? settings.timezone : null,
+  };
+}
+
 function isHttpUrl(value: string) {
   try {
     const url = new URL(value);
@@ -185,6 +195,7 @@ export function SettingsPage() {
   const [savingBranding, setSavingBranding] = useState(false);
   const [savingPolicies, setSavingPolicies] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState(emptyNotificationSettings);
+  const [savedNotificationSettings, setSavedNotificationSettings] = useState(emptyNotificationSettings);
   const [notificationSettingsLoading, setNotificationSettingsLoading] = useState(false);
   const [savingNotificationSettings, setSavingNotificationSettings] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -264,6 +275,11 @@ export function SettingsPage() {
     return labels[value] ?? enumLabel(value, {}, t);
   };
   const booleanLabel = (value: boolean) => (value ? t('overview.enabled') : t('overview.disabled'));
+  const notificationSettingsDirty = notificationSettings.notifyByEmail !== savedNotificationSettings.notifyByEmail
+    || notificationSettings.notifyByWhatsApp !== savedNotificationSettings.notifyByWhatsApp
+    || notificationSettings.notifyByTelegram !== savedNotificationSettings.notifyByTelegram
+    || notificationSettings.language !== savedNotificationSettings.language
+    || notificationSettings.timezone !== savedNotificationSettings.timezone;
   const roleLabel = (value?: string | null) => {
     const labels: Record<string, string> = {
       admin: t('members.roleAdmin'),
@@ -386,13 +402,9 @@ export function SettingsPage() {
     getStudentNotificationSettings()
       .then((settings) => {
         if (cancelled) return;
-        setNotificationSettings({
-          notifyByEmail: settings?.notifyByEmail !== false,
-          notifyByWhatsApp: settings?.notifyByWhatsApp === true,
-          notifyByTelegram: settings?.notifyByTelegram === true,
-          language: typeof settings?.language === 'string' ? settings.language : null,
-          timezone: typeof settings?.timezone === 'string' ? settings.timezone : null,
-        });
+        const nextSettings = notificationSettingsFromApi(settings);
+        setNotificationSettings(nextSettings);
+        setSavedNotificationSettings(nextSettings);
       })
       .catch(() => {
         if (!cancelled) toast.error(t('settings.notificationSettingsLoadFailed'));
@@ -605,12 +617,19 @@ export function SettingsPage() {
     setSavingNotificationSettings(true);
     try {
       const saved = await updateStudentNotificationSettings(notificationSettings);
+      const nextSettings = {
+        ...notificationSettings,
+        notifyByEmail: saved?.notifyByEmail ?? notificationSettings.notifyByEmail,
+        notifyByWhatsApp: saved?.notifyByWhatsApp ?? notificationSettings.notifyByWhatsApp,
+        notifyByTelegram: saved?.notifyByTelegram ?? notificationSettings.notifyByTelegram,
+        language: typeof saved?.language === 'string' ? saved.language : notificationSettings.language,
+        timezone: typeof saved?.timezone === 'string' ? saved.timezone : notificationSettings.timezone,
+      };
       setNotificationSettings((current) => ({
         ...current,
-        notifyByEmail: saved?.notifyByEmail ?? current.notifyByEmail,
-        notifyByWhatsApp: saved?.notifyByWhatsApp ?? current.notifyByWhatsApp,
-        notifyByTelegram: saved?.notifyByTelegram ?? current.notifyByTelegram,
+        ...nextSettings,
       }));
+      setSavedNotificationSettings(nextSettings);
       toast.success(t('settings.notificationSettingsSaved'));
     } catch {
       toast.error(t('settings.notificationSettingsSaveFailed'));
@@ -687,119 +706,144 @@ export function SettingsPage() {
       ) : null}
 
       {settingsTab === 'personal' ? (
-      <div className="settings-grid">
-        <section className="settings-panel">
-          <div className="settings-panel-heading">
-            <FiSliders />
-            <div>
-              <h2>{t('settings.appearance')}</h2>
-              <span>{t('settings.appearanceDetail')}</span>
+      <div className="settings-grid settings-personal-grid">
+        <div className="settings-personal-stack">
+          <section className="settings-panel settings-appearance-panel">
+            <div className="settings-panel-heading">
+              <FiSliders />
+              <div>
+                <h2>{t('settings.appearance')}</h2>
+                <span>{t('settings.appearanceDetail')}</span>
+              </div>
             </div>
-          </div>
-          <div className="theme-settings-row">
-            <div>
-              <span>{t('settings.theme')}</span>
-              <strong>{preference === 'system' ? t('settings.themeSystemResolved', { theme: themeLabel(resolvedTheme) }) : themeLabel(preference)}</strong>
+            <div className="theme-settings-row">
+              <div>
+                <span>{t('settings.theme')}</span>
+                <strong>{themeLabel(preference)}</strong>
+                {preference === 'system' ? <small>{t('settings.themeCurrentlyUsing', { theme: themeLabel(resolvedTheme) })}</small> : null}
+              </div>
+              <div className="segmented-control" aria-label={t('settings.themePreference')}>
+                {(['system', 'light', 'dark'] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={preference === option ? 'active' : ''}
+                    onClick={() => setPreference(option)}
+                  >
+                    {themeLabel(option)}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="segmented-control" aria-label={t('settings.themePreference')}>
-              {(['system', 'light', 'dark'] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={preference === option ? 'active' : ''}
-                  onClick={() => setPreference(option)}
-                >
-                  {themeLabel(option)}
-                </button>
-              ))}
+          </section>
+
+          <section className="settings-panel settings-language-panel">
+            <div className="settings-panel-heading">
+              <FiGlobe />
+              <div>
+                <h2>{t('settings.languagePreference')}</h2>
+                <span>{t('settings.languagePreferenceDetail')}</span>
+              </div>
             </div>
-          </div>
-        </section>
+            <div className="theme-settings-row">
+              <div>
+                <span>{t('settings.currentLanguage')}</span>
+                <strong>{languageLabel(locale)}</strong>
+              </div>
+              <div className="segmented-control" aria-label={t('language.label')}>
+                {SUPPORTED_LOCALES.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={locale === option ? 'active' : ''}
+                    onClick={() => setLocale(option)}
+                  >
+                    {languageLabel(option)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="settings-inline-note">{t('settings.personalPreferenceNote')}</p>
+          </section>
+        </div>
 
         {learnerView ? (
-        <section className="settings-panel">
-          <div className="settings-panel-heading">
-            <FiBell />
-            <div>
-              <h2>{t('settings.notificationPreferences')}</h2>
-              <span>{t('settings.notificationPreferencesDetail')}</span>
-            </div>
-          </div>
-          {notificationSettingsLoading ? (
-            <LoadingState label={t('settings.notificationSettingsLoading')} />
-          ) : (
-            <form className="settings-form compact-form" onSubmit={saveNotificationSettings}>
-              <label className="checkbox-card">
-                <input
-                  type="checkbox"
-                  checked={notificationSettings.notifyByEmail}
-                  onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByEmail: event.target.checked }))}
-                />
-                <span>
-                  <strong>{t('settings.notifyByEmail')}</strong>
-                  <small>{t('settings.notifyByEmailDetail')}</small>
-                </span>
-              </label>
-              <label className="checkbox-card">
-                <input
-                  type="checkbox"
-                  checked={notificationSettings.notifyByWhatsApp}
-                  onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByWhatsApp: event.target.checked }))}
-                />
-                <span>
-                  <strong>{t('settings.notifyByWhatsApp')}</strong>
-                  <small>{t('settings.notifyByWhatsAppDetail')}</small>
-                </span>
-              </label>
-              <label className="checkbox-card">
-                <input
-                  type="checkbox"
-                  checked={notificationSettings.notifyByTelegram}
-                  onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByTelegram: event.target.checked }))}
-                />
-                <span>
-                  <strong>{t('settings.notifyByTelegram')}</strong>
-                  <small>{t('settings.notifyByTelegramDetail')}</small>
-                </span>
-              </label>
-              <div className="modal-actions">
-                <button type="submit" disabled={savingNotificationSettings}>
-                  {savingNotificationSettings ? t('settings.saving') : t('settings.saveNotificationPreferences')}
-                </button>
+          <section className="settings-panel settings-notification-panel">
+            <div className="settings-panel-heading">
+              <FiBell />
+              <div>
+                <h2>{t('settings.notificationPreferences')}</h2>
+                <span>{t('settings.notificationPreferencesDetail')}</span>
               </div>
-            </form>
-          )}
-        </section>
+            </div>
+            {notificationSettingsLoading ? (
+              <LoadingState label={t('settings.notificationSettingsLoading')} />
+            ) : (
+              <form className="settings-form compact-form notification-preferences-form" onSubmit={saveNotificationSettings}>
+                <label className={`checkbox-card ${notificationSettings.notifyByEmail ? 'active' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={notificationSettings.notifyByEmail}
+                    onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByEmail: event.target.checked }))}
+                  />
+                  <span>
+                    <strong>{t('settings.notifyByEmail')}</strong>
+                    <small>{t('settings.notifyByEmailDetail')}</small>
+                  </span>
+                </label>
+                <label className={`checkbox-card ${notificationSettings.notifyByWhatsApp ? 'active' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={notificationSettings.notifyByWhatsApp}
+                    onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByWhatsApp: event.target.checked }))}
+                  />
+                  <span>
+                    <strong>{t('settings.notifyByWhatsApp')}</strong>
+                    <small>{t('settings.notifyByWhatsAppDetail')}</small>
+                  </span>
+                </label>
+                <label className={`checkbox-card ${notificationSettings.notifyByTelegram ? 'active' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={notificationSettings.notifyByTelegram}
+                    onChange={(event) => setNotificationSettings((current) => ({ ...current, notifyByTelegram: event.target.checked }))}
+                  />
+                  <span>
+                    <strong>{t('settings.notifyByTelegram')}</strong>
+                    <small>{t('settings.notifyByTelegramDetail')}</small>
+                  </span>
+                </label>
+                <div className="two-col">
+                  <label>
+                    {t('settings.notificationLanguage')}
+                    <select
+                      value={notificationSettings.language ?? ''}
+                      onChange={(event) => setNotificationSettings((current) => ({ ...current, language: event.target.value || null }))}
+                    >
+                      <option value="">{t('settings.useAccountLanguage')}</option>
+                      {SUPPORTED_LOCALES.map((option) => (
+                        <option key={option} value={option}>{languageLabel(option)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    {t('settings.notificationTimezone')}
+                    <input
+                      value={notificationSettings.timezone ?? ''}
+                      onChange={(event) => setNotificationSettings((current) => ({ ...current, timezone: event.target.value.trim() || null }))}
+                      placeholder={activeTenant?.timezone || 'Asia/Bishkek'}
+                    />
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button type="submit" disabled={savingNotificationSettings || !notificationSettingsDirty}>
+                    {savingNotificationSettings ? t('settings.saving') : notificationSettingsDirty ? t('settings.saveNotificationPreferences') : t('settings.preferencesSaved')}
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
         ) : null}
-
-        <section className="settings-panel">
-          <div className="settings-panel-heading">
-            <FiGlobe />
-            <div>
-              <h2>{t('settings.languagePreference')}</h2>
-              <span>{t('settings.languagePreferenceDetail')}</span>
-            </div>
-          </div>
-          <div className="theme-settings-row">
-            <div>
-              <span>{t('settings.currentLanguage')}</span>
-              <strong>{languageLabel(locale)}</strong>
-            </div>
-            <div className="segmented-control" aria-label={t('language.label')}>
-              {SUPPORTED_LOCALES.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={locale === option ? 'active' : ''}
-                  onClick={() => setLocale(option)}
-                >
-                  {languageLabel(option)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="panel-note">{t('settings.personalPreferenceNote')}</p>
-        </section>
       </div>
       ) : null}
 

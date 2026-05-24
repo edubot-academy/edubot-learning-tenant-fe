@@ -19,6 +19,22 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.15.2 - 2026-05-24
+
+### Fixed
+
+- Kept staging and API platform hosts tenant-neutral so the app does not lock tenant selection or attempt tenant-domain resolution on those hosts.
+
+### Tests
+
+- Added tenant host-resolution coverage for platform, staging, API, and tenant subdomain hosts.
+- Added frontend role-contract coverage for backend assistant permissions: session coordination/enrollment/support are allowed, while attendance/homework teaching defaults stay disabled.
+- `npm test -- src/features/tenant/TenantProvider.test.ts src/features/tenant/tenantRoles.test.ts src/components/appNavigation.test.ts` passes.
+- `npm test` passes with 35 test files and 208 tests.
+- `npm run lint` passes.
+- `git diff --check` passes.
+- `npm run build` passes.
+
 ## 1.15.1 - 2026-05-24
 
 ### Fixed

@@ -25,6 +25,9 @@ const neutralHostnames = new Set([
   '127.0.0.1',
   '::1',
   'lms.edubot.it.com',
+  'staging.lms.edubot.it.com',
+  'api.lms.edubot.it.com',
+  'staging-api.lms.edubot.it.com',
   'edubot-learning-tenant-fe.vercel.app',
   ...(import.meta.env.VITE_TENANT_NEUTRAL_HOSTS || '')
     .split(',')
@@ -32,11 +35,19 @@ const neutralHostnames = new Set([
     .filter(Boolean),
 ]);
 
+export function isNeutralTenantHostname(hostname: string | null | undefined) {
+  const normalized = String(hostname ?? '').toLowerCase().replace(/\.$/, '');
+  return !normalized || neutralHostnames.has(normalized);
+}
+
+export function resolveTenantLookupHostname(hostname: string | null | undefined) {
+  const normalized = String(hostname ?? '').toLowerCase().replace(/\.$/, '');
+  return isNeutralTenantHostname(normalized) ? null : normalized;
+}
+
 function getTenantLookupHost() {
   if (typeof window === 'undefined') return null;
-  const hostname = window.location.hostname.toLowerCase().replace(/\.$/, '');
-  if (!hostname || neutralHostnames.has(hostname)) return null;
-  return hostname;
+  return resolveTenantLookupHostname(window.location.hostname);
 }
 
 function getNeutralTenantQueryOverride() {

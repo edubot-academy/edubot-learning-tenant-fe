@@ -4,6 +4,11 @@ import {
   canApproveAssignedCertificates,
   canCoordinateTenantLearning,
   canEnrollTenantStudents,
+  canManageAssignedActivities,
+  canManageAssignedAttendance,
+  canManageAssignedHomework,
+  canManageAssignedLiveMeetings,
+  canManageAssignedMaterials,
   canManageTenantBranding,
   canManageTenantCourses,
   canManageTenantMembers,
@@ -122,6 +127,36 @@ describe('tenant role access', () => {
   it('requires explicit permission for student contact and support notes', () => {
     expect(canContactStudents(user('assistant'), tenantWithPermissions({ canContactStudents: true }, 'assistant'))).toBe(true);
     expect(canManageStudentSupportNotes(user('assistant'), tenantWithPermissions({ canManageStudentSupportNotes: true }, 'assistant'))).toBe(true);
+  });
+
+  it('matches backend assistant workspace permissions for coordination without teaching defaults', () => {
+    const backendAssistantTenant = tenantWithPermissions({
+      canCoordinateGroups: true,
+      canEnrollStudents: true,
+      canSupportOperations: true,
+      canViewOperationalCourses: true,
+      canViewOperationalGroups: true,
+      canViewOperationalSessions: true,
+      canViewStudentSupportContext: true,
+      canViewOperationalReports: true,
+      canManageAssignedAttendance: false,
+      canManageAssignedHomework: false,
+      canManageAssignedActivities: false,
+      canManageAssignedMaterials: false,
+      canManageAssignedLiveMeetings: false,
+      canTeachAssignedSessions: false,
+    }, 'assistant');
+
+    expect(canCoordinateTenantLearning(user('assistant'), backendAssistantTenant)).toBe(true);
+    expect(canEnrollTenantStudents(user('assistant'), backendAssistantTenant)).toBe(true);
+    expect(canViewOperationalLearning(user('assistant'), backendAssistantTenant)).toBe(true);
+    expect(canViewStudentSupportContext(user('assistant'), backendAssistantTenant)).toBe(true);
+    expect(canManageAssignedAttendance(user('assistant'), backendAssistantTenant)).toBe(false);
+    expect(canManageAssignedHomework(user('assistant'), backendAssistantTenant)).toBe(false);
+    expect(canManageAssignedActivities(user('assistant'), backendAssistantTenant)).toBe(false);
+    expect(canManageAssignedMaterials(user('assistant'), backendAssistantTenant)).toBe(false);
+    expect(canManageAssignedLiveMeetings(user('assistant'), backendAssistantTenant)).toBe(false);
+    expect(canTeachAssignedSessions(user('assistant'), backendAssistantTenant)).toBe(false);
   });
 
   it('prefers explicit tenant permissions over broad tenant admin role fallback', () => {

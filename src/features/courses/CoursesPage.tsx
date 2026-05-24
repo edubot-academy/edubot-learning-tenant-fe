@@ -37,6 +37,8 @@ import { CourseCreateModal, CourseDeleteDialog, CourseEditModal, CourseRejectDia
 
 const courseIdValue = (course: Pick<Course, 'id'>) => Number(course.id);
 const summaryHealthFilters = new Set<CourseHealthFilter>(['no_groups', 'no_sessions', 'certificate_missing']);
+const canEditCourseContent = (course?: Course | null) => course?.canEditContent !== false;
+const canManageCourseOperations = (course?: Course | null) => course?.canManageOperations !== false;
 
 function uniqueCourses(items: Course[]) {
   const seen = new Set<number>();
@@ -231,9 +233,13 @@ export function CoursesPage() {
     () => courses.find((course) => courseIdValue(course) === selectedCourseId),
     [courses, selectedCourseId],
   );
-  const canEditCourse = Boolean(selectedCourse && canManageCourses);
+  const selectedCourseContentEditable = canEditCourseContent(selectedCourse);
+  const selectedCourseOperationsManageable = canManageCourseOperations(selectedCourse);
+  const canEditCourse = Boolean(selectedCourse && canManageCourses && selectedCourseContentEditable);
+  const canApproveSelectedCourse = canApproveCourses && selectedCourseContentEditable;
   const canDeleteCourse = Boolean(
     selectedCourse &&
+    selectedCourseContentEditable &&
     ['owner', 'company_admin'].includes(String(activeRole)) &&
     !selectedCourse.isPublished,
   );
@@ -245,9 +251,10 @@ export function CoursesPage() {
   const selectedGroupCount = loadedCourseDetailId === selectedCourseId ? groups.length : selectedCourseHealth?.groupCount ?? groups.length;
   const selectedSessionCount = loadedCourseDetailId === selectedCourseId ? sessions.length : selectedCourseHealth?.sessionCount ?? sessions.length;
   const translateCourseReadiness = useCallback((course: Course, groupCount?: number, sessionCount?: number) => {
+    const courseContentEditable = canEditCourseContent(course);
     const readiness = getCourseReadiness(course, {
-      canApproveCourses,
-      canEditCourse,
+      canApproveCourses: canApproveCourses && courseContentEditable,
+      canEditCourse: canManageCourses && courseContentEditable,
       groupCount,
       sessionCount,
     });
@@ -256,7 +263,7 @@ export function CoursesPage() {
       label: t(readiness.labelKey),
       detail: t(readiness.detailKey),
     };
-  }, [canApproveCourses, canEditCourse, t]);
+  }, [canApproveCourses, canManageCourses, t]);
   const selectedCourseReadiness = useMemo(() => (
     selectedCourse ? translateCourseReadiness(selectedCourse, selectedGroupCount, selectedSessionCount) : null
   ), [selectedCourse, selectedGroupCount, selectedSessionCount, translateCourseReadiness]);
@@ -275,9 +282,11 @@ export function CoursesPage() {
     const published = selectedCourse.isPublished === true;
     const approvalAction = approved
       ? null
-      : canApproveCourses
-        ? { type: 'approve' as CourseNextAction, label: t('courses.approveAndPublish') }
-        : { type: 'submit' as CourseNextAction, label: t('courses.submitForApproval') };
+      : selectedCourseContentEditable
+        ? canApproveSelectedCourse
+          ? { type: 'approve' as CourseNextAction, label: t('courses.approveAndPublish') }
+          : { type: 'submit' as CourseNextAction, label: t('courses.submitForApproval') }
+        : null;
     const steps = [
       {
         label: t('courses.workflowApproval'),
@@ -289,7 +298,7 @@ export function CoursesPage() {
         label: t('courses.workflowPublish'),
         detail: published ? t('courses.workflowReady') : approved ? t('courses.workflowPublishDetail') : t('courses.workflowPublishAutoDetail'),
         complete: published,
-        action: !published && approved && canApproveCourses ? { type: 'publish' as CourseNextAction, label: t('courses.publishCourse') } : null,
+        action: !published && approved && canApproveSelectedCourse ? { type: 'publish' as CourseNextAction, label: t('courses.publishCourse') } : null,
       },
       {
         label: t('courses.workflowDeliveryType'),
@@ -301,13 +310,15 @@ export function CoursesPage() {
         label: t('courses.workflowGroups'),
         detail: selectedGroupCount ? t('courses.workflowCountReady', { count: selectedGroupCount }) : t('courses.workflowCreateGroup'),
         complete: selectedGroupCount > 0,
-        action: selectedGroupCount === 0 && selectedCourseDeliveryReady ? { type: 'groups' as CourseNextAction, label: t('courses.createGroup') } : null,
+        action: selectedGroupCount === 0 && selectedCourseDeliveryReady && selectedCourseOperationsManageable
+          ? { type: 'groups' as CourseNextAction, label: t('courses.createGroup') }
+          : null,
       },
       {
         label: t('courses.workflowSessions'),
         detail: selectedSessionCount ? t('courses.workflowCountReady', { count: selectedSessionCount }) : t('courses.workflowScheduleSession'),
         complete: selectedSessionCount > 0,
-        action: selectedSessionCount === 0 && selectedGroupCount > 0 && selectedCourseDeliveryReady
+        action: selectedSessionCount === 0 && selectedGroupCount > 0 && selectedCourseDeliveryReady && selectedCourseOperationsManageable
           ? { type: 'sessions' as CourseNextAction, label: t('courses.scheduleSession') }
           : null,
       },
@@ -317,7 +328,7 @@ export function CoursesPage() {
       ...step,
       state: step.complete ? 'complete' as const : index === currentIndex ? 'current' as const : 'upcoming' as const,
     }));
-  }, [canApproveCourses, canEditCourse, selectedCourse, selectedCourseDeliveryReady, selectedGroupCount, selectedSessionCount, t]);
+  }, [canApproveSelectedCourse, canEditCourse, selectedCourse, selectedCourseContentEditable, selectedCourseDeliveryReady, selectedCourseOperationsManageable, selectedGroupCount, selectedSessionCount, t]);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId),
@@ -586,6 +597,7 @@ export function CoursesPage() {
 
   const openEditModal = () => {
     if (!selectedCourse) return;
+    if (!canEditCourseContent(selectedCourse)) return;
     setCreateErrors({});
     setCreateForm({
       title: selectedCourse.title ?? '',
@@ -771,12 +783,15 @@ export function CoursesPage() {
       );
     }
     if (action === 'groups') {
+      if (!selectedCourseOperationsManageable) return null;
       return <Link className={className} to={workflowPath('/groups', selectedScope)}>{label}</Link>;
     }
     if (action === 'sessions') {
+      if (!selectedCourseOperationsManageable) return null;
       return <Link className={className} to={workflowPath('/sessions', selectedScope)}>{label}</Link>;
     }
     if (action === 'openSessions') {
+      if (!selectedCourseOperationsManageable) return null;
       return <Link className={className} to={workflowPath('/sessions', selectedScope)}>{label}</Link>;
     }
     return null;
@@ -893,22 +908,24 @@ export function CoursesPage() {
                   <section className="course-panel-block">
                     <h3>{t('courses.nextActions')}</h3>
                     <CourseWorkflowChecklist steps={workflowChecklist} renderAction={renderCourseAction} />
-                    {canApproveCourses && selectedCourse.status === 'pending' ? (
+                    {canApproveSelectedCourse && selectedCourse.status === 'pending' ? (
                       <div className="course-review-actions" aria-label={t('courses.reviewActions')}>
                         <button type="button" className="secondary-button" disabled={statusUpdating} onClick={() => setCourseRejectPending(selectedCourse)}>
                           {t('courses.reject')}
                         </button>
                       </div>
                     ) : null}
-                    <CourseOperationsGrid
-                      courseId={courseIdValue(selectedCourse)}
-                      scope={selectedScope}
-                      deliveryReady={selectedCourseDeliveryReady}
-                      operationalReady={selectedCourseOperational}
-                      attendanceEnabled={attendanceEnabled}
-                      homeworkEnabled={homeworkEnabled}
-                      certificatesEnabled={certificatesEnabled}
-                    />
+                    {selectedCourseOperationsManageable ? (
+                      <CourseOperationsGrid
+                        courseId={courseIdValue(selectedCourse)}
+                        scope={selectedScope}
+                        deliveryReady={selectedCourseDeliveryReady}
+                        operationalReady={selectedCourseOperational}
+                        attendanceEnabled={attendanceEnabled}
+                        homeworkEnabled={homeworkEnabled}
+                        certificatesEnabled={certificatesEnabled}
+                      />
+                    ) : null}
                     {!selectedCourseOperational ? (
                       <p className="panel-note">
                         {courseBlockerMessage}
@@ -923,7 +940,7 @@ export function CoursesPage() {
                   <CourseStatePanel
                     course={selectedCourse}
                     canEditCourse={canEditCourse}
-                    canApproveCourses={canApproveCourses}
+                    canApproveCourses={canApproveSelectedCourse}
                     canDeleteCourse={canDeleteCourse}
                     statusUpdating={statusUpdating}
                     deletingCourse={deletingCourse}

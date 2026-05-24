@@ -77,6 +77,14 @@ const readyForGroupCourse = {
   isPublished: true,
 };
 
+const licensedReadyCourse = {
+  ...readyForGroupCourse,
+  canEditContent: false,
+  canManageOperations: true,
+  licensedToTenant: true,
+  ownedByTenant: false,
+};
+
 const instructorDraftCourse = {
   ...approvedUnpublishedCourse,
   status: 'draft',
@@ -174,6 +182,19 @@ describe('CoursesPage course setup flow', () => {
     fireEvent.click(screen.getByRole('button', { name: /live math aida instructor/i }));
     const createGroupLinks = screen.getAllByRole('link', { name: 'Create group' });
     expect(createGroupLinks[0]).toHaveAttribute('href', '/groups?courseId=101');
+  });
+
+  it('allows operations but hides content edits for licensed tenant courses', async () => {
+    api.listTenantCourses.mockResolvedValue([licensedReadyCourse]);
+
+    renderPage();
+
+    expect((await screen.findAllByText('Create first group')).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /live math aida instructor/i }));
+
+    expect(screen.getAllByRole('link', { name: 'Create group' })[0]).toHaveAttribute('href', '/groups?courseId=101');
+    expect(screen.queryByRole('button', { name: 'Edit course' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete course' })).not.toBeInTheDocument();
   });
 
   it('keeps approve and reject together for pending admin review', async () => {

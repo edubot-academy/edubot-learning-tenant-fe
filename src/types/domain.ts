@@ -517,6 +517,10 @@ export type Course = {
   };
   coverImageUrl?: string | null;
   instructor?: { id: number; fullName?: string } | null;
+  ownedByTenant?: boolean;
+  licensedToTenant?: boolean;
+  canEditContent?: boolean;
+  canManageOperations?: boolean;
 };
 
 export type CourseGroup = {

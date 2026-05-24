@@ -19,6 +19,20 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.15.3 - 2026-05-24
+
+### Changed
+
+- Updated tenant course management to honor backend course scope flags.
+- Licensed main-app courses now keep operational actions available while hiding master content edit, approval, publish, reject, and delete actions.
+
+### Tests
+
+- Added CoursesPage coverage for licensed tenant courses with operational access but no content-edit permission.
+- `npm test -- CoursesPage.test.tsx` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
 ## 1.15.2 - 2026-05-24
 
 ### Fixed

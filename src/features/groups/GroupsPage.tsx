@@ -20,7 +20,7 @@ import {
   previewGeneratedSessions,
   removeUserFromGroup,
   resendTenantInvitation,
-  searchUsers,
+  resolveTenantMemberCandidate,
   updateCourseGroup,
 } from '../../services/api';
 import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionGenerationPreview, UserSummary } from '../../types/domain';
@@ -594,7 +594,14 @@ export function GroupsPage() {
         || student.email.toLowerCase().includes(normalized))
       .slice(0, 12);
     try {
-      const remoteResults = normalized ? await searchUsers({ search: studentQuery, role: 'student', limit: 12 }) : [];
+      const resolved = normalized && activeTenantId
+        ? await resolveTenantMemberCandidate(activeTenantId, normalized.includes('@')
+          ? { email: studentQuery.trim() }
+          : { phoneNumber: studentQuery.trim() })
+        : null;
+      const remoteResults = resolved?.found && resolved.user && resolved.membership?.isActiveStudent
+        ? [resolved.user]
+        : [];
       const seen = new Set<number>();
       const results = [...localResults, ...remoteResults].filter((student) => {
         if (seen.has(student.id)) return false;
@@ -611,7 +618,7 @@ export function GroupsPage() {
       }
       toast.error(getApiErrorMessage(error, t('groups.studentSearchFailed')));
     }
-  }, [studentQuery, t, tenantStudentOptions]);
+  }, [activeTenantId, studentQuery, t, tenantStudentOptions]);
 
   const handleStudentSearchChange = (value: string) => {
     setStudentQuery(value);

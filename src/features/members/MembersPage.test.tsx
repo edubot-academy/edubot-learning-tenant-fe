@@ -10,8 +10,8 @@ const api = vi.hoisted(() => ({
   inviteTenantMember: vi.fn(),
   listTenantMembers: vi.fn(),
   removeTenantMember: vi.fn(),
+  resolveTenantMemberCandidate: vi.fn(),
   resendTenantInvitation: vi.fn(),
-  searchUsers: vi.fn(),
   setTenantMemberRole: vi.fn(),
 }));
 
@@ -58,9 +58,12 @@ describe('MembersPage member setup links', () => {
     await i18n.changeLanguage('en');
     vi.clearAllMocks();
     api.listTenantMembers.mockResolvedValue([]);
-    api.searchUsers.mockResolvedValue([
-      { id: 15, email: 'teacher@example.test', fullName: 'Teacher User' },
-    ]);
+    api.resolveTenantMemberCandidate.mockResolvedValue({
+      found: true,
+      user: { id: 15, email: 'teacher@example.test', fullName: 'Teacher User' },
+      membership: null,
+      canAttachExistingUser: true,
+    });
     api.addTenantMember.mockResolvedValue({
       userId: 15,
       companyId: 42,
@@ -82,9 +85,10 @@ describe('MembersPage member setup links', () => {
 
     await screen.findByText('No members');
     fireEvent.click(screen.getAllByRole('button', { name: 'Add existing' })[0]);
-    fireEvent.change(screen.getByPlaceholderText('Name or email'), { target: { value: 'teacher' } });
+    fireEvent.change(screen.getByPlaceholderText('Exact email or phone number'), { target: { value: 'teacher@example.test' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     await screen.findByText('Teacher User (teacher@example.test)');
+    expect(api.resolveTenantMemberCandidate).toHaveBeenCalledWith(42, { email: 'teacher@example.test' });
     fireEvent.click(screen.getByRole('button', { name: 'Add member' }));
 
     await waitFor(() => expect(api.addTenantMember).toHaveBeenCalledWith(42, {

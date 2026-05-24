@@ -20,7 +20,7 @@ const api = vi.hoisted(() => ({
   previewGeneratedSessions: vi.fn(),
   removeUserFromGroup: vi.fn(),
   resendTenantInvitation: vi.fn(),
-  searchUsers: vi.fn(),
+  resolveTenantMemberCandidate: vi.fn(),
   updateCourseGroup: vi.fn(),
 }));
 
@@ -145,7 +145,7 @@ describe('GroupsPage individual delivery', () => {
     api.listCourseGroups.mockResolvedValue([]);
     api.listGroupSessions.mockResolvedValue([]);
     api.listGroupStudents.mockResolvedValue([]);
-    api.searchUsers.mockResolvedValue([]);
+    api.resolveTenantMemberCandidate.mockResolvedValue({ found: false, user: null, membership: null });
     api.createIndividualCourseGroup.mockResolvedValue({ group: individualGroup, enrollment: { id: 701 }, firstSession: null });
   });
 
@@ -243,7 +243,7 @@ describe('GroupsPage individual delivery', () => {
     await openCreateGroupModal();
     fireEvent.click(screen.getByRole('button', { name: 'Individual' }));
     fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Aida individual' } });
-    fireEvent.change(screen.getByLabelText(/individual student/i), { target: { value: 'aida' } });
+    fireEvent.change(screen.getByLabelText(/individual student/i), { target: { value: 'aida@example.test' } });
     fireEvent.click(screen.getByRole('button', { name: /^search$/i }));
 
     const studentOption = await screen.findByRole('option', { name: /aida student/i });
@@ -336,11 +336,11 @@ describe('GroupsPage individual delivery', () => {
 
     await openCreateGroupModal();
     fireEvent.click(screen.getByRole('button', { name: 'Individual' }));
-    fireEvent.change(screen.getByLabelText(/individual student/i), { target: { value: 'aida' } });
+    fireEvent.change(screen.getByLabelText(/individual student/i), { target: { value: 'aida@example.test' } });
     fireEvent.keyDown(screen.getByLabelText(/individual student/i), { key: 'Enter' });
 
     expect(await screen.findByRole('option', { name: /aida student/i })).toBeInTheDocument();
-    expect(api.searchUsers).toHaveBeenCalledWith({ search: 'aida', role: 'student', limit: 12 });
+    await waitFor(() => expect(api.resolveTenantMemberCandidate).toHaveBeenCalledWith(42, { email: 'aida@example.test' }));
     expect(api.createIndividualCourseGroup).not.toHaveBeenCalled();
   });
 

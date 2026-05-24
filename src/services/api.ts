@@ -47,6 +47,7 @@ import type {
   TenantOverview,
   TenantReportSummary,
   TenantReportTimeSeries,
+  TenantMemberResolveResult,
   UserSummary,
 } from '../types/domain';
 import { API_BASE_URL, api, dedupeRead, toStudentPage, type StudentPagedResponse } from './http';
@@ -72,21 +73,6 @@ export {
   listStudentNotifications,
   markStudentNotificationRead,
 } from './shellApi';
-
-export async function searchUsers(params: { search?: string; role?: string; limit?: number } = {}) {
-  const search = params.search?.trim() || undefined;
-  const { data } = await api.get<{ data?: UserSummary[]; items?: UserSummary[]; users?: UserSummary[] } | UserSummary[]>('/users', {
-    params: {
-      page: 1,
-      limit: params.limit ?? 10,
-      search,
-      q: search,
-      role: params.role,
-    },
-  });
-  if (Array.isArray(data)) return data;
-  return data.data ?? data.items ?? data.users ?? [];
-}
 
 export async function getTenant(tenantId: number) {
   const { data } = await api.get<Tenant>(`/companies/${tenantId}`);
@@ -752,6 +738,19 @@ export async function addTenantMember(tenantId: number, payload: { userId: numbe
     messageKey?: string;
     onboarding?: { setupLink?: string; expiresAt?: string; emailSent?: boolean } | null;
   }>(`/companies/${tenantId}/members`, payload);
+  return data;
+}
+
+export async function resolveTenantMemberCandidate(
+  tenantId: number,
+  lookup: { email?: string; phoneNumber?: string },
+) {
+  const { data } = await api.get<TenantMemberResolveResult>(`/companies/${tenantId}/members/resolve`, {
+    params: {
+      email: lookup.email?.trim() || undefined,
+      phoneNumber: lookup.phoneNumber?.trim() || undefined,
+    },
+  });
   return data;
 }
 

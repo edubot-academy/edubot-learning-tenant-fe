@@ -11,7 +11,21 @@ export type UserSummary = {
   id: number;
   email: string;
   fullName?: string;
+  phoneNumber?: string | null;
   role?: UserRole | string;
+};
+
+export type TenantMemberResolveResult = {
+  found: boolean;
+  user: UserSummary | null;
+  membership: {
+    roles: Array<UserRole | string>;
+    statuses: string[];
+    isStudent: boolean;
+    isActiveStudent: boolean;
+  } | null;
+  canAttachExistingUser: boolean;
+  messageKey?: string;
 };
 
 export type Tenant = {

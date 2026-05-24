@@ -29,7 +29,7 @@ import {
   listTenantCourses,
   previewGeneratedSessions,
   removeUserFromGroup,
-  searchUsers,
+  resolveTenantMemberCandidate,
   reviewSessionActivitySubmission,
   updateCourseGroup,
   updateGroupSession,
@@ -1245,8 +1245,12 @@ export function SessionsPage() {
             || student.email.toLowerCase().includes(normalized))
           .slice(0, 12)
         : [];
-      const remoteResults = normalized || createModal !== 'group'
-        ? await searchUsers({ search: studentSearch, role: 'student', limit: 12 }).catch((error) => {
+      const remoteResults = (normalized || createModal !== 'group') && activeTenantId
+        ? await resolveTenantMemberCandidate(activeTenantId, normalized.includes('@')
+          ? { email: studentSearch.trim() }
+          : { phoneNumber: studentSearch.trim() }).then((result) => (
+          result.found && result.user && result.membership?.isActiveStudent ? [result.user] : []
+        )).catch((error) => {
           if (localResults.length) return [] as UserSummary[];
           throw error;
         })

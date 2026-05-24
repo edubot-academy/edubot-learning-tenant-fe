@@ -11,11 +11,11 @@ import {
   inviteTenantMember,
   listTenantMembers,
   removeTenantMember,
+  resolveTenantMemberCandidate,
   resendTenantInvitation,
-  searchUsers,
   setTenantMemberRole,
 } from '../../services/api';
-import type { CompanyMember, UserSummary } from '../../types/domain';
+import type { CompanyMember, TenantMemberResolveResult, UserSummary } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { formatDate } from '../../lib/format';
 import { enumLabel, roleLabelKeys } from '../../lib/enumLabels';
@@ -68,6 +68,7 @@ export function MembersPage() {
   const [userSearch, setUserSearch] = useState('');
   const [userResults, setUserResults] = useState<UserSummary[]>([]);
   const [userSearchRan, setUserSearchRan] = useState(false);
+  const [resolvedCandidate, setResolvedCandidate] = useState<TenantMemberResolveResult | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>();
   const [addRole, setAddRole] = useState('student');
   const [inviteForm, setInviteForm] = useState(emptyInviteForm);
@@ -158,9 +159,17 @@ export function MembersPage() {
     return email || t('states.notSet');
   };
 
-  const selectedUserExistingRoles = selectedUserId ? rolesByUser[selectedUserId] ?? [] : [];
+  const selectedUserExistingRoles = selectedUserId
+    ? Array.from(new Set([
+      ...(rolesByUser[selectedUserId] ?? []),
+      ...(resolvedCandidate?.found && resolvedCandidate.user?.id === selectedUserId
+        ? resolvedCandidate.membership?.roles ?? []
+        : []),
+    ]))
+    : [];
   const assignableTenantRoles = getAssignableTenantRoles(canManageOwners);
-  const selectedUserHasRole = hasDuplicateTenantRole(rolesByUser, selectedUserId, addRole);
+  const selectedUserHasRole = selectedUserExistingRoles.includes(addRole)
+    || hasDuplicateTenantRole(rolesByUser, selectedUserId, addRole);
   const inviteExistingMember = members.find((member) => (
     memberEmail(member).toLowerCase() === inviteForm.email.trim().toLowerCase()
     && member.role === inviteForm.role
@@ -184,10 +193,21 @@ export function MembersPage() {
 
   const runUserSearch = async () => {
     if (!canManageMembers) return;
+    if (!activeTenantId) return;
+    const lookup = userSearch.trim();
+    if (!lookup) {
+      toast.error(t('members.enterEmailOrPhone'));
+      return;
+    }
     setWorking(true);
     setUserSearchRan(true);
+    setResolvedCandidate(null);
     try {
-      const results = await searchUsers({ search: userSearch, limit: 12 });
+      const result = await resolveTenantMemberCandidate(activeTenantId, lookup.includes('@')
+        ? { email: lookup }
+        : { phoneNumber: lookup });
+      setResolvedCandidate(result);
+      const results = result.found && result.user ? [result.user] : [];
       setUserResults(results);
       setSelectedUserId(results[0]?.id);
     } catch {
@@ -217,6 +237,7 @@ export function MembersPage() {
       setUserSearch('');
       setUserResults([]);
       setUserSearchRan(false);
+      setResolvedCandidate(null);
       setSelectedUserId(undefined);
       if (result?.onboarding?.setupLink) {
         setInviteLinkModalOpen(true);
@@ -326,6 +347,14 @@ export function MembersPage() {
     } finally {
       setWorking(false);
     }
+  };
+
+  const closeExistingMemberModal = () => {
+    setMemberModal(null);
+    setUserSearchRan(false);
+    setResolvedCandidate(null);
+    setUserResults([]);
+    setSelectedUserId(undefined);
   };
 
   if (loading) return <LoadingState label={t('members.loading')} />;
@@ -609,10 +638,7 @@ export function MembersPage() {
       {canManageMembers && memberModal === 'existing' ? (
         <FormModal
           labelledBy="add-existing-member-title"
-          onClose={() => {
-            setMemberModal(null);
-            setUserSearchRan(false);
-          }}
+          onClose={closeExistingMemberModal}
           onSubmit={submitAddExisting}
         >
             <div className="modal-header-block">
@@ -623,7 +649,7 @@ export function MembersPage() {
             <div className="student-search-row">
               <label>
                 {t('groups.search')}
-                <input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder={t('groups.nameOrEmail')} autoFocus />
+                <input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder={t('members.emailOrPhoneLookup')} autoFocus />
               </label>
               <button type="button" className="secondary-button" disabled={working} onClick={() => void runUserSearch()}>
                 {t('groups.search')}
@@ -635,7 +661,7 @@ export function MembersPage() {
                 <select value={selectedUserId ?? ''} onChange={(event) => setSelectedUserId(Number(event.target.value) || undefined)} disabled={!userResults.length}>
                   <option value="">{t('members.selectUser')}</option>
                   {userResults.map((user) => (
-                    <option key={user.id} value={user.id}>{user.fullName || user.email} ({user.email})</option>
+                    <option key={user.id} value={user.id}>{user.fullName || user.email} ({user.email || user.phoneNumber})</option>
                   ))}
                 </select>
               </label>
@@ -648,21 +674,21 @@ export function MembersPage() {
               </label>
             </div>
             {userSearchRan && userSearch.trim() && !working && !userResults.length ? (
-              <p className="panel-note">{t('members.noPlatformUsers')}</p>
+              <p className="panel-note">{t('members.noPlatformUsersExact')}</p>
             ) : null}
             {selectedUserExistingRoles.length ? (
               <p className="panel-note">
                 {t('members.existingRolesForUser', { roles: selectedUserExistingRoles.map(roleLabel).join(', ') })}
               </p>
             ) : null}
+            {resolvedCandidate?.found && !resolvedCandidate.membership ? (
+              <p className="panel-note success">{t('members.existingUserCanAttach')}</p>
+            ) : null}
             <div className="modal-actions">
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => {
-                  setMemberModal(null);
-                  setUserSearchRan(false);
-                }}
+                onClick={closeExistingMemberModal}
                 disabled={working}
               >
                 {t('courses.cancel')}

@@ -8,7 +8,7 @@ import {
   createTenantCourse,
   issueCourseCertificate,
   publishTenantCourse,
-  searchUsers,
+  resolveTenantMemberCandidate,
   tenantStore,
   tokenStore,
 } from './api';
@@ -108,12 +108,19 @@ describe('api browser stores', () => {
     expect(response.config.headers?.['X-CSRF-Token']).toBeUndefined();
   });
 
-  it('searches users with both supported query names and accepts users response shape', async () => {
+  it('resolves tenant member candidates through the tenant-scoped endpoint', async () => {
+    let seenUrl = '';
     let seenParams: unknown;
     api.defaults.adapter = async (config) => {
+      seenUrl = config.url ?? '';
       seenParams = config.params;
       return {
-        data: { users: [{ id: 12, email: 'aida@example.test', fullName: 'Aida Student' }] },
+        data: {
+          found: true,
+          user: { id: 12, email: 'aida@example.test', fullName: 'Aida Student' },
+          membership: null,
+          canAttachExistingUser: true,
+        },
         status: 200,
         statusText: 'OK',
         headers: {},
@@ -121,10 +128,12 @@ describe('api browser stores', () => {
       };
     };
 
-    const results = await searchUsers({ search: ' Aida ', role: 'student', limit: 12 });
+    const result = await resolveTenantMemberCandidate(42, { email: ' aida@example.test ' });
 
-    expect(seenParams).toMatchObject({ search: 'Aida', q: 'Aida', role: 'student', limit: 12 });
-    expect(results).toEqual([{ id: 12, email: 'aida@example.test', fullName: 'Aida Student' }]);
+    expect(seenUrl).toBe('/companies/42/members/resolve');
+    expect(seenParams).toEqual({ email: 'aida@example.test', phoneNumber: undefined });
+    expect(result.user?.id).toBe(12);
+    expect(result.canAttachExistingUser).toBe(true);
   });
 
   it('refreshes profile and retries once after a CSRF rejection', async () => {

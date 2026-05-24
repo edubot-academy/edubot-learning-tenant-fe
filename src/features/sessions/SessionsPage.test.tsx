@@ -37,7 +37,7 @@ const api = vi.hoisted(() => ({
   previewGeneratedSessions: vi.fn(),
   removeUserFromGroup: vi.fn(),
   reviewSessionActivitySubmission: vi.fn(),
-  searchUsers: vi.fn(),
+  resolveTenantMemberCandidate: vi.fn(),
   updateCourseGroup: vi.fn(),
   updateGroupSession: vi.fn(),
   updateLiveMeeting: vi.fn(),
@@ -154,7 +154,7 @@ describe('SessionsPage session creation', () => {
     api.listGroupSessions.mockResolvedValue([]);
     api.listGroupStudents.mockResolvedValue([]);
     api.listTenantMembers.mockResolvedValue([]);
-    api.searchUsers.mockResolvedValue([]);
+    api.resolveTenantMemberCandidate.mockResolvedValue({ found: false, user: null, membership: null });
     api.createGroupSession.mockResolvedValue(createdSession);
     api.createIndividualCourseGroup.mockResolvedValue({
       group: { ...group, id: 302, name: 'Aida individual', deliveryMode: 'individual', seatLimit: 1 },

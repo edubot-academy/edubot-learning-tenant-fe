@@ -19,6 +19,21 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.15.4 - 2026-05-25
+
+### Changed
+
+- Replaced tenant broad user search with tenant-scoped exact email or phone member resolution.
+- Updated member, group, and session student lookup flows to reuse existing main-app accounts only after tenant-safe resolution.
+- Updated member add-existing copy and localized messages for exact lookup behavior.
+
+### Tests
+
+- Added API and page coverage for tenant member resolution in members, groups, and sessions flows.
+- `npm test -- src/services/api.test.ts src/features/members/MembersPage.test.tsx src/features/groups/GroupsPage.test.tsx src/features/sessions/SessionsPage.test.tsx` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
 ## 1.15.3 - 2026-05-24
 
 ### Changed

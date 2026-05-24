@@ -21,6 +21,7 @@ import {
   getEffectiveTenantRole,
   getTenantAccessLevel,
   isPlatformAdmin,
+  isTenantStudent,
 } from './tenantRoles';
 
 const user = (role: string): AuthUser => ({
@@ -154,6 +155,8 @@ describe('tenant role access', () => {
   it('supports explicit instructor capability grants and denials', () => {
     expect(canTeachAssignedSessions(user('student'), tenantWithPermissions({ canTeachAssignedSessions: true }, null))).toBe(true);
     expect(getTenantAccessLevel(user('student'), tenantWithPermissions({ canTeachAssignedSessions: true }, null))).toBe('instructor');
+    expect(getTenantAccessLevel(user('student'), tenantWithPermissions({ canTeachAssignedSessions: true }, 'student'))).toBe('instructor');
+    expect(isTenantStudent(user('student'), tenantWithPermissions({ canTeachAssignedSessions: true }, 'student'))).toBe(false);
     expect(canTeachAssignedSessions(user('instructor'), tenantWithPermissions({ canTeachAssignedSessions: false }, 'instructor'))).toBe(false);
     expect(canCoordinateTenantLearning(user('instructor'), tenantWithPermissions({ canCoordinateGroups: true }, 'instructor'))).toBe(true);
     expect(canEnrollTenantStudents(user('instructor'), tenantWithPermissions({ canEnrollStudents: true }, 'instructor'))).toBe(true);
@@ -162,6 +165,8 @@ describe('tenant role access', () => {
 
   it('allows workspace access from explicit management permissions even without a scalar role', () => {
     expect(getTenantAccessLevel(user('admin'), tenantWithPermissions({ canManageCourses: true }, null))).toBe('tenant_admin');
+    expect(getTenantAccessLevel(user('student'), tenantWithPermissions({ canManageCourses: true }, 'student'))).toBe('tenant_admin');
+    expect(isTenantStudent(user('student'), tenantWithPermissions({ canManageCourses: true }, 'student'))).toBe(false);
   });
 
   it('keeps owner management owner-only unless explicit permission is present', () => {

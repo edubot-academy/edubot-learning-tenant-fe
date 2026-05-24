@@ -38,6 +38,15 @@ describe('app navigation visibility', () => {
     expect(routes).not.toContain('/courses');
   });
 
+  it('keeps permission-upgraded instructors out of student navigation', () => {
+    const routes = getVisibleNavItems(user('student'), tenant('student', {}, {
+      canTeachAssignedSessions: true,
+    })).map((item) => item.to);
+
+    expect(routes).toContain('/sessions');
+    expect(routes).not.toContain('/student/today');
+  });
+
   it('hides feature-flagged tools when disabled', () => {
     const routes = getVisibleNavItems(user('company_admin'), tenant('company_admin', {
       'attendance.enabled': false,

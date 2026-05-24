@@ -4,20 +4,25 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '../i18n/config';
 import { AppLayout } from './AppLayout';
+import { getStudentNotificationUnreadCount } from '../services/shellApi';
 
 const signOut = vi.fn();
+const layoutState = vi.hoisted(() => ({
+  user: { id: 1, email: 'instructor@example.com', role: 'instructor', fullName: 'Tenant Instructor' },
+  activeTenant: { id: 10, name: 'Tenant', role: 'instructor', featureFlags: {}, permissions: {} },
+}));
 
 vi.mock('../features/auth/AuthProvider', () => ({
   useAuth: () => ({
-    user: { id: 1, email: 'instructor@example.com', role: 'instructor', fullName: 'Tenant Instructor' },
+    user: layoutState.user,
     signOut,
   }),
 }));
 
 vi.mock('../features/tenant/TenantProvider', () => ({
   useTenant: () => ({
-    tenants: [{ id: 10, name: 'Tenant', role: 'instructor', featureFlags: {} }],
-    activeTenant: { id: 10, name: 'Tenant', role: 'instructor', featureFlags: {} },
+    tenants: [layoutState.activeTenant],
+    activeTenant: layoutState.activeTenant,
     hostnameLocked: true,
     setActiveTenantId: vi.fn(),
   }),
@@ -57,7 +62,31 @@ function getGroupsLink() {
 
 describe('AppLayout mobile navigation', () => {
   beforeEach(() => {
+    layoutState.user = { id: 1, email: 'instructor@example.com', role: 'instructor', fullName: 'Tenant Instructor' };
+    layoutState.activeTenant = { id: 10, name: 'Tenant', role: 'instructor', featureFlags: {}, permissions: {} };
     signOut.mockClear();
+    vi.mocked(getStudentNotificationUnreadCount).mockClear();
+  });
+
+  it('does not request student notifications for instructor shell users', () => {
+    renderLayout();
+
+    expect(getStudentNotificationUnreadCount).not.toHaveBeenCalled();
+  });
+
+  it('does not request student notifications when a stale student role has instructor permissions', () => {
+    layoutState.user = { id: 1, email: 'teacher@example.com', role: 'student', fullName: 'Assigned Teacher' };
+    layoutState.activeTenant = {
+      id: 10,
+      name: 'Tenant',
+      role: 'student',
+      featureFlags: {},
+      permissions: { canTeachAssignedSessions: true },
+    };
+
+    renderLayout();
+
+    expect(getStudentNotificationUnreadCount).not.toHaveBeenCalled();
   });
 
   it('closes the mobile more menu with Escape and outside pointer click', () => {

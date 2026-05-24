@@ -48,7 +48,7 @@ export function isTenantStaff(user: AuthUser | null | undefined, tenant: Tenant 
 }
 
 export function isTenantStudent(user: AuthUser | null | undefined, tenant: Tenant | null | undefined) {
-  return getEffectiveTenantRole(user, tenant) === 'student';
+  return getTenantAccessLevel(user, tenant) === 'student';
 }
 
 export function getTenantAccessLevel(user: AuthUser | null | undefined, tenant: Tenant | null | undefined): TenantAccessLevel {
@@ -58,6 +58,16 @@ export function getTenantAccessLevel(user: AuthUser | null | undefined, tenant: 
   if (tenantAdminRoles.has(role)) return 'tenant_admin';
   if (role === 'instructor') return 'instructor';
   if (role === 'assistant') return 'assistant';
+  if (hasAnyExplicitPermission(tenant, [
+    'canManageTenant',
+    'canManageOwners',
+    'canManageMembers',
+    'canManageCourses',
+    'canManageCertificates',
+    'canViewReports',
+    'canManageBranding',
+    'canManageSettings',
+  ])) return 'tenant_admin';
   if (hasAnyExplicitPermission(tenant, [
     'canSupportOperations',
     'canViewOperationalCourses',
@@ -80,16 +90,6 @@ export function getTenantAccessLevel(user: AuthUser | null | undefined, tenant: 
     'canApproveAssignedCertificates',
   ])) return 'instructor';
   if (role === 'student') return 'student';
-  if (hasAnyExplicitPermission(tenant, [
-    'canManageTenant',
-    'canManageOwners',
-    'canManageMembers',
-    'canManageCourses',
-    'canManageCertificates',
-    'canViewReports',
-    'canManageBranding',
-    'canManageSettings',
-  ])) return 'tenant_admin';
   return 'none';
 }
 

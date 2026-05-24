@@ -19,6 +19,19 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.15.1 - 2026-05-24
+
+### Fixed
+
+- Fixed instructor-capable users with stale student role metadata so the app shell no longer enters learner mode or calls student-only notification endpoints.
+
+### Tests
+
+- Added direct AppLayout regression coverage for stale `student` role data with instructor permissions.
+- `npm run lint` passes.
+- `npm test` passes with 34 test files and 205 tests.
+- `npm run build` passes.
+
 ## 1.15.0 - 2026-05-24
 
 ### Added

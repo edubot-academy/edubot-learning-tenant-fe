@@ -19,6 +19,22 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.15.5 - 2026-05-26
+
+### Fixed
+
+- Localized tenant activity action keys from the backend, including CRM link updates, member invitations, and member role changes, so audit feeds no longer expose raw enum keys.
+- Split activity target labels from navigation labels so audit targets render as singular human-readable labels with IDs.
+- Humanized unmapped backend enum fallbacks before display to keep future unknown values readable.
+
+### Tests
+
+- Added enum label regression coverage for backend activity keys, singular audit targets, and humanized fallbacks.
+- `npm test -- --run src/lib/enumLabels.test.ts src/i18n/translationKeys.test.ts` passes.
+- `npm test` passes with 36 test files and 212 tests.
+- `npm run lint` passes.
+- `npm run build` passes.
+
 ## 1.15.4 - 2026-05-25
 
 ### Changed

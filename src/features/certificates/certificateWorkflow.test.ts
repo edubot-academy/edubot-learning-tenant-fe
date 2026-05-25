@@ -46,7 +46,7 @@ describe('certificate workflow helpers', () => {
     });
 
     expect(isStudentEligibleForCertificate(blocked)).toBe(false);
-    expect(describeEligibility(blocked)).toBe('Attendance is below requirement, Unknown: custom_reason');
+    expect(describeEligibility(blocked)).toBe('Attendance is below requirement, Unknown: Custom Reason');
   });
 
   it('filters issue students by eligibility and query', () => {

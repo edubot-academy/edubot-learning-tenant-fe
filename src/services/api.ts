@@ -48,7 +48,6 @@ import type {
   TenantReportSummary,
   TenantReportTimeSeries,
   TenantMemberResolveResult,
-  UserSummary,
 } from '../types/domain';
 import { API_BASE_URL, api, dedupeRead, toStudentPage, type StudentPagedResponse } from './http';
 

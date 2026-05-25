@@ -6,7 +6,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { formatDate, readable } from '../../lib/format';
-import { activityActionLabelKeys, enumLabel, roleLabelKeys } from '../../lib/enumLabels';
+import { activityActionLabelKeys, activityTargetLabelKeys, enumLabel, roleLabelKeys } from '../../lib/enumLabels';
 import { useTenant } from '../tenant/TenantProvider';
 import { useTheme } from '../theme/themeContext';
 import { useAuth } from '../auth/AuthProvider';
@@ -168,9 +168,13 @@ function settingsFormFromTenant(tenant: Tenant | null): typeof emptyTenantSettin
   };
 }
 
-function activityDetail(row: TenantActivityLog, fallback: string, detailLabel: (count: number) => string, targetLabel: (value?: string | null) => string) {
-  if (row.targetType && row.targetId) return `${targetLabel(row.targetType)} ${row.targetId}`;
-  if (row.targetType) return targetLabel(row.targetType);
+function activityDetail(
+  row: TenantActivityLog,
+  fallback: string,
+  detailLabel: (count: number) => string,
+  targetLabel: (value?: string | null, id?: string | null) => string,
+) {
+  if (row.targetType) return targetLabel(row.targetType, row.targetId);
   const metadataKeys = row.metadata ? Object.keys(row.metadata) : [];
   if (metadataKeys.length) return detailLabel(metadataKeys.length);
   return fallback;
@@ -293,19 +297,11 @@ export function SettingsPage() {
     return labels[String(value || '').toLowerCase()] ?? enumLabel(value, roleLabelKeys, t);
   };
   const activityActionLabel = (value?: string | null) => {
-    const labels: Record<string, string> = {
-      create: t('actions.create'),
-      delete: t('actions.delete'),
-      update: t('actions.update'),
-      updated: t('actions.update'),
-      certificate: t('navigation.certificates'),
-      course: t('navigation.courses'),
-      group: t('navigation.groups'),
-      member: t('navigation.members'),
-      session: t('navigation.sessions'),
-      tenant: t('overview.tenantTarget'),
-    };
-    return labels[String(value || '').toLowerCase()] ?? enumLabel(value, activityActionLabelKeys, t);
+    return enumLabel(value, activityActionLabelKeys, t);
+  };
+  const activityTargetLabel = (value?: string | null, id?: string | null) => {
+    const target = enumLabel(value, activityTargetLabelKeys, t, t('overview.targetWorkspace'));
+    return id ? t('overview.activityTargetWithId', { target, id }) : target;
   };
   const profileErrorMessage = (message?: string) => {
     if (!message) return '';
@@ -1272,7 +1268,7 @@ export function SettingsPage() {
                   <strong>{activityActionLabel(row.action)}</strong>
                   <span>{row.actorFullName || row.actorEmail || t('overview.system')} · {formatDate(row.createdAt)}</span>
                 </div>
-                <span className="muted-text">{activityDetail(row, t('settings.tenantWorkspace'), (count) => t('settings.detailCountUpdated', { count }), activityActionLabel)}</span>
+                <span className="muted-text">{activityDetail(row, t('settings.tenantWorkspace'), (count) => t('settings.detailCountUpdated', { count }), activityTargetLabel)}</span>
               </article>
             ))}
             {!activityRows.length ? (

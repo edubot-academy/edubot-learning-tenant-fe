@@ -25,7 +25,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { canTeachAssignedSessions, canViewStudentSupportContext } from '../tenant/tenantRoles';
 import { formatDate } from '../../lib/format';
-import { activityActionLabelKeys, commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
+import { activityActionLabelKeys, activityTargetLabelKeys, commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
 import { getAdminSetupChecklist } from './adminSetupChecklist';
 import type { OverviewWorkloadPoint } from './OverviewInsights';
@@ -465,6 +465,10 @@ export function OverviewPage() {
   };
   const activityActionLabel = (value?: string | null) => {
     return enumLabel(value, activityActionLabelKeys, t, t('overview.tenantTarget'));
+  };
+  const activityTargetLabel = (value?: string | null, id?: string | null) => {
+    const target = enumLabel(value, activityTargetLabelKeys, t, t('overview.targetWorkspace'));
+    return id ? t('overview.activityTargetWithId', { target, id }) : target;
   };
   const activitySubjectLabel = (metadata?: Record<string, unknown> | null) => {
     const subject = metadata?.courseTitle ?? metadata?.groupTitle ?? metadata?.sessionTitle ?? metadata?.title ?? metadata?.name;
@@ -992,7 +996,7 @@ export function OverviewPage() {
                         <div className="activity-feed-copy">
                           <div className="activity-feed-title-row">
                             <strong>{subject ? `${subject} · ${activityActionLabel(item.action)}` : activityActionLabel(item.action)}</strong>
-                            <span className="status-badge neutral">{activityActionLabel(item.targetType || item.targetId || t('overview.tenantTarget'))}</span>
+                            <span className="status-badge neutral">{activityTargetLabel(item.targetType, item.targetId)}</span>
                           </div>
                           <span>{item.actorFullName || item.actorEmail || t('overview.system')} · {formatDate(item.createdAt)}</span>
                         </div>

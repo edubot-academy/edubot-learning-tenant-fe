@@ -19,6 +19,32 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.15.6 - 2026-05-26
+
+### Added
+
+- Added tenant course delivery-context loading so course readiness can reflect backend delivery issues and summary counts.
+
+### Changed
+
+- Refined Kyrgyz and Russian UI copy across course, group, session, support, report, and dashboard flows for clearer product terminology.
+- Standardized Kyrgyz terms for статус, фильтр, прогресс, студент, инструктор, онлайн, and translated report wording to Kyrgyz баяндама terminology.
+
+### Fixed
+
+- Fixed online individual group setup so creating the first session requires a valid meeting URL.
+- Fixed planned group enrollment controls so newly created planned groups can accept students before activation.
+- Fixed course readiness checks to honor backend group, session, and live-meeting delivery issues.
+
+### Tests
+
+- Added regression coverage for online individual group meeting URL validation and updated group/session creation coverage.
+- `npm test -- --run src/features/groups/groupForm.test.ts src/features/groups/GroupsPage.test.tsx src/features/sessions/SessionsPage.test.tsx src/features/courses/CoursesPage.test.tsx src/i18n/translationKeys.test.ts` passes.
+- `npm test` passes with 36 test files and 213 tests.
+- `npm run lint` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
 ## 1.15.5 - 2026-05-26
 
 ### Fixed

@@ -1007,6 +1007,31 @@ export type StudentCourseSummary = {
   attendanceRate?: number | null;
   status?: string;
   groupName?: string;
+  deliveryState?: StudentCourseDeliveryState;
+};
+
+export type StudentCourseDeliveryState = {
+  readyForLearning?: boolean;
+  actionLabel?: string | null;
+  nextSessionAt?: string | null;
+  liveProvider?: string | null;
+  liveJoinUrl?: string | null;
+  issues?: string[];
+};
+
+export type CourseDeliveryContext = {
+  courseId: number;
+  courseType?: 'video' | 'offline' | 'online_live' | string | null;
+  deliveryKind?: string;
+  readiness?: {
+    readyForEnrollment?: boolean;
+    readyForDelivery?: boolean;
+    issues?: string[];
+  };
+  summary?: {
+    groups?: { total?: number; openOrActive?: number };
+    sessions?: { total?: number; scheduled?: number };
+  };
 };
 
 export type StudentSessionSummary = {

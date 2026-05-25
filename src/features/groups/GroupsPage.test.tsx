@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   createCourseGroup: vi.fn(),
   createIndividualCourseGroup: vi.fn(),
   enrollUser: vi.fn(),
+  getCourseDeliveryContext: vi.fn(),
   generateGroupSessions: vi.fn(),
   inviteTenantMember: vi.fn(),
   listCourseGroups: vi.fn(),
@@ -141,6 +142,11 @@ describe('GroupsPage individual delivery', () => {
       canManageMembers: true,
     };
     api.listTenantCourses.mockResolvedValue([course]);
+    api.getCourseDeliveryContext.mockResolvedValue({
+      courseId: 101,
+      readiness: { readyForEnrollment: false, readyForDelivery: false, issues: ['group_required'] },
+      summary: { groups: { total: 0 }, sessions: { total: 0 } },
+    });
     api.listTenantMembers.mockResolvedValue([studentMember]);
     api.listCourseGroups.mockResolvedValue([]);
     api.listGroupSessions.mockResolvedValue([]);
@@ -316,6 +322,11 @@ describe('GroupsPage individual delivery', () => {
     fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Bek individual' } });
     fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Bek Student' } });
     fireEvent.change(screen.getByPlaceholderText('student@example.com'), { target: { value: 'bek@example.test' } });
+    fireEvent.change(screen.getByLabelText(/start date/i), { target: { value: '2026-05-18' } });
+    fireEvent.change(screen.getByLabelText(/meeting provider/i), { target: { value: 'zoom' } });
+    fireEvent.change(screen.getByLabelText(/meeting url/i), { target: { value: 'https://zoom.test/bek' } });
+    fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: '10:00' } });
+    fireEvent.change(screen.getByLabelText(/ends/i), { target: { value: '11:00' } });
     fireEvent.click(screen.getAllByRole('button', { name: /create group/i }).at(-1) as HTMLElement);
 
     await waitFor(() => expect(api.inviteTenantMember).toHaveBeenCalledWith(42, expect.objectContaining({
@@ -327,6 +338,7 @@ describe('GroupsPage individual delivery', () => {
       courseId: 101,
       studentId: 202,
       name: 'Bek individual',
+      createFirstSession: true,
     }));
   });
 
@@ -373,9 +385,10 @@ describe('GroupsPage individual delivery', () => {
     const studentOption = await screen.findByRole('option', { name: /aida student/i });
     fireEvent.change(studentOption.closest('select') as HTMLSelectElement, { target: { value: '201' } });
     fireEvent.change(screen.getByLabelText(/start date/i), { target: { value: '2026-05-18' } });
+    fireEvent.change(screen.getByLabelText(/meeting provider/i), { target: { value: 'zoom' } });
+    fireEvent.change(screen.getByLabelText(/meeting url/i), { target: { value: 'https://zoom.test/aida' } });
     fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: '10:00' } });
     fireEvent.change(screen.getByLabelText(/ends/i), { target: { value: '11:00' } });
-    fireEvent.click(screen.getByLabelText(/create first session/i));
     fireEvent.click(screen.getAllByRole('button', { name: /create group/i }).at(-1) as HTMLElement);
 
     await waitFor(() => expect(api.createIndividualCourseGroup).toHaveBeenCalled());
@@ -384,6 +397,8 @@ describe('GroupsPage individual delivery', () => {
       studentId: 201,
       name: 'Aida individual',
       startDate: '2026-05-18',
+      meetingProvider: 'zoom',
+      meetingUrl: 'https://zoom.test/aida',
       createFirstSession: true,
       scheduleBlocks: [{ day: 'mon', startTime: '10:00', endTime: '11:00' }],
     }));

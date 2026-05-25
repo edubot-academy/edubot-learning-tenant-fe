@@ -1,4 +1,4 @@
-import type { Course } from '../../types/domain';
+import type { Course, CourseDeliveryContext } from '../../types/domain';
 
 export type CourseNextAction =
   | 'approve'
@@ -24,11 +24,13 @@ export type CourseReadinessOptions = {
   canEditCourse: boolean;
   groupCount?: number;
   sessionCount?: number;
+  deliveryContext?: CourseDeliveryContext | null;
 };
 
 export function getCourseReadiness(course: Course, options: CourseReadinessOptions): CourseReadiness {
   const status = course.status || 'draft';
   const deliveryTypeReady = ['offline', 'online_live'].includes(String(course.courseType ?? ''));
+  const issues = options.deliveryContext?.readiness?.issues ?? [];
 
   if (status === 'pending') {
     return {
@@ -66,7 +68,7 @@ export function getCourseReadiness(course: Course, options: CourseReadinessOptio
     };
   }
 
-  if (options.groupCount === 0) {
+  if (issues.includes('group_required') || options.groupCount === 0) {
     return {
       labelKey: 'courses.readinessNeedsGroup',
       detailKey: 'courses.workflowCreateGroup',
@@ -75,7 +77,7 @@ export function getCourseReadiness(course: Course, options: CourseReadinessOptio
     };
   }
 
-  if (options.sessionCount === 0) {
+  if (issues.includes('session_schedule_required') || issues.includes('live_meeting_required') || options.sessionCount === 0) {
     return {
       labelKey: 'courses.readinessNeedsSession',
       detailKey: 'courses.workflowScheduleSession',

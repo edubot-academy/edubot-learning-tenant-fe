@@ -124,6 +124,7 @@ export function GroupsPage() {
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedIndividualStudent = selectedGroup?.deliveryMode === 'individual' ? students[0] : undefined;
+  const selectedGroupEnrollmentReady = Boolean(selectedGroup && ['planned', 'open', 'active'].includes(String(selectedGroup.status || '')));
   const selectedIndividualStudentName = selectedIndividualStudent
     ? selectedIndividualStudent.fullName || selectedIndividualStudent.email || t('courses.studentFallback', { id: selectedIndividualStudent.userId })
     : '';
@@ -479,6 +480,7 @@ export function GroupsPage() {
       seatLimitInvalid: t('groups.seatLimitInvalid'),
       timezoneInvalid: t('groups.timezoneInvalid'),
       meetingUrlInvalid: t('groups.meetingUrlInvalid'),
+      liveMeetingRequired: t('groups.meetingUrlRequired'),
       scheduleBlockIncomplete: t('groups.scheduleBlockIncomplete'),
       scheduleTimeInvalid: t('groups.scheduleTimeInvalid'),
       createFirstSessionSetupRequired: t('groups.createFirstSessionSetupRequired'),
@@ -489,6 +491,7 @@ export function GroupsPage() {
       selectedStudentId,
       newStudent: studentInviteForm,
       createFirstSession: groupForm.createFirstSession,
+      requireOnlineLiveIndividualSetup: selectedCourseLiveOnline,
     });
     setCreateErrors(nextErrors);
     return nextErrors;
@@ -537,7 +540,7 @@ export function GroupsPage() {
           meetingUrl: payload.meetingUrl,
           scheduleBlocks: payload.scheduleBlocks,
           instructorId: payload.instructorId,
-          createFirstSession: groupForm.createFirstSession,
+          createFirstSession: selectedCourseLiveOnline || groupForm.createFirstSession,
         })).group
         : await createCourseGroup({
           ...payload,
@@ -799,11 +802,12 @@ export function GroupsPage() {
                 <label className="inline-check">
                   <input
                     type="checkbox"
-                    checked={groupForm.createFirstSession}
+                    checked={selectedCourseLiveOnline || groupForm.createFirstSession}
+                    disabled={selectedCourseLiveOnline}
                     onChange={(event) => setGroupForm((current) => ({ ...current, createFirstSession: event.target.checked }))}
                   /> {t('groups.createFirstSession')}
                 </label>
-                {groupForm.createFirstSession ? <p className="panel-note">{t('groups.createFirstSessionHint')}</p> : null}
+                {selectedCourseLiveOnline || groupForm.createFirstSession ? <p className="panel-note">{t('groups.createFirstSessionHint')}</p> : null}
               </>
             ) : null}
           </>
@@ -1096,7 +1100,7 @@ export function GroupsPage() {
               <div className="section-heading-row">
                 <div><h2>{t('groups.roster')}</h2><span>{t('groups.activeLearnerCount', { count: students.length })}</span></div>
                 {canManageEnrollment ? (
-                  <button type="button" className="secondary-button" onClick={() => openEnrollmentModal('existing')} disabled={!courseId || !groupId || enrolling}>
+                  <button type="button" className="secondary-button" onClick={() => openEnrollmentModal('existing')} disabled={!courseId || !groupId || enrolling || !selectedGroupEnrollmentReady}>
                     {t('sessions.enrollStudent')}
                   </button>
                 ) : null}
@@ -1304,7 +1308,7 @@ export function GroupsPage() {
           )}
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={() => setIsEnrollmentOpen(false)} disabled={enrolling}>{t('courses.cancel')}</button>
-            <button type="submit" className="primary-button" disabled={!courseId || !groupId || (enrollmentMode === 'existing' && !selectedStudentId) || enrolling}>
+            <button type="submit" className="primary-button" disabled={!courseId || !groupId || !selectedGroupEnrollmentReady || (enrollmentMode === 'existing' && !selectedStudentId) || enrolling}>
               {enrolling ? t('auth.working') : enrollmentMode === 'existing' ? t('sessions.enrollStudent') : t('groups.createAndEnroll')}
             </button>
           </div>

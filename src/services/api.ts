@@ -10,6 +10,7 @@ import type {
   CourseCertificateSettings,
   CompanyMember,
   Course,
+  CourseDeliveryContext,
   CourseGroup,
   CourseSession,
   GroupStudent,
@@ -298,6 +299,11 @@ export async function deleteTenantCourse(courseId: number) {
 
 export async function updateCourseStatus(courseId: number, status: 'pending' | 'approved' | 'rejected') {
   const { data } = await api.patch<{ success: boolean; status: string }>(`/courses/${courseId}/status`, { status });
+  return data;
+}
+
+export async function getCourseDeliveryContext(courseId: number) {
+  const { data } = await api.get<CourseDeliveryContext>(`/courses/${courseId}/delivery-context`);
   return data;
 }
 

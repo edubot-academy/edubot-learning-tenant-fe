@@ -6,8 +6,8 @@ import { FiEdit2, FiPlus } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
-import { createTenantCourse, deleteTenantCourse, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, publishTenantCourse, updateCourseStatus, updateTenantCourse } from '../../services/api';
-import type { CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
+import { createTenantCourse, deleteTenantCourse, getCourseDeliveryContext, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, publishTenantCourse, updateCourseStatus, updateTenantCourse } from '../../services/api';
+import type { CompanyMember, Course, CourseDeliveryContext, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { canApproveTenantCourses, canManageTenantCourses, getEffectiveTenantRole } from '../tenant/tenantRoles';
@@ -71,6 +71,7 @@ export function CoursesPage() {
   const [homework, setHomework] = useState<SessionHomework[]>([]);
   const [members, setMembers] = useState<CompanyMember[]>([]);
   const [courseHealth, setCourseHealth] = useState<Record<number, CourseHealthSummary>>({});
+  const [selectedCourseDeliveryContext, setSelectedCourseDeliveryContext] = useState<CourseDeliveryContext | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
   const [query, setQuery] = useState('');
@@ -248,8 +249,10 @@ export function CoursesPage() {
   const courseBlockerMessage = workflowBlockerMessage(selectedCourse, false);
   const courseDeliveryBlockerMessage = workflowBlockerMessage(selectedCourse);
   const selectedCourseHealth = selectedCourse ? courseHealth[courseIdValue(selectedCourse)] : undefined;
-  const selectedGroupCount = loadedCourseDetailId === selectedCourseId ? groups.length : selectedCourseHealth?.groupCount ?? groups.length;
-  const selectedSessionCount = loadedCourseDetailId === selectedCourseId ? sessions.length : selectedCourseHealth?.sessionCount ?? sessions.length;
+  const selectedGroupCount = selectedCourseDeliveryContext?.summary?.groups?.total
+    ?? (loadedCourseDetailId === selectedCourseId ? groups.length : selectedCourseHealth?.groupCount ?? groups.length);
+  const selectedSessionCount = selectedCourseDeliveryContext?.summary?.sessions?.total
+    ?? (loadedCourseDetailId === selectedCourseId ? sessions.length : selectedCourseHealth?.sessionCount ?? sessions.length);
   const translateCourseReadiness = useCallback((course: Course, groupCount?: number, sessionCount?: number) => {
     const courseContentEditable = canEditCourseContent(course);
     const readiness = getCourseReadiness(course, {
@@ -257,13 +260,14 @@ export function CoursesPage() {
       canEditCourse: canManageCourses && courseContentEditable,
       groupCount,
       sessionCount,
+      deliveryContext: courseIdValue(course) === selectedCourseId ? selectedCourseDeliveryContext : null,
     });
     return {
       ...readiness,
       label: t(readiness.labelKey),
       detail: t(readiness.detailKey),
     };
-  }, [canApproveCourses, canManageCourses, t]);
+  }, [canApproveCourses, canManageCourses, selectedCourseDeliveryContext, selectedCourseId, t]);
   const selectedCourseReadiness = useMemo(() => (
     selectedCourse ? translateCourseReadiness(selectedCourse, selectedGroupCount, selectedSessionCount) : null
   ), [selectedCourse, selectedGroupCount, selectedSessionCount, translateCourseReadiness]);
@@ -342,6 +346,7 @@ export function CoursesPage() {
     selectedCourseIdRef.current = courseId;
     setSelectedCourseId(courseId);
     setSelectedGroupId(undefined);
+    setSelectedCourseDeliveryContext(null);
   };
 
   const loadSelectedCourseDetails = useCallback(async () => {
@@ -358,17 +363,20 @@ export function CoursesPage() {
     loadingCourseDetailIdRef.current = courseId;
     startCourseDetailLoad();
     try {
-      const [nextGroups, nextHomework] = await Promise.all([
+      const [nextGroups, nextHomework, nextDeliveryContext] = await Promise.all([
         listCourseGroups(courseId),
         listHomework(courseId),
+        getCourseDeliveryContext(courseId).catch(() => null),
       ]);
       if (selectedCourseIdRef.current !== courseId) return;
       setGroups(nextGroups);
       setHomework(nextHomework);
+      setSelectedCourseDeliveryContext(nextDeliveryContext);
       setLoadedCourseDetailId(courseId);
       succeedCourseDetailLoad();
     } catch {
       if (selectedCourseIdRef.current === courseId) {
+        setSelectedCourseDeliveryContext(null);
         failCourseDetailLoad();
         toast.error(t('courses.detailLoadFailed'));
       }
@@ -389,6 +397,7 @@ export function CoursesPage() {
     setStudents((current) => current.length ? [] : current);
     setUnfilteredStudents((current) => current.length ? [] : current);
     setHomework((current) => current.length ? [] : current);
+    setSelectedCourseDeliveryContext((current) => current ? null : current);
     setMembers((current) => current.length ? [] : current);
     setCourseHealth((current) => Object.keys(current).length ? {} : current);
     setLoadedCourseDetailId((current) => current === undefined ? current : undefined);

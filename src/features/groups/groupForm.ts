@@ -34,6 +34,7 @@ export type GroupValidationMessages = {
   scheduleBlockIncomplete: string;
   scheduleTimeInvalid: string;
   createFirstSessionSetupRequired?: string;
+  liveMeetingRequired?: string;
   courseRequired?: string;
 };
 
@@ -45,6 +46,7 @@ export type GroupValidationOptions = {
   selectedStudentId?: number;
   newStudent?: { fullName: string; email: string };
   createFirstSession?: boolean;
+  requireOnlineLiveIndividualSetup?: boolean;
 };
 
 export type GroupValidationErrors = Partial<Record<
@@ -162,6 +164,7 @@ export function validateGroupForm(
   const seatLimit = form.seatLimit.trim();
   const deliveryMode = options.deliveryMode ?? form.deliveryMode;
   const createFirstSession = options.createFirstSession ?? form.createFirstSession;
+  const requiresOnlineLiveIndividualSetup = options.requireOnlineLiveIndividualSetup && deliveryMode === 'individual';
   const hasPartialSchedule = form.scheduleBlocks.some((block) => Boolean(block.startTime || block.endTime) && !(block.day && block.startTime && block.endTime));
   const hasInvalidScheduleTime = form.scheduleBlocks.some((block) => block.startTime && block.endTime && block.endTime <= block.startTime);
 
@@ -182,8 +185,11 @@ export function validateGroupForm(
   if (!isValidMeetingUrl(form.meetingUrl)) nextErrors.meetingUrl = messages.meetingUrlInvalid;
   if (hasPartialSchedule) nextErrors.schedule = messages.scheduleBlockIncomplete;
   else if (hasInvalidScheduleTime) nextErrors.schedule = messages.scheduleTimeInvalid;
-  else if (options.mode === 'create' && deliveryMode === 'individual' && createFirstSession && (!form.startDate || !scheduleBlocksPayload(form.scheduleBlocks).length) && messages.createFirstSessionSetupRequired) {
+  else if (options.mode === 'create' && deliveryMode === 'individual' && (createFirstSession || requiresOnlineLiveIndividualSetup) && (!form.startDate || !scheduleBlocksPayload(form.scheduleBlocks).length) && messages.createFirstSessionSetupRequired) {
     nextErrors.schedule = messages.createFirstSessionSetupRequired;
+  }
+  if (!nextErrors.schedule && requiresOnlineLiveIndividualSetup && !form.meetingUrl.trim() && messages.liveMeetingRequired) {
+    nextErrors.meetingUrl = messages.liveMeetingRequired;
   }
 
   return nextErrors;

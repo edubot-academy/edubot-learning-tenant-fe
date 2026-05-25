@@ -9,6 +9,7 @@ import { CoursesPage } from './CoursesPage';
 const api = vi.hoisted(() => ({
   createTenantCourse: vi.fn(),
   deleteTenantCourse: vi.fn(),
+  getCourseDeliveryContext: vi.fn(),
   listCourseGroups: vi.fn(),
   listGroupSessions: vi.fn(),
   listGroupStudents: vi.fn(),
@@ -123,6 +124,7 @@ describe('CoursesPage course setup flow', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     vi.clearAllMocks();
+    api.getCourseDeliveryContext.mockResolvedValue(null);
     authState.user = { id: 7, role: 'company_admin', email: 'admin@test.dev', fullName: 'Admin User' };
     tenantState.tenant = {
       id: 42,

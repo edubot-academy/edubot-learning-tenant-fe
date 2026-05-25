@@ -7,6 +7,7 @@ const messages = {
   seatLimitInvalid: 'Bad seat limit',
   timezoneInvalid: 'Bad timezone',
   meetingUrlInvalid: 'Bad URL',
+  liveMeetingRequired: 'Meeting URL required',
   scheduleBlockIncomplete: 'Incomplete schedule',
   scheduleTimeInvalid: 'Bad schedule time',
   createFirstSessionSetupRequired: 'First session needs setup',
@@ -66,6 +67,26 @@ describe('group form helpers', () => {
       timezone: 'Bad timezone',
       meetingUrl: 'Bad URL',
       schedule: 'Bad schedule time',
+    });
+  });
+
+  it('requires a meeting URL for online individual first-session setup', () => {
+    const form = {
+      ...emptyGroupForm('Asia/Bishkek'),
+      name: 'Individual group',
+      deliveryMode: 'individual' as const,
+      meetingProvider: 'Zoom',
+      startDate: '2026-05-22',
+      scheduleBlocks: [{ day: 'mon' as const, startTime: '10:00', endTime: '11:00' }],
+    };
+
+    expect(validateGroupForm(form, messages, {
+      mode: 'create',
+      deliveryMode: 'individual',
+      createFirstSession: true,
+      requireOnlineLiveIndividualSetup: true,
+    })).toMatchObject({
+      meetingUrl: 'Meeting URL required',
     });
   });
 });

@@ -335,6 +335,11 @@ describe('SessionsPage session creation', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Aida individual' } });
     fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Aida Student' } });
     fireEvent.change(screen.getByPlaceholderText('student@example.com'), { target: { value: 'aida@example.test' } });
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-05-25' } });
+    fireEvent.change(screen.getByLabelText('Meeting provider'), { target: { value: 'zoom' } });
+    fireEvent.change(screen.getByLabelText('Meeting URL'), { target: { value: 'https://zoom.test/aida' } });
+    fireEvent.change(screen.getByLabelText('Starts'), { target: { value: '10:00' } });
+    fireEvent.change(screen.getByLabelText('Ends'), { target: { value: '11:00' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Create group' }).at(-1)!);
 
     await waitFor(() => expect(api.inviteTenantMember).toHaveBeenCalledWith(42, expect.objectContaining({
@@ -346,6 +351,7 @@ describe('SessionsPage session creation', () => {
       courseId: 101,
       studentId: 202,
       name: 'Aida individual',
+      createFirstSession: true,
     }));
   });
 

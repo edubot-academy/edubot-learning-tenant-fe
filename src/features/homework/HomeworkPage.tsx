@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { FiBookOpen, FiCalendar, FiCheckCircle, FiChevronDown, FiClipboard, FiEdit2, FiPlus, FiSend, FiTrash2, FiUsers } from 'react-icons/fi';
+import { FiBookOpen, FiCalendar, FiCheckCircle, FiChevronDown, FiClipboard, FiEdit2, FiPlus, FiSend, FiTrash2, FiUsers, FiZap } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
@@ -18,6 +18,10 @@ import {
 import {
   createSessionHomework,
   deleteSessionHomework,
+  acceptAiGeneration,
+  generateAiFeedbackDraft,
+  generateAiHomeworkDraft,
+  getAiLmsCapabilities,
   getHomeworkReviewQueue,
   getHomeworkReviewRoster,
   getHomeworkSummary,
@@ -28,15 +32,17 @@ import {
   listSessionHomework,
   listTenantCourses,
   openHomeworkSubmissionAttachment,
+  rejectAiGeneration,
   reviewHomeworkSubmission,
   updateSessionHomework,
 } from '../../services/api';
-import type { Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewQueue, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
+import type { AiFeedbackDraftResponse, AiHomeworkDraftResponse, Course, CourseGroup, CourseSession, GroupStudent, HomeworkReviewQueue, HomeworkReviewRoster, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { canManageAssignedHomework, canManageTenantCourses, canTeachAssignedSessions } from '../tenant/tenantRoles';
 import { formatDate } from '../../lib/format';
 import { commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
+import { getApiErrorMessage, getBackendRequestId } from '../../lib/apiErrors';
 import { isCourseWorkflowReady, nextWorkflowSearchParams } from '../workflows/workflowContext';
 
 const emptyForm = {
@@ -48,12 +54,22 @@ const emptyForm = {
   assignedStudentIds: [] as number[],
 };
 
+type AiDraftState = {
+  generationId: number;
+  output: AiFeedbackDraftResponse['output'];
+};
+
+type AiHomeworkDraftState = {
+  generationId: number;
+  output: AiHomeworkDraftResponse['output'];
+};
+
 function isHomeworkCourseReady(course: Course | undefined | null) {
   return isCourseWorkflowReady(course);
 }
 
 export function HomeworkPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { activeTenant } = useTenant();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -78,6 +94,14 @@ export function HomeworkPage() {
   const [reviewRoster, setReviewRoster] = useState<HomeworkReviewRoster | null>(null);
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('needsReview');
   const [reviewDrafts, setReviewDrafts] = useState<Record<number, { score: string; reviewComment: string }>>({});
+  const [aiDrafts, setAiDrafts] = useState<Record<number, AiDraftState>>({});
+  const [aiDraftingSubmission, setAiDraftingSubmission] = useState<number | undefined>();
+  const [aiDraftErrors, setAiDraftErrors] = useState<Record<number, string>>({});
+  const [aiFeedbackDraftEnabled, setAiFeedbackDraftEnabled] = useState(false);
+  const [aiHomeworkDraftEnabled, setAiHomeworkDraftEnabled] = useState(false);
+  const [aiHomeworkDraft, setAiHomeworkDraft] = useState<AiHomeworkDraftState | null>(null);
+  const [aiHomeworkDrafting, setAiHomeworkDrafting] = useState(false);
+  const [aiHomeworkDraftError, setAiHomeworkDraftError] = useState('');
   const [expandedReviewStudentId, setExpandedReviewStudentId] = useState<number | undefined>();
   const [assigneeQuery, setAssigneeQuery] = useState('');
   const [form, setForm] = useState(emptyForm);
@@ -133,6 +157,31 @@ export function HomeworkPage() {
       ? { ...nextQueue, items: nextQueue.items.filter((item) => !item.sessionId || assignedSessionIds.has(item.sessionId)) }
       : nextQueue
   ), [assignedSessionIds, canManageAssignedOnly]);
+
+  useEffect(() => {
+    if (!courseId) {
+      setAiFeedbackDraftEnabled(false);
+      setAiHomeworkDraftEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    void getAiLmsCapabilities(courseId)
+      .then((capabilities) => {
+        if (!cancelled) {
+          setAiFeedbackDraftEnabled(Boolean(capabilities.feedbackDraft?.enabled));
+          setAiHomeworkDraftEnabled(Boolean(capabilities.homeworkDraft?.enabled));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAiFeedbackDraftEnabled(false);
+          setAiHomeworkDraftEnabled(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
 
   const selectedCourse = useMemo(() => scopedCourses.find((course) => course.id === courseId), [courseId, scopedCourses]);
   const selectedGroup = useMemo(() => scopedGroups.find((group) => group.id === groupId), [groupId, scopedGroups]);
@@ -387,6 +436,8 @@ export function HomeworkPage() {
     setReviewRoster(null);
     setReviewFilter('needsReview');
     setReviewDrafts({});
+    setAiDrafts({});
+    setAiDraftErrors({});
     setExpandedReviewStudentId(undefined);
     setGroupsLoaded(false);
     setRosterLoaded(false);
@@ -431,6 +482,8 @@ export function HomeworkPage() {
     setReviewRoster(null);
     setReviewFilter('needsReview');
     setReviewDrafts({});
+    setAiDrafts({});
+    setAiDraftErrors({});
     setExpandedReviewStudentId(undefined);
     setEditHomeworkId(undefined);
     setRosterLoaded(false);
@@ -487,6 +540,8 @@ export function HomeworkPage() {
     setReviewRoster(null);
     setReviewFilter('needsReview');
     setReviewDrafts({});
+    setAiDrafts({});
+    setAiDraftErrors({});
     setExpandedReviewStudentId(undefined);
     setEditHomeworkId(undefined);
     setSessionHomeworkLoaded(false);
@@ -530,6 +585,8 @@ export function HomeworkPage() {
         }
       });
       setReviewDrafts(drafts);
+      setAiDrafts({});
+      setAiDraftErrors({});
     } catch {
       toast.error(t('homework.reviewRosterLoadFailed'));
     } finally {
@@ -643,11 +700,76 @@ export function HomeworkPage() {
     }
   };
 
+  const homeworkDraftDescription = (output: AiHomeworkDraftResponse['output']) => {
+    const rubric = (output.rubric ?? [])
+      .map((item) => [item.criterion, item.points !== undefined && item.points !== null ? `(${item.points})` : ''].filter(Boolean).join(' '))
+      .filter(Boolean);
+    if (!rubric.length) return output.description;
+    return [output.description, '', t('homework.rubric'), ...rubric.map((item) => `- ${item}`)].join('\n');
+  };
+
+  const requestAiHomeworkDraft = async () => {
+    if (!sessionId || !selectedSessionReady) return;
+    setAiHomeworkDrafting(true);
+    setAiHomeworkDraftError('');
+    try {
+      const draft = await generateAiHomeworkDraft(sessionId, {
+        language: i18n.language || 'ky',
+        topic: form.title.trim() || selectedSession?.title || selectedCourse?.title,
+        maxScore: form.maxScore ? Number(form.maxScore) : undefined,
+      });
+      setAiHomeworkDraft({
+        generationId: draft.generationId,
+        output: draft.output,
+      });
+      toast.success(t('ai.homeworkDraftReady'));
+    } catch (error) {
+      const requestId = getBackendRequestId(error);
+      const message = requestId ? t('ai.requestId', { requestId }) : getApiErrorMessage(error, t('ai.homeworkDraftFailed'));
+      setAiHomeworkDraftError(message);
+      toast.error(getApiErrorMessage(error, t('ai.homeworkDraftFailed')));
+    } finally {
+      setAiHomeworkDrafting(false);
+    }
+  };
+
+  const applyAiHomeworkDraft = async () => {
+    if (!aiHomeworkDraft) return;
+    const output = aiHomeworkDraft.output;
+    setForm((current) => ({
+      ...current,
+      title: output.title || current.title,
+      description: homeworkDraftDescription(output),
+      maxScore: output.maxScore === undefined || output.maxScore === null ? current.maxScore : String(output.maxScore),
+      isPublished: false,
+    }));
+    try {
+      await acceptAiGeneration(aiHomeworkDraft.generationId);
+      toast.success(t('ai.homeworkDraftAccepted'));
+      setAiHomeworkDraft(null);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
+  const rejectAiHomeworkDraft = async () => {
+    if (!aiHomeworkDraft) return;
+    try {
+      await rejectAiGeneration(aiHomeworkDraft.generationId);
+      setAiHomeworkDraft(null);
+      toast.success(t('ai.homeworkDraftRejected'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
   const closeCreateModal = () => {
     setIsCreateModalOpen(false);
     setForm(emptyForm);
     setFormErrors({});
     setAssigneeQuery('');
+    setAiHomeworkDraft(null);
+    setAiHomeworkDraftError('');
   };
 
   const closeEditModal = () => {
@@ -759,6 +881,91 @@ export function HomeworkPage() {
       toast.error(t('homework.reviewSaveFailed'));
     } finally {
       setReviewingSubmission(undefined);
+    }
+  };
+
+  const requestAiFeedbackDraft = async (submissionId: number) => {
+    setAiDraftingSubmission(submissionId);
+    try {
+      const draft = await generateAiFeedbackDraft(submissionId, {
+        submissionType: 'homework',
+        language: i18n.language || 'ky',
+        tone: 'encouraging',
+        includeScoreSuggestion: true,
+      });
+      setAiDrafts((current) => ({
+        ...current,
+        [submissionId]: {
+          generationId: draft.generationId,
+          output: draft.output,
+        },
+      }));
+      setAiDraftErrors((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      toast.success(t('ai.feedbackDraftReady'));
+    } catch (error) {
+      const requestId = getBackendRequestId(error);
+      setAiDraftErrors((current) => ({
+        ...current,
+        [submissionId]: requestId ? t('ai.requestId', { requestId }) : getApiErrorMessage(error, t('ai.feedbackDraftFailed')),
+      }));
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftFailed')));
+    } finally {
+      setAiDraftingSubmission(undefined);
+    }
+  };
+
+  const acceptAiDraft = async (submissionId: number) => {
+    const draft = aiDrafts[submissionId];
+    if (!draft) return;
+    try {
+      setReviewDrafts((current) => ({
+        ...current,
+        [submissionId]: {
+          score: draft.output.suggestedScore === undefined || draft.output.suggestedScore === null
+            ? current[submissionId]?.score ?? ''
+            : String(draft.output.suggestedScore),
+          reviewComment: draft.output.feedback || current[submissionId]?.reviewComment || '',
+        },
+      }));
+      await acceptAiGeneration(draft.generationId);
+      setAiDrafts((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      setAiDraftErrors((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      toast.success(t('ai.feedbackDraftAccepted'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
+  const rejectAiDraft = async (submissionId: number) => {
+    const draft = aiDrafts[submissionId];
+    if (!draft) return;
+    try {
+      await rejectAiGeneration(draft.generationId);
+      setAiDrafts((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      setAiDraftErrors((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      toast.success(t('ai.feedbackDraftRejected'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
     }
   };
 
@@ -1102,6 +1309,69 @@ export function HomeworkPage() {
                                   placeholder={t('homework.reviewCommentPlaceholder')}
                                 />
                               </label>
+                              {aiFeedbackDraftEnabled ? (
+                              <div className="ai-feedback-panel">
+                                <div className="ai-feedback-actions">
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => void requestAiFeedbackDraft(item.submission!.id)}
+                                    disabled={aiDraftingSubmission === item.submission.id || reviewingSubmission === item.submission.id}
+                                  >
+                                    <FiZap />
+                                    {aiDraftingSubmission === item.submission.id ? t('ai.generating') : t('ai.suggestFeedback')}
+                                  </button>
+                                  {aiDrafts[item.submission.id] ? (
+                                    <>
+                                      <button type="button" className="secondary-button" onClick={() => void acceptAiDraft(item.submission!.id)}>
+                                        {t('ai.useDraft')}
+                                      </button>
+                                      <button type="button" className="link-button danger" onClick={() => void rejectAiDraft(item.submission!.id)}>
+                                        {t('ai.cancelDraft')}
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </div>
+                                {aiDrafts[item.submission.id] ? (
+                                  <div className="ai-feedback-preview">
+                                    <strong>{t('ai.feedbackDraft')}</strong>
+                                    <textarea
+                                      value={aiDrafts[item.submission.id].output.feedback}
+                                      onChange={(event) => setAiDrafts((current) => ({
+                                        ...current,
+                                        [item.submission!.id]: {
+                                          ...current[item.submission!.id],
+                                          output: {
+                                            ...current[item.submission!.id].output,
+                                            feedback: event.target.value,
+                                          },
+                                        },
+                                      }))}
+                                      aria-label={t('ai.feedbackDraft')}
+                                    />
+                                    {aiDrafts[item.submission.id].output.suggestedScore !== undefined && aiDrafts[item.submission.id].output.suggestedScore !== null ? (
+                                      <input
+                                        value={String(aiDrafts[item.submission.id].output.suggestedScore)}
+                                        onChange={(event) => setAiDrafts((current) => ({
+                                          ...current,
+                                          [item.submission!.id]: {
+                                            ...current[item.submission!.id],
+                                            output: {
+                                              ...current[item.submission!.id].output,
+                                              suggestedScore: event.target.value.trim() ? Number(event.target.value) : null,
+                                            },
+                                          },
+                                        }))}
+                                        inputMode="numeric"
+                                        aria-label={t('homework.score')}
+                                      />
+                                    ) : null}
+                                    {aiDrafts[item.submission.id].output.nextStep ? <span>{aiDrafts[item.submission.id].output.nextStep}</span> : null}
+                                  </div>
+                                ) : null}
+                                {aiDraftErrors[item.submission.id] ? <span className="field-error">{aiDraftErrors[item.submission.id]}</span> : null}
+                              </div>
+                              ) : null}
                               <div className="activity-actions">
                                 <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'approved')} disabled={reviewingSubmission === item.submission.id}>{t('courses.approve')}</button>
                                 <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'needs_revision')} disabled={reviewingSubmission === item.submission.id}>{t('sessions.revise')}</button>
@@ -1299,6 +1569,45 @@ export function HomeworkPage() {
               <h2 id="create-homework-title">{t('homework.createHomework')}</h2>
               <p>{selectedSession ? t('homework.assignmentAddedToSession', { title: selectedSession.title }) : t('homework.chooseSessionBeforeCreate')}</p>
             </div>
+            {aiHomeworkDraftEnabled ? (
+              <div className="settings-panel compact">
+                <div className="section-heading-row compact">
+                  <div>
+                    <h3>{t('ai.homeworkDraft')}</h3>
+                    <span>{t('homework.saveDraft')}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void requestAiHomeworkDraft()}
+                    disabled={!sessionId || !selectedSessionReady || aiHomeworkDrafting}
+                  >
+                    {aiHomeworkDrafting ? t('ai.generating') : t('ai.suggestHomework')}
+                  </button>
+                </div>
+                {aiHomeworkDraftError ? <p className="field-error">{aiHomeworkDraftError}</p> : null}
+                {aiHomeworkDraft ? (
+                  <div className="generation-preview">
+                    <span><strong>{aiHomeworkDraft.output.title}</strong></span>
+                    <p>{aiHomeworkDraft.output.description}</p>
+                    {aiHomeworkDraft.output.rubric?.length ? (
+                      <ul className="stack-list compact">
+                        {aiHomeworkDraft.output.rubric.map((item, index) => (
+                          <li key={`${item.criterion ?? 'criterion'}-${index}`}>
+                            {item.criterion}
+                            {item.points !== undefined && item.points !== null ? ` (${item.points})` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <div className="generation-actions">
+                      <button type="button" onClick={() => void applyAiHomeworkDraft()}>{t('ai.useDraft')}</button>
+                      <button type="button" className="secondary-button" onClick={() => void rejectAiHomeworkDraft()}>{t('ai.cancelDraft')}</button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <label>
               {t('courses.title')}
               <input

@@ -894,6 +894,142 @@ export type HomeworkReviewRoster = {
   }>;
 };
 
+export type AiFeedbackDraftOutput = {
+  feedback: string;
+  whatWentWell?: string[];
+  needsImprovement?: string[];
+  suggestedScore?: number | null;
+  nextStep?: string;
+};
+
+export type AiFeedbackDraftResponse = {
+  generationId: number;
+  status: 'draft' | 'accepted' | 'rejected' | 'applied' | 'failed' | string;
+  output: AiFeedbackDraftOutput;
+  messageKey?: string;
+};
+
+export type AiHomeworkDraftOutput = {
+  title: string;
+  description: string;
+  rubric?: Array<{ criterion?: string | null; points?: number | null }>;
+  maxScore?: number | null;
+};
+
+export type AiHomeworkDraftResponse = {
+  generationId: number;
+  status: 'draft' | 'accepted' | 'rejected' | 'applied' | 'failed' | string;
+  output: AiHomeworkDraftOutput;
+  messageKey?: string;
+};
+
+export type AiQuizDraftOutput = {
+  title: string;
+  description?: string | null;
+  questions: Array<{
+    prompt: string;
+    questionMode?: 'single_choice' | 'multiple_choice' | string;
+    options: Array<{ text: string; isCorrect?: boolean | null }>;
+    explanation?: string | null;
+  }>;
+  passingScore?: number | null;
+};
+
+export type AiQuizDraftResponse = {
+  generationId: number;
+  status: 'draft' | 'accepted' | 'rejected' | 'applied' | 'failed' | string;
+  output: AiQuizDraftOutput;
+  messageKey?: string;
+};
+
+export type AiWorksheetDraftOutput = {
+  title: string;
+  instructions: string;
+  sections: Array<{ title: string; items: string[] }>;
+  answerKey?: string[];
+};
+
+export type AiWorksheetDraftResponse = {
+  generationId: number;
+  status: 'draft' | 'accepted' | 'rejected' | 'applied' | 'failed' | string;
+  output: AiWorksheetDraftOutput;
+  messageKey?: string;
+};
+
+export type AiMessageDraftOutput = {
+  recipient: 'student' | 'guardian' | string;
+  subject?: string | null;
+  message: string;
+  keyPoints?: string[];
+  recommendedChannel?: string | null;
+  safetyNotes?: string[];
+};
+
+export type AiMessageDraftResponse = {
+  generationId: number;
+  status: 'draft' | 'accepted' | 'rejected' | 'applied' | 'failed' | string;
+  output: AiMessageDraftOutput;
+  messageKey?: string;
+};
+
+export type AiCourseDraftOutput = {
+  title: string;
+  subtitle?: string | null;
+  description: string;
+  level?: string;
+  languageCode?: string;
+  courseType: 'video' | 'offline' | 'online_live' | string;
+  learningOutcomes?: string[];
+  syllabus: string;
+  sections: Array<{
+    title: string;
+    description?: string | null;
+    lessons: Array<{
+      title: string;
+      description?: string | null;
+      objectives?: string[];
+    }>;
+  }>;
+};
+
+export type AiCourseDraftResponse = {
+  generationId: number;
+  status: 'draft' | 'accepted' | 'rejected' | 'applied' | 'failed' | string;
+  output: AiCourseDraftOutput;
+  messageKey?: string;
+};
+
+export type AiLmsCapabilities = {
+  feedbackDraft?: {
+    enabled: boolean;
+    messageKey?: string;
+  };
+  lessonQuizDraft?: {
+    enabled: boolean;
+    messageKey?: string;
+  };
+  homeworkDraft?: {
+    enabled: boolean;
+    messageKey?: string;
+  };
+  lessonKit?: {
+    enabled: boolean;
+    messageKey?: string;
+  };
+  worksheetDraft?: {
+    enabled: boolean;
+    messageKey?: string;
+  };
+  courseDraft?: {
+    enabled: boolean;
+    messageKey?: string;
+  };
+  messageDraft?: {
+    enabled: boolean;
+    messageKey?: string;
+  };
+};
+
 export type CompanyMember = {
   userId: number;
   role: UserRole | string;

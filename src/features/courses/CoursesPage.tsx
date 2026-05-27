@@ -6,12 +6,12 @@ import { FiEdit2, FiPlus } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { StatGrid } from '../../components/StatGrid';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
-import { createTenantCourse, deleteTenantCourse, getCourseDeliveryContext, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, publishTenantCourse, updateCourseStatus, updateTenantCourse } from '../../services/api';
-import type { CompanyMember, Course, CourseDeliveryContext, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
+import { acceptAiGeneration, createTenantCourse, deleteTenantCourse, generateAiCourseDraft, getAiLmsCapabilities, getCourseDeliveryContext, listCourseGroups, listGroupSessions, listGroupStudents, listHomework, listTenantCourses, listTenantMembers, publishTenantCourse, rejectAiGeneration, updateCourseStatus, updateTenantCourse } from '../../services/api';
+import type { AiCourseDraftResponse, CompanyMember, Course, CourseDeliveryContext, CourseGroup, CourseSession, GroupStudent, SessionHomework } from '../../types/domain';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { canApproveTenantCourses, canManageTenantCourses, getEffectiveTenantRole } from '../tenant/tenantRoles';
-import { getApiErrorMessage } from '../../lib/apiErrors';
+import { getApiErrorMessage, getBackendRequestId } from '../../lib/apiErrors';
 import { commonStatusLabelKeys, courseTypeLabelKeys, enumLabel } from '../../lib/enumLabels';
 import { useAsyncLoadState } from '../../lib/asyncState';
 import { isCourseWorkflowReady, nextWorkflowSearchParams, workflowPath } from '../workflows/workflowContext';
@@ -56,7 +56,7 @@ function upsertCourse(items: Course[], nextCourse: Course) {
 }
 
 export function CoursesPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { activeTenant } = useTenant();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -109,6 +109,10 @@ export function CoursesPage() {
   const [courseDeletePending, setCourseDeletePending] = useState<Course | null>(null);
   const [deletingCourse, setDeletingCourse] = useState(false);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const [aiCourseDraftEnabled, setAiCourseDraftEnabled] = useState(false);
+  const [aiCourseDraft, setAiCourseDraft] = useState<{ generationId: number; output: AiCourseDraftResponse['output'] } | null>(null);
+  const [aiCourseDrafting, setAiCourseDrafting] = useState(false);
+  const [aiCourseDraftError, setAiCourseDraftError] = useState('');
   const [loadedCourseDetailId, setLoadedCourseDetailId] = useState<number | undefined>();
   const [createForm, setCreateForm] = useState<CourseFormState>({
     title: '',
@@ -587,6 +591,20 @@ export function CoursesPage() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    void getAiLmsCapabilities()
+      .then((capabilities) => {
+        if (!cancelled) setAiCourseDraftEnabled(Boolean(capabilities.courseDraft?.enabled));
+      })
+      .catch(() => {
+        if (!cancelled) setAiCourseDraftEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantId]);
+
+  useEffect(() => {
     if (!courseTypeOptions.length) return;
     if (!courseTypeOptions.some((option) => option.value === createForm.courseType)) {
       setCreateForm((current) => ({ ...current, courseType: courseTypeOptions[0].value }));
@@ -595,6 +613,8 @@ export function CoursesPage() {
 
   const openCreateModal = () => {
     setCreateErrors({});
+    setAiCourseDraft(null);
+    setAiCourseDraftError('');
     setCreateForm({
       title: '',
       description: '',
@@ -602,6 +622,64 @@ export function CoursesPage() {
       instructorId: activeRole === 'instructor' ? user?.id : undefined,
     });
     setCreateModalOpen(true);
+  };
+
+  const requestAiCourseDraft = async () => {
+    const topic = createForm.title.trim();
+    if (!topic) return;
+    setAiCourseDrafting(true);
+    setAiCourseDraftError('');
+    try {
+      const draft = await generateAiCourseDraft({
+        language: i18n.language || 'ky',
+        topic,
+        targetAudience: createForm.description.trim() || undefined,
+        courseType: createForm.courseType,
+        sectionCount: 4,
+        lessonsPerSection: 4,
+      });
+      setAiCourseDraft({ generationId: draft.generationId, output: draft.output });
+      toast.success(t('ai.courseDraftReady'));
+    } catch (error) {
+      const requestId = getBackendRequestId(error);
+      setAiCourseDraftError(requestId ? t('ai.requestId', { requestId }) : getApiErrorMessage(error, t('ai.courseDraftFailed')));
+      toast.error(getApiErrorMessage(error, t('ai.courseDraftFailed')));
+    } finally {
+      setAiCourseDrafting(false);
+    }
+  };
+
+  const applyAiCourseDraft = async () => {
+    if (!aiCourseDraft) return;
+    setCreateForm((current) => ({
+      ...current,
+      title: aiCourseDraft.output.title || current.title,
+      description: aiCourseDraft.output.description || current.description,
+      courseType: courseTypeOptions.some((option) => option.value === aiCourseDraft.output.courseType)
+        ? aiCourseDraft.output.courseType as TenantCourseType
+        : current.courseType,
+    }));
+    setCreateErrors((current) => ({ ...current, title: '', description: '', courseType: '' }));
+    try {
+      await acceptAiGeneration(aiCourseDraft.generationId);
+      setAiCourseDraft(null);
+      setAiCourseDraftError('');
+      toast.success(t('ai.courseDraftAccepted'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
+  const cancelAiCourseDraft = async () => {
+    if (!aiCourseDraft) return;
+    try {
+      await rejectAiGeneration(aiCourseDraft.generationId);
+      setAiCourseDraft(null);
+      setAiCourseDraftError('');
+      toast.success(t('ai.courseDraftRejected'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
   };
 
   const openEditModal = () => {
@@ -1017,7 +1095,18 @@ export function CoursesPage() {
           videoEnabled={activeTenant?.featureFlags?.['courses.video.enabled'] === true}
           setForm={setCreateForm}
           courseTypeDetail={courseTypeDetail}
-          onClose={() => setCreateModalOpen(false)}
+          aiCourseDraftEnabled={aiCourseDraftEnabled}
+          aiCourseDraft={aiCourseDraft?.output ?? null}
+          aiCourseDrafting={aiCourseDrafting}
+          aiCourseDraftError={aiCourseDraftError}
+          onRequestAiCourseDraft={() => void requestAiCourseDraft()}
+          onUseAiCourseDraft={() => void applyAiCourseDraft()}
+          onCancelAiCourseDraft={() => void cancelAiCourseDraft()}
+          onClose={() => {
+            setCreateModalOpen(false);
+            setAiCourseDraft(null);
+            setAiCourseDraftError('');
+          }}
           onSubmit={submitCourse}
         />
       ) : null}

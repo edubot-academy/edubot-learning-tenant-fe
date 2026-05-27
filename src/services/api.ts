@@ -2,6 +2,13 @@ import type {
   AttendanceRecord,
   AttendanceStatus,
   ActivityReviewQueue,
+  AiCourseDraftResponse,
+  AiFeedbackDraftResponse,
+  AiHomeworkDraftResponse,
+  AiLmsCapabilities,
+  AiMessageDraftResponse,
+  AiQuizDraftResponse,
+  AiWorksheetDraftResponse,
   AssistantDashboard,
   AssistantSupportResponse,
   AssistantSupportStatus,
@@ -594,6 +601,99 @@ export async function reviewSessionActivitySubmission(
     `/group-sessions/${sessionId}/activities/${activityId}/submissions/${submissionId}`,
     payload,
   );
+  return data;
+}
+
+export async function generateAiFeedbackDraft(
+  submissionId: number,
+  payload: {
+    submissionType: 'homework' | 'session_activity';
+    language?: string;
+    tone?: string;
+    includeScoreSuggestion?: boolean;
+  },
+) {
+  const { data } = await api.post<AiFeedbackDraftResponse>(`/ai-lms/submissions/${submissionId}/feedback-draft`, payload);
+  return data;
+}
+
+export async function generateAiLessonQuizDraft(
+  lessonId: number,
+  payload: { language?: string; questionCount?: number; difficulty?: string; includeExplanations?: boolean },
+) {
+  const { data } = await api.post<AiQuizDraftResponse>(`/ai-lms/lessons/${lessonId}/quiz-draft`, payload);
+  return data;
+}
+
+export async function generateAiSessionQuizDraft(
+  sessionId: number,
+  payload: { language?: string; questionCount?: number; difficulty?: string; includeExplanations?: boolean },
+) {
+  const { data } = await api.post<AiQuizDraftResponse>(`/ai-lms/sessions/${sessionId}/quiz-draft`, payload);
+  return data;
+}
+
+export async function generateAiHomeworkDraft(
+  sessionId: number,
+  payload: { language?: string; topic?: string; maxScore?: number },
+) {
+  const { data } = await api.post<AiHomeworkDraftResponse>(`/ai-lms/sessions/${sessionId}/homework-draft`, payload);
+  return data;
+}
+
+export async function generateAiLessonKit(
+  lessonId: number,
+  payload: { language?: string; focus?: string },
+) {
+  const { data } = await api.post(`/ai-lms/lessons/${lessonId}/lesson-kit`, payload);
+  return data;
+}
+
+export async function generateAiWorksheetDraft(
+  sessionId: number,
+  payload: { language?: string; topic?: string; activityCount?: number; includeAnswerKey?: boolean },
+) {
+  const { data } = await api.post<AiWorksheetDraftResponse>(`/ai-lms/sessions/${sessionId}/worksheet-draft`, payload);
+  return data;
+}
+
+export async function generateAiCourseDraft(
+  payload: {
+    language?: string;
+    topic: string;
+    targetAudience?: string;
+    level?: string;
+    courseType?: 'video' | 'offline' | 'online_live';
+    sectionCount?: number;
+    lessonsPerSection?: number;
+  },
+) {
+  const { data } = await api.post<AiCourseDraftResponse>('/ai-lms/courses/course-draft', payload);
+  return data;
+}
+
+export async function generateAiMessageDraft(
+  studentId: number,
+  payload: { language?: string; recipient?: 'student' | 'guardian'; purpose?: string; tone?: 'supportive' | 'formal' | 'urgent'; courseId?: number },
+) {
+  const { data } = await api.post<AiMessageDraftResponse>(`/ai-lms/students/${studentId}/message-draft`, payload);
+  return data;
+}
+
+export async function getAiLmsCapabilities(courseId?: number) {
+  const { data } = await api.get<AiLmsCapabilities>('/ai-lms/capabilities', {
+    params: courseId ? { courseId } : undefined,
+  });
+  return data;
+}
+
+export async function acceptAiGeneration(generationId: number) {
+  const { data } = await api.patch<{ generationId: number; status: string; messageKey?: string }>(`/ai-lms/generations/${generationId}/accept`);
+  return data;
+}
+
+export async function rejectAiGeneration(generationId: number) {
+  const { data } = await api.patch<{ generationId: number; status: string; messageKey?: string }>(`/ai-lms/generations/${generationId}/reject`);
   return data;
 }
 

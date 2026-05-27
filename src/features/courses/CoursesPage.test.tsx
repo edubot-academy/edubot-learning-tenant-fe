@@ -7,9 +7,12 @@ import i18n from '../../i18n/config';
 import { CoursesPage } from './CoursesPage';
 
 const api = vi.hoisted(() => ({
+  acceptAiGeneration: vi.fn(),
   createTenantCourse: vi.fn(),
   deleteTenantCourse: vi.fn(),
+  generateAiCourseDraft: vi.fn(),
   getCourseDeliveryContext: vi.fn(),
+  getAiLmsCapabilities: vi.fn(),
   listCourseGroups: vi.fn(),
   listGroupSessions: vi.fn(),
   listGroupStudents: vi.fn(),
@@ -17,6 +20,7 @@ const api = vi.hoisted(() => ({
   listTenantCourses: vi.fn(),
   listTenantMembers: vi.fn(),
   publishTenantCourse: vi.fn(),
+  rejectAiGeneration: vi.fn(),
   updateCourseStatus: vi.fn(),
   updateTenantCourse: vi.fn(),
 }));
@@ -125,6 +129,9 @@ describe('CoursesPage course setup flow', () => {
     await i18n.changeLanguage('en');
     vi.clearAllMocks();
     api.getCourseDeliveryContext.mockResolvedValue(null);
+    api.getAiLmsCapabilities.mockResolvedValue({ courseDraft: { enabled: true } });
+    api.acceptAiGeneration.mockResolvedValue({ success: true });
+    api.rejectAiGeneration.mockResolvedValue({ success: true });
     authState.user = { id: 7, role: 'company_admin', email: 'admin@test.dev', fullName: 'Admin User' };
     tenantState.tenant = {
       id: 42,
@@ -295,6 +302,72 @@ describe('CoursesPage course setup flow', () => {
     expect(await screen.findByRole('heading', { name: 'Physics Live' })).toBeInTheDocument();
     expect(screen.getAllByText('Approve and publish this course when the basics are ready.').length).toBeGreaterThan(0);
     expect(toast.success).toHaveBeenCalledWith('Course created');
+  });
+
+  it('generates an AI course draft without creating the course automatically', async () => {
+    api.generateAiCourseDraft.mockResolvedValue({
+      generationId: 9401,
+      status: 'draft',
+      output: {
+        title: 'Algebra foundations',
+        subtitle: 'Core equations',
+        description: 'A practical course for solving linear equations and inequalities.',
+        level: 'Beginner',
+        languageCode: 'en',
+        courseType: 'offline',
+        learningOutcomes: ['Solve linear equations'],
+        syllabus: 'Week 1: Variables. Week 2: Linear equations.',
+        sections: [
+          {
+            title: 'Linear equations',
+            description: 'Core equation solving.',
+            lessons: [
+              {
+                title: 'Variables',
+                description: 'Understand variables.',
+                objectives: ['Define variables'],
+              },
+              {
+                title: 'One-step equations',
+                description: 'Solve one-step equations.',
+                objectives: ['Solve x + a = b'],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    await screen.findByText('Approved, not published');
+    clickCreateCourse();
+    fireEvent.change(screen.getByPlaceholderText('Course title'), { target: { value: 'Algebra foundations' } });
+    fireEvent.change(screen.getByPlaceholderText('Short description for staff and students'), {
+      target: { value: 'For beginner students' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest course with AI' }));
+
+    await waitFor(() => expect(api.generateAiCourseDraft).toHaveBeenCalledWith({
+      language: 'en',
+      topic: 'Algebra foundations',
+      targetAudience: 'For beginner students',
+      courseType: 'offline',
+      sectionCount: 4,
+      lessonsPerSection: 4,
+    }));
+    expect(await screen.findByText('Week 1: Variables. Week 2: Linear equations.')).toBeInTheDocument();
+    expect(screen.getByText('Linear equations')).toBeInTheDocument();
+    expect(api.createTenantCourse).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+
+    await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9401));
+    expect(screen.getByPlaceholderText('Course title')).toHaveValue('Algebra foundations');
+    expect(screen.getByPlaceholderText('Short description for staff and students')).toHaveValue(
+      'A practical course for solving linear equations and inequalities.',
+    );
+    expect(api.createTenantCourse).not.toHaveBeenCalled();
   });
 
   it('keeps instructor-created courses self-assigned and focused on approval', async () => {

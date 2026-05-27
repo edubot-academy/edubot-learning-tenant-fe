@@ -10,16 +10,21 @@ import { StatGrid } from '../../components/StatGrid';
 import {
   createStudentGuardian,
   createStudentSupportNote,
+  acceptAiGeneration,
+  generateAiMessageDraft,
   getAssistantDashboard,
   getAssistantSupport,
+  getAiLmsCapabilities,
   listCourseGroups,
   listGroupStudents,
   listStudentGuardians,
   listStudentSupportNotes,
   listTenantCourses,
+  rejectAiGeneration,
   updateStudentSupportNote,
 } from '../../services/api';
 import type {
+  AiMessageDraftResponse,
   AssistantDashboard,
   AssistantSupportItem,
   AssistantSupportReason,
@@ -31,6 +36,7 @@ import type {
   StudentSupportNote,
 } from '../../types/domain';
 import { formatDate } from '../../lib/format';
+import { getApiErrorMessage, getBackendRequestId } from '../../lib/apiErrors';
 import { useAuth } from '../auth/AuthProvider';
 import { useTenant } from '../tenant/TenantProvider';
 import { canContactStudents, canEscalateOperationalIssues, canManageStudentSupportNotes } from '../tenant/tenantRoles';
@@ -76,6 +82,11 @@ type GuardianFormState = {
   phone: string;
   preferredChannel: string;
   notes: string;
+};
+
+type AiMessageDraftState = {
+  generationId: number;
+  output: AiMessageDraftResponse['output'];
 };
 
 const emptyNoteForm: NoteFormState = {
@@ -142,7 +153,7 @@ function supportStudentFromBackend(item: AssistantSupportItem, fallbackCourseTit
 }
 
 export function StudentSupportPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { activeTenant } = useTenant();
   const { user } = useAuth();
   const activeTenantId = activeTenant?.id;
@@ -164,10 +175,47 @@ export function StudentSupportPage() {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [noteForm, setNoteForm] = useState<NoteFormState>(emptyNoteForm);
   const [guardianForm, setGuardianForm] = useState<GuardianFormState>(emptyGuardianForm);
+  const [aiMessageDraftEnabled, setAiMessageDraftEnabled] = useState(false);
+  const [aiMessageDraft, setAiMessageDraft] = useState<AiMessageDraftState | null>(null);
+  const [aiMessageDraftText, setAiMessageDraftText] = useState('');
+  const [aiMessageRecipient, setAiMessageRecipient] = useState<'student' | 'guardian'>('student');
+  const [aiMessageDrafting, setAiMessageDrafting] = useState(false);
+  const [aiMessageDraftError, setAiMessageDraftError] = useState('');
 
   const canContact = canContactStudents(user, activeTenant);
   const canEscalate = canEscalateOperationalIssues(user, activeTenant);
   const canAddNotes = canManageStudentSupportNotes(user, activeTenant);
+
+  const clearAiMessageDraft = () => {
+    setAiMessageDraft(null);
+    setAiMessageDraftText('');
+    setAiMessageDraftError('');
+  };
+
+  const copyTextToClipboard = async (text: string) => {
+    const value = text.trim();
+    if (!value) return false;
+    let textArea: HTMLTextAreaElement | null = null;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+      if (typeof document.execCommand !== 'function') return false;
+      textArea = document.createElement('textarea');
+      textArea.value = value;
+      textArea.setAttribute('readonly', 'true');
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      if (textArea?.parentNode) textArea.parentNode.removeChild(textArea);
+    }
+  };
 
   const refreshAssistantSupport = async () => {
     if (!activeTenantId) return;
@@ -213,6 +261,9 @@ export function StudentSupportPage() {
     setEditingNoteId(null);
     setNoteForm(emptyNoteForm);
     setGuardianForm(emptyGuardianForm);
+    setAiMessageRecipient('student');
+    clearAiMessageDraft();
+    setAiMessageDraftEnabled(false);
     setDetailLoading(true);
     try {
       const [nextNotes, nextGuardians] = await Promise.all([
@@ -221,6 +272,8 @@ export function StudentSupportPage() {
       ]);
       setSupportNotes(nextNotes);
       setGuardians(nextGuardians);
+      const capabilities = await getAiLmsCapabilities(student.courseId ?? undefined).catch(() => null);
+      setAiMessageDraftEnabled(Boolean(canContact && capabilities?.messageDraft?.enabled));
     } catch {
       toast.error(t('support.detailLoadFailed'));
     } finally {
@@ -297,6 +350,61 @@ export function StudentSupportPage() {
       toast.error(t('support.guardianSaveFailed'));
     } finally {
       setSavingGuardian(false);
+    }
+  };
+
+  const requestAiMessageDraft = async () => {
+    if (!selectedStudent) return;
+    if (!canContact) return;
+    setAiMessageDrafting(true);
+    setAiMessageDraftError('');
+    try {
+      const draft = await generateAiMessageDraft(selectedStudent.userId, {
+        language: i18n.language || 'ky',
+        recipient: aiMessageRecipient,
+        purpose: selectedStudent.nextAction || selectedStudent.reasons.map((reason) => reasonLabel(reason)).join(', ') || undefined,
+        tone: 'supportive',
+        courseId: selectedStudent.courseId ?? undefined,
+      });
+      setAiMessageDraft({
+        generationId: draft.generationId,
+        output: draft.output,
+      });
+      setAiMessageDraftText(draft.output.message);
+      toast.success(t('ai.messageDraftReady'));
+    } catch (error) {
+      const requestId = getBackendRequestId(error);
+      setAiMessageDraftError(requestId ? t('ai.requestId', { requestId }) : getApiErrorMessage(error, t('ai.messageDraftFailed')));
+      toast.error(getApiErrorMessage(error, t('ai.messageDraftFailed')));
+    } finally {
+      setAiMessageDrafting(false);
+    }
+  };
+
+  const acceptAiMessageDraft = async () => {
+    if (!aiMessageDraft) return;
+    try {
+      const copied = await copyTextToClipboard([aiMessageDraft.output.subject, aiMessageDraftText].filter(Boolean).join('\n\n'));
+      if (!copied) {
+        toast.error(t('ai.copyDraftFailed'));
+        return;
+      }
+      await acceptAiGeneration(aiMessageDraft.generationId);
+      clearAiMessageDraft();
+      toast.success(t('ai.messageDraftAccepted'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
+  const rejectAiMessageDraft = async () => {
+    if (!aiMessageDraft) return;
+    try {
+      await rejectAiGeneration(aiMessageDraft.generationId);
+      clearAiMessageDraft();
+      toast.success(t('ai.messageDraftRejected'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
     }
   };
 
@@ -714,6 +822,75 @@ export function StudentSupportPage() {
                   </button>
                 </div>
               </section>
+
+              {canContact && aiMessageDraftEnabled ? (
+                <section className="settings-panel full">
+                  <div className="section-heading-row">
+                    <div>
+                      <h3>{t('ai.messageDraft')}</h3>
+                      <span>{t('ai.messageDraftHelp')}</span>
+                    </div>
+                    <span className="status-badge pending">{t('ai.draftOnly')}</span>
+                  </div>
+                  <div className="two-col support-form-grid">
+                    <label>
+                      <span>{t('ai.recipient')}</span>
+                      <select
+                        value={aiMessageRecipient}
+                        onChange={(event) => {
+                          setAiMessageRecipient(event.target.value as 'student' | 'guardian');
+                          clearAiMessageDraft();
+                        }}
+                      >
+                        <option value="student">{t('courses.student')}</option>
+                        <option value="guardian">{t('support.guardians')}</option>
+                      </select>
+                    </label>
+                    <div className="activity-actions">
+                      <button type="button" className="secondary-button" onClick={() => void requestAiMessageDraft()} disabled={aiMessageDrafting}>
+                        {aiMessageDrafting ? t('ai.generating') : t('ai.suggestMessage')}
+                      </button>
+                      {aiMessageDraft ? (
+                        <>
+                          <button type="button" className="secondary-button" onClick={() => void acceptAiMessageDraft()}>
+                            {t('ai.useDraft')}
+                          </button>
+                          <button type="button" className="secondary-button danger" onClick={() => void rejectAiMessageDraft()}>
+                            {t('ai.cancelDraft')}
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                    {aiMessageDraft ? (
+                      <>
+                        {aiMessageDraft.output.subject ? (
+                          <label className="wide-field">
+                            <span>{t('ai.subject')}</span>
+                            <input value={aiMessageDraft.output.subject} readOnly />
+                          </label>
+                        ) : null}
+                        <label className="wide-field">
+                          <span>{t('ai.messageDraft')}</span>
+                          <textarea
+                            value={aiMessageDraftText}
+                            onChange={(event) => setAiMessageDraftText(event.target.value)}
+                            rows={8}
+                          />
+                        </label>
+                        {aiMessageDraft.output.safetyNotes?.length ? (
+                          <div className="wide-field ai-draft-preview">
+                            <strong>{t('ai.safetyNotes')}</strong>
+                            <ul>
+                              {aiMessageDraft.output.safetyNotes.map((note) => <li key={note}>{note}</li>)}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {aiMessageDraftError ? <span className="field-error wide-field">{aiMessageDraftError}</span> : null}
+                  </div>
+                </section>
+              ) : null}
 
               <section className="settings-panel full">
                 <div className="section-heading-row">

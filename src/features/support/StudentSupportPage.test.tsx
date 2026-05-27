@@ -7,15 +7,19 @@ import i18n from '../../i18n/config';
 import { StudentSupportPage } from './StudentSupportPage';
 
 const api = vi.hoisted(() => ({
+  acceptAiGeneration: vi.fn(),
   createStudentGuardian: vi.fn(),
   createStudentSupportNote: vi.fn(),
+  generateAiMessageDraft: vi.fn(),
   getAssistantDashboard: vi.fn(),
+  getAiLmsCapabilities: vi.fn(),
   getAssistantSupport: vi.fn(),
   listCourseGroups: vi.fn(),
   listGroupStudents: vi.fn(),
   listStudentGuardians: vi.fn(),
   listStudentSupportNotes: vi.fn(),
   listTenantCourses: vi.fn(),
+  rejectAiGeneration: vi.fn(),
   updateStudentSupportNote: vi.fn(),
 }));
 
@@ -118,7 +122,12 @@ describe('StudentSupportPage', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     vi.clearAllMocks();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
     api.getAssistantDashboard.mockResolvedValue(dashboardResponse);
+    api.getAiLmsCapabilities.mockResolvedValue({ messageDraft: { enabled: true } });
     api.getAssistantSupport.mockResolvedValue(supportResponse);
     api.listTenantCourses.mockResolvedValue([]);
     api.listCourseGroups.mockResolvedValue([]);
@@ -268,6 +277,45 @@ describe('StudentSupportPage', () => {
       priority: 'high',
     })));
     expect(toast.success).toHaveBeenCalledWith('Support note updated');
+  });
+
+  it('generates an AI message draft without creating notes or sending contact', async () => {
+    api.generateAiMessageDraft.mockResolvedValue({
+      generationId: 9301,
+      status: 'draft',
+      output: {
+        recipient: 'student',
+        subject: 'Homework support',
+        message: 'Hi Aida, I noticed two homework tasks are missing. Can you tell me what is blocking you?',
+        keyPoints: ['Missing homework'],
+        recommendedChannel: 'email',
+        safetyNotes: ['Do not mention private support notes.'],
+      },
+    });
+
+    renderPage();
+    await screen.findAllByText('Aida Student');
+    fireEvent.click(screen.getAllByRole('button', { name: /manage/i })[0]);
+
+    await screen.findByRole('dialog', { name: /aida student/i });
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest message with AI' }));
+
+    await waitFor(() => expect(api.generateAiMessageDraft).toHaveBeenCalledWith(21, {
+      language: 'en',
+      recipient: 'student',
+      purpose: 'Ask about blockers',
+      tone: 'supportive',
+      courseId: 11,
+    }));
+    expect(await screen.findByDisplayValue(/two homework tasks are missing/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Homework support')).toBeInTheDocument();
+    expect(screen.getByText('Do not mention private support notes.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+
+    await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9301));
+    expect(api.createStudentSupportNote).not.toHaveBeenCalled();
+    expect(api.createStudentGuardian).not.toHaveBeenCalled();
   });
 
   it('adds guardian records while keeping guardian contact disabled', async () => {

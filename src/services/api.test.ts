@@ -6,6 +6,11 @@ import {
   approveCertificate,
   createIndividualCourseGroup,
   createTenantCourse,
+  generateAiCourseDraft,
+  generateAiHomeworkDraft,
+  generateAiMessageDraft,
+  generateAiSessionQuizDraft,
+  generateAiWorksheetDraft,
   issueCourseCertificate,
   publishTenantCourse,
   resolveTenantMemberCandidate,
@@ -242,6 +247,52 @@ describe('api browser stores', () => {
     expect(requestBody).not.toHaveProperty('code');
     expect(requestBody).not.toHaveProperty('status');
     expect(requestBody).not.toHaveProperty('scheduleNote');
+  });
+
+  it('posts AI LMS Sprint 7 draft requests to the expected endpoints', async () => {
+    const seenRequests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    api.defaults.adapter = async (config) => {
+      seenRequests.push({
+        url: config.url ?? '',
+        body: JSON.parse(String(config.data || '{}')) as Record<string, unknown>,
+      });
+      return {
+        data: { generationId: 1, status: 'draft', output: { title: 'Draft', description: 'Body' } },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    await generateAiSessionQuizDraft(77, { language: 'ky', questionCount: 3, includeExplanations: false });
+    await generateAiCourseDraft({ language: 'ky', topic: 'Algebra', courseType: 'offline', sectionCount: 4, lessonsPerSection: 4 });
+    await generateAiHomeworkDraft(88, { language: 'ky', topic: 'Linear equations', maxScore: 10 });
+    await generateAiWorksheetDraft(99, { language: 'ky', topic: 'Practice', includeAnswerKey: true });
+    await generateAiMessageDraft(14, { language: 'ky', recipient: 'guardian', purpose: 'progress update', courseId: 7 });
+
+    expect(seenRequests).toEqual([
+      {
+        url: '/ai-lms/sessions/77/quiz-draft',
+        body: { language: 'ky', questionCount: 3, includeExplanations: false },
+      },
+      {
+        url: '/ai-lms/courses/course-draft',
+        body: { language: 'ky', topic: 'Algebra', courseType: 'offline', sectionCount: 4, lessonsPerSection: 4 },
+      },
+      {
+        url: '/ai-lms/sessions/88/homework-draft',
+        body: { language: 'ky', topic: 'Linear equations', maxScore: 10 },
+      },
+      {
+        url: '/ai-lms/sessions/99/worksheet-draft',
+        body: { language: 'ky', topic: 'Practice', includeAnswerKey: true },
+      },
+      {
+        url: '/ai-lms/students/14/message-draft',
+        body: { language: 'ky', recipient: 'guardian', purpose: 'progress update', courseId: 7 },
+      },
+    ]);
   });
 
   it('posts tenant-scoped private fields for course creation', async () => {

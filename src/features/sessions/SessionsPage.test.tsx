@@ -14,6 +14,7 @@ type TestTenant = {
 };
 
 const api = vi.hoisted(() => ({
+  acceptAiGeneration: vi.fn(),
   createCourseGroup: vi.fn(),
   createIndividualCourseGroup: vi.fn(),
   createGroupSession: vi.fn(),
@@ -22,7 +23,11 @@ const api = vi.hoisted(() => ({
   deleteLiveMeeting: vi.fn(),
   deleteSessionActivity: vi.fn(),
   enrollUser: vi.fn(),
+  generateAiFeedbackDraft: vi.fn(),
+  generateAiSessionQuizDraft: vi.fn(),
+  generateAiWorksheetDraft: vi.fn(),
   generateGroupSessions: vi.fn(),
+  getAiLmsCapabilities: vi.fn(),
   getLiveMeeting: vi.fn(),
   getSessionActivityResponses: vi.fn(),
   getSessionAttendance: vi.fn(),
@@ -36,6 +41,7 @@ const api = vi.hoisted(() => ({
   listTenantMembers: vi.fn(),
   previewGeneratedSessions: vi.fn(),
   removeUserFromGroup: vi.fn(),
+  rejectAiGeneration: vi.fn(),
   reviewSessionActivitySubmission: vi.fn(),
   resolveTenantMemberCandidate: vi.fn(),
   updateCourseGroup: vi.fn(),
@@ -139,6 +145,10 @@ describe('SessionsPage session creation', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
     vi.clearAllMocks();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
     tenantState.activeTenant = {
       id: 42,
       name: 'EduPro',
@@ -154,6 +164,7 @@ describe('SessionsPage session creation', () => {
     api.listGroupSessions.mockResolvedValue([]);
     api.listGroupStudents.mockResolvedValue([]);
     api.listTenantMembers.mockResolvedValue([]);
+    api.getAiLmsCapabilities.mockResolvedValue({ feedbackDraft: { enabled: true }, lessonQuizDraft: { enabled: true }, worksheetDraft: { enabled: true } });
     api.resolveTenantMemberCandidate.mockResolvedValue({ found: false, user: null, membership: null });
     api.createGroupSession.mockResolvedValue(createdSession);
     api.createIndividualCourseGroup.mockResolvedValue({
@@ -476,7 +487,8 @@ describe('SessionsPage session creation', () => {
 
     renderPage('/sessions?courseId=101&groupId=301&sessionId=901');
 
-    await waitFor(() => expect(screen.getByText('Lesson 1')).toBeInTheDocument());
+    const sessionButton = await screen.findByRole('button', { name: /Lesson 1/ });
+    fireEvent.click(sessionButton);
 
     expect(api.getSessionAttendance).not.toHaveBeenCalled();
     expect(api.listSessionHomework).not.toHaveBeenCalled();
@@ -558,7 +570,7 @@ describe('SessionsPage session creation', () => {
 
     await waitFor(() => expect(screen.getAllByText('Lesson 1').length).toBeGreaterThan(0));
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole('tab', { name: 'Activities' }));
+    fireEvent.keyDown(screen.getByRole('tablist', { name: 'Session operations' }), { key: 'ArrowRight' });
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'true'));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add activity' })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Add activity' }));
@@ -602,6 +614,109 @@ describe('SessionsPage session creation', () => {
         },
       ],
     })));
+  });
+
+  it('uses an AI session quiz draft in the activity form without creating an activity automatically', async () => {
+    api.listGroupSessions.mockResolvedValue([{ ...createdSession, activities: [] }]);
+    api.generateAiSessionQuizDraft.mockResolvedValue({
+      generationId: 9101,
+      status: 'draft',
+      output: {
+        title: 'Linear equations quiz',
+        description: 'Check equation solving basics.',
+        questions: [
+          {
+            prompt: 'What is x if x + 2 = 5?',
+            questionMode: 'single_choice',
+            options: [
+              { text: '2', isCorrect: false },
+              { text: '3', isCorrect: true },
+            ],
+          },
+          {
+            prompt: 'What is x if 2x = 8?',
+            questionMode: 'single_choice',
+            options: [
+              { text: '4', isCorrect: true },
+              { text: '6', isCorrect: false },
+            ],
+          },
+        ],
+      },
+    });
+
+    renderPage('/sessions?courseId=101&groupId=301&sessionId=901');
+
+    await waitFor(() => expect(screen.getAllByText('Lesson 1').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    fireEvent.keyDown(screen.getByRole('tablist', { name: 'Session operations' }), { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }));
+
+    await screen.findByRole('heading', { name: 'Add activity' });
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest quiz with AI' }));
+
+    await waitFor(() => expect(api.generateAiSessionQuizDraft).toHaveBeenCalledWith(901, {
+      language: 'en',
+      questionCount: 3,
+      includeExplanations: false,
+    }));
+    expect(await screen.findByText('Linear equations quiz')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+
+    await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9101));
+    expect(screen.getByDisplayValue('Linear equations quiz')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('What is x if x + 2 = 5?')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Question 1 correct answer B' })).toHaveAttribute('aria-pressed', 'true');
+    expect(api.createSessionActivity).not.toHaveBeenCalled();
+  });
+
+  it('generates an AI worksheet draft in the materials tab without uploading material', async () => {
+    api.listGroupSessions.mockResolvedValue([{ ...createdSession, materials: [] }]);
+    api.generateAiWorksheetDraft.mockResolvedValue({
+      generationId: 9201,
+      status: 'draft',
+      output: {
+        title: 'Linear equations worksheet',
+        instructions: 'Solve each equation and show your steps.',
+        sections: [
+          {
+            title: 'Practice',
+            items: ['x + 2 = 5', '2x = 8'],
+          },
+        ],
+        answerKey: ['x = 3', 'x = 4'],
+      },
+    });
+
+    renderPage('/sessions?courseId=101&groupId=301&sessionId=901');
+
+    await waitFor(() => expect(screen.getAllByText('Lesson 1').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    const tablist = screen.getByRole('tablist', { name: 'Session operations' });
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Materials' })).toHaveAttribute('aria-selected', 'true'));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest worksheet with AI' }));
+
+    await waitFor(() => expect(api.generateAiWorksheetDraft).toHaveBeenCalledWith(901, {
+      language: 'en',
+      topic: 'Lesson 1',
+      includeAnswerKey: true,
+    }));
+    expect(await screen.findByDisplayValue(/Linear equations worksheet/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/x \+ 2 = 5/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+
+    await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9201));
+    expect(api.uploadSessionMaterial).not.toHaveBeenCalled();
+    expect(api.updateGroupSession).not.toHaveBeenCalledWith(901, expect.objectContaining({ materials: expect.any(Array) }));
   });
 
   it('limits instructor course choices to published courses with assigned groups', async () => {
@@ -711,5 +826,67 @@ describe('SessionsPage session creation', () => {
     expect(await screen.findByText('No ready assigned groups')).toBeInTheDocument();
     expect(screen.getByText('Ask an admin or assistant to assign you to a published course group before scheduling sessions.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Schedule session' })).not.toBeInTheDocument();
+  });
+
+  it('generates an AI feedback draft for a session activity response and applies it on use', async () => {
+    api.listGroupSessions.mockResolvedValue([{
+      ...createdSession,
+      activities: [{
+        id: 701,
+        title: 'Exit ticket',
+        type: 'exercise',
+        status: 'done',
+      }],
+    }]);
+    api.getSessionActivityResponses.mockResolvedValue({
+      activity: {
+        id: 701,
+        sessionId: 901,
+        title: 'Exit ticket',
+        type: 'text',
+        status: 'done',
+      },
+      mode: 'submission',
+      items: [{
+        id: 801,
+        studentId: 201,
+        studentName: 'Aida Student',
+        status: 'submitted',
+        answerText: 'My answer',
+      }],
+    });
+    api.generateAiFeedbackDraft.mockResolvedValue({
+      generationId: 9002,
+      status: 'draft',
+      output: {
+        feedback: 'Clear answer. Add one supporting example.',
+        suggestedScore: 9,
+        nextStep: 'Use a real example next time.',
+      },
+    });
+
+    renderPage('/sessions?courseId=101&groupId=301&sessionId=901');
+
+    await waitFor(() => expect(screen.getByText('Lesson 1')).toBeInTheDocument());
+    await waitFor(() => expect(api.getSessionInsights).toHaveBeenCalledWith(901));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    fireEvent.keyDown(screen.getByRole('tablist', { name: 'Session operations' }), { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest feedback with AI' }));
+
+    await waitFor(() => expect(api.generateAiFeedbackDraft).toHaveBeenCalledWith(801, {
+      submissionType: 'session_activity',
+      language: 'en',
+      tone: 'encouraging',
+      includeScoreSuggestion: true,
+    }));
+    expect(await screen.findByDisplayValue('Clear answer. Add one supporting example.')).toBeInTheDocument();
+    expect(screen.getByText('Use a real example next time.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+
+    await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9002));
+    expect(screen.getAllByDisplayValue('Clear answer. Add one supporting example.').length).toBeGreaterThan(0);
+    expect(screen.getAllByDisplayValue('9').length).toBeGreaterThan(0);
   });
 });

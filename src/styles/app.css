@@ -5513,6 +5513,50 @@ button.stack-list-item.active {
   resize: vertical;
 }
 
+.ai-feedback-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+
+.ai-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ai-feedback-actions button {
+  min-height: 34px;
+}
+
+.ai-feedback-preview {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ai-feedback-preview strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ai-feedback-preview p {
+  margin: 0;
+  color: var(--text);
+}
+
+.ai-feedback-preview textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
 .homework-review-item.needs_review {
   border-color: rgba(241, 126, 34, 0.45);
 }
@@ -8428,6 +8472,52 @@ button.session-mode-button.active:hover:not(:disabled) {
 .quiz-builder {
   display: grid;
   gap: 12px;
+}
+
+.ai-draft-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 251, 235, 0.86);
+  padding: 14px;
+}
+
+.ai-draft-panel > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.ai-draft-panel > div:first-child span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ai-draft-preview {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgba(245, 158, 11, 0.28);
+  padding-top: 10px;
+}
+
+.ai-draft-preview p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.ai-draft-preview ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.ai-draft-preview li span {
+  display: block;
+}
+
+.ai-draft-preview li small {
+  color: var(--text-muted);
 }
 
 .activity-form {

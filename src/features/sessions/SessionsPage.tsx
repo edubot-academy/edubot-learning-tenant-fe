@@ -12,10 +12,15 @@ import {
   createIndividualCourseGroup,
   createGroupSession,
   createLiveMeeting,
+  acceptAiGeneration,
   deleteLiveMeeting,
   deleteSessionActivity,
   enrollUser,
+  generateAiFeedbackDraft,
+  generateAiSessionQuizDraft,
+  generateAiWorksheetDraft,
   generateGroupSessions,
+  getAiLmsCapabilities,
   getLiveMeeting,
   getSessionActivityResponses,
   getSessionAttendance,
@@ -29,6 +34,7 @@ import {
   listTenantCourses,
   previewGeneratedSessions,
   removeUserFromGroup,
+  rejectAiGeneration,
   resolveTenantMemberCandidate,
   reviewSessionActivitySubmission,
   updateCourseGroup,
@@ -37,10 +43,10 @@ import {
   updateSessionActivity,
   uploadSessionMaterial,
 } from '../../services/api';
-import type { AttendanceRecord, CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
+import type { AiFeedbackDraftResponse, AiQuizDraftResponse, AiWorksheetDraftResponse, AttendanceRecord, CompanyMember, Course, CourseGroup, CourseSession, GroupStudent, LiveMeeting, SessionActivity, SessionActivityResponseSet, SessionActivityStatus, SessionActivityType, SessionGenerationPreview, SessionHomework, SessionInsights, UserSummary } from '../../types/domain';
 import { formatDate } from '../../lib/format';
 import { activityTypeLabelKeys, commonStatusLabelKeys, enumLabel } from '../../lib/enumLabels';
-import { getApiErrorMessage } from '../../lib/apiErrors';
+import { getApiErrorMessage, getBackendRequestId } from '../../lib/apiErrors';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
@@ -75,6 +81,21 @@ const emptySessionForm = {
   startsAt: '',
   endsAt: '',
   notes: '',
+};
+
+type AiDraftState = {
+  generationId: number;
+  output: AiFeedbackDraftResponse['output'];
+};
+
+type AiQuizDraftState = {
+  generationId: number;
+  output: AiQuizDraftResponse['output'];
+};
+
+type AiWorksheetDraftState = {
+  generationId: number;
+  output: AiWorksheetDraftResponse['output'];
 };
 
 const scheduleDayIndex: Record<ScheduleDay, number> = {
@@ -152,6 +173,41 @@ const emptyActivityForm = {
   quizQuestions: [emptyQuizQuestion()],
 };
 
+const quizDraftToFormQuestions = (output: AiQuizDraftResponse['output']): QuizQuestionForm[] => {
+  const questions = Array.isArray(output?.questions) ? output.questions : [];
+  return questions.map((question) => {
+    const options = Array.isArray(question.options)
+      ? question.options.map((option) => String(option?.text ?? '').trim()).filter(Boolean).slice(0, 6)
+      : [];
+    const firstCorrectIndex = Array.isArray(question.options)
+      ? question.options.findIndex((option) => option?.isCorrect === true)
+      : -1;
+    return {
+      prompt: String(question?.prompt ?? '').trim(),
+      options: options.length >= 2 ? options : ['', ''],
+      correctOptionIndex: firstCorrectIndex >= 0 && firstCorrectIndex < options.length ? firstCorrectIndex : 0,
+    };
+  }).filter((question) => question.prompt && question.options.filter(Boolean).length >= 2);
+};
+
+const worksheetDraftToText = (output: AiWorksheetDraftResponse['output']) => {
+  const lines = [
+    output.title,
+    '',
+    output.instructions,
+    '',
+    ...output.sections.flatMap((section) => [
+      section.title,
+      ...section.items.map((item, index) => `${index + 1}. ${item}`),
+      '',
+    ]),
+  ];
+  if (output.answerKey?.length) {
+    lines.push('Answer key', ...output.answerKey.map((item, index) => `${index + 1}. ${item}`));
+  }
+  return lines.filter((line, index, all) => line || all[index - 1]).join('\n').trim();
+};
+
 const supportedMeetingProviders = new Set(['zoom', 'google_meet', 'custom']);
 
 const meetingProviderValue = (value?: string | null): 'zoom' | 'google_meet' | 'custom' | undefined => {
@@ -185,7 +241,7 @@ const sessionOperationTabs: Array<{ key: SessionOperationTab; label: string }> =
 ];
 
 export function SessionsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { activeTenant } = useTenant();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -230,6 +286,19 @@ export function SessionsPage() {
   const [selectedActivityId, setSelectedActivityId] = useState<number | undefined>();
   const [activityResponses, setActivityResponses] = useState<SessionActivityResponseSet | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<number, { score: string; reviewComment: string }>>({});
+  const [aiDrafts, setAiDrafts] = useState<Record<number, AiDraftState>>({});
+  const [aiDraftingSubmission, setAiDraftingSubmission] = useState<number | undefined>();
+  const [aiDraftErrors, setAiDraftErrors] = useState<Record<number, string>>({});
+  const [aiFeedbackDraftEnabled, setAiFeedbackDraftEnabled] = useState(false);
+  const [aiSessionQuizDraftEnabled, setAiSessionQuizDraftEnabled] = useState(false);
+  const [aiQuizDraft, setAiQuizDraft] = useState<AiQuizDraftState | null>(null);
+  const [aiQuizDrafting, setAiQuizDrafting] = useState(false);
+  const [aiQuizDraftError, setAiQuizDraftError] = useState('');
+  const [aiWorksheetDraftEnabled, setAiWorksheetDraftEnabled] = useState(false);
+  const [aiWorksheetDraft, setAiWorksheetDraft] = useState<AiWorksheetDraftState | null>(null);
+  const [aiWorksheetText, setAiWorksheetText] = useState('');
+  const [aiWorksheetDrafting, setAiWorksheetDrafting] = useState(false);
+  const [aiWorksheetDraftError, setAiWorksheetDraftError] = useState('');
   const [generationRange, setGenerationRange] = useState({ fromDate: '', toDate: '' });
   const [generationPreview, setGenerationPreview] = useState<SessionGenerationPreview | null>(null);
   const [studentSearch, setStudentSearch] = useState('');
@@ -298,6 +367,33 @@ export function SessionsPage() {
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
   const selectedGroupEnrollmentReady = Boolean(selectedGroup && ['planned', 'open', 'active'].includes(String(selectedGroup.status || '')));
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
+  useEffect(() => {
+    if (!courseId) {
+      setAiFeedbackDraftEnabled(false);
+      setAiSessionQuizDraftEnabled(false);
+      setAiWorksheetDraftEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    void getAiLmsCapabilities(courseId)
+      .then((capabilities) => {
+        if (!cancelled) {
+          setAiFeedbackDraftEnabled(Boolean(capabilities.feedbackDraft?.enabled));
+          setAiSessionQuizDraftEnabled(Boolean(capabilities.lessonQuizDraft?.enabled));
+          setAiWorksheetDraftEnabled(Boolean(capabilities.worksheetDraft?.enabled));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAiFeedbackDraftEnabled(false);
+          setAiSessionQuizDraftEnabled(false);
+          setAiWorksheetDraftEnabled(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
   const preferredSessionAvailable = Boolean(
     preferredSessionId
     && sessions.some((session) => session.id === preferredSessionId),
@@ -821,6 +917,13 @@ export function SessionsPage() {
     setSelectedActivityId(undefined);
     setActivityResponses(null);
     setReviewDrafts({});
+    setAiDrafts({});
+    setAiDraftErrors({});
+    setAiQuizDraft(null);
+    setAiQuizDraftError('');
+    setAiWorksheetDraft(null);
+    setAiWorksheetText('');
+    setAiWorksheetDraftError('');
     setSessionOperationTab('overview');
     if (!sessionId) {
       sessionDetailLoadRequestRef.current += 1;
@@ -961,6 +1064,54 @@ export function SessionsPage() {
 
   const clearCreateError = (key: string) => {
     setCreateErrors((current) => ({ ...current, [key]: '' }));
+  };
+
+  const clearAiQuizDraft = () => {
+    setAiQuizDraft(null);
+    setAiQuizDraftError('');
+  };
+
+  const clearAiWorksheetDraft = () => {
+    setAiWorksheetDraft(null);
+    setAiWorksheetText('');
+    setAiWorksheetDraftError('');
+  };
+
+  const copyTextToClipboard = async (text: string) => {
+    const value = text.trim();
+    if (!value) return false;
+    let textArea: HTMLTextAreaElement | null = null;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+      if (typeof document.execCommand !== 'function') return false;
+      textArea = document.createElement('textarea');
+      textArea.value = value;
+      textArea.setAttribute('readonly', 'true');
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      if (textArea?.parentNode) textArea.parentNode.removeChild(textArea);
+    }
+  };
+
+  const openActivityModal = () => {
+    clearAiQuizDraft();
+    setActivityForm(emptyActivityForm);
+    setCreateErrors({});
+    setCreateModal('activity');
+  };
+
+  const closeCreateModal = () => {
+    clearAiQuizDraft();
+    setCreateModal(null);
   };
 
   const updateQuizQuestion = (questionIndex: number, updater: (question: QuizQuestionForm) => QuizQuestionForm) => {
@@ -1170,6 +1321,10 @@ export function SessionsPage() {
       setSelectedActivityId(undefined);
       setActivityResponses(null);
       setReviewDrafts({});
+      setAiDrafts({});
+      setAiDraftErrors({});
+      clearAiQuizDraft();
+      clearAiWorksheetDraft();
       setSessionOperationTab('overview');
       setSessionId(saved.id);
       setSessionForm(emptySessionForm);
@@ -1422,6 +1577,58 @@ export function SessionsPage() {
     }
   };
 
+  const requestAiWorksheetDraft = async () => {
+    if (!sessionId) return;
+    setAiWorksheetDrafting(true);
+    setAiWorksheetDraftError('');
+    try {
+      const draft = await generateAiWorksheetDraft(sessionId, {
+        language: i18n.language || 'ky',
+        topic: selectedSession?.title || undefined,
+        includeAnswerKey: true,
+      });
+      setAiWorksheetDraft({
+        generationId: draft.generationId,
+        output: draft.output,
+      });
+      setAiWorksheetText(worksheetDraftToText(draft.output));
+      toast.success(t('ai.worksheetDraftReady'));
+    } catch (error) {
+      const requestId = getBackendRequestId(error);
+      setAiWorksheetDraftError(requestId ? t('ai.requestId', { requestId }) : getApiErrorMessage(error, t('ai.worksheetDraftFailed')));
+      toast.error(getApiErrorMessage(error, t('ai.worksheetDraftFailed')));
+    } finally {
+      setAiWorksheetDrafting(false);
+    }
+  };
+
+  const acceptAiWorksheetDraft = async () => {
+    if (!aiWorksheetDraft) return;
+    try {
+      const copied = await copyTextToClipboard(aiWorksheetText);
+      if (!copied) {
+        toast.error(t('ai.copyDraftFailed'));
+        return;
+      }
+      await acceptAiGeneration(aiWorksheetDraft.generationId);
+      clearAiWorksheetDraft();
+      toast.success(t('ai.worksheetDraftAccepted'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
+  const rejectAiWorksheetDraft = async () => {
+    if (!aiWorksheetDraft) return;
+    try {
+      await rejectAiGeneration(aiWorksheetDraft.generationId);
+      clearAiWorksheetDraft();
+      toast.success(t('ai.worksheetDraftRejected'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
   const saveLiveMeeting = async () => {
     if (!canManageSessionMeetings) return;
     if (!sessionId || !groupId) return;
@@ -1572,7 +1779,7 @@ export function SessionsPage() {
       await createSessionActivity(sessionId, payload);
       await reloadSessions(groupId);
       setActivityForm(emptyActivityForm);
-      setCreateModal(null);
+      closeCreateModal();
       setCreateErrors({});
       toast.success(t('sessions.activityAdded'));
     } catch (error) {
@@ -1633,10 +1840,71 @@ export function SessionsPage() {
         }
       });
       setReviewDrafts(nextDrafts);
+      setAiDrafts({});
+      setAiDraftErrors({});
     } catch (error) {
       toast.error(getApiErrorMessage(error, t('sessions.responsesLoadFailed')));
     } finally {
       setLoadingResponses(false);
+    }
+  };
+
+  const requestAiSessionQuizDraft = async () => {
+    if (!sessionId) return;
+    setAiQuizDrafting(true);
+    setAiQuizDraftError('');
+    try {
+      const draft = await generateAiSessionQuizDraft(sessionId, {
+        language: i18n.language || 'ky',
+        questionCount: Math.max(3, activityForm.quizQuestions.length),
+        includeExplanations: false,
+      });
+      setAiQuizDraft({
+        generationId: draft.generationId,
+        output: draft.output,
+      });
+      toast.success(t('ai.quizDraftReady'));
+    } catch (error) {
+      const requestId = getBackendRequestId(error);
+      setAiQuizDraftError(requestId ? t('ai.requestId', { requestId }) : getApiErrorMessage(error, t('ai.quizDraftFailed')));
+      toast.error(getApiErrorMessage(error, t('ai.quizDraftFailed')));
+    } finally {
+      setAiQuizDrafting(false);
+    }
+  };
+
+  const acceptAiSessionQuizDraft = async () => {
+    if (!aiQuizDraft) return;
+    const questions = quizDraftToFormQuestions(aiQuizDraft.output);
+    if (!questions.length) {
+      setAiQuizDraftError(t('ai.quizDraftInvalid'));
+      return;
+    }
+    setActivityForm((current) => ({
+      ...current,
+      title: aiQuizDraft.output.title || current.title,
+      description: aiQuizDraft.output.description || current.description,
+      type: 'quiz',
+      quizQuestions: questions,
+    }));
+    setCreateErrors((current) => ({ ...current, activityTitle: '', quizQuestions: '' }));
+    try {
+      await acceptAiGeneration(aiQuizDraft.generationId);
+      clearAiQuizDraft();
+      toast.success(t('ai.quizDraftAccepted'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
+  const rejectAiSessionQuizDraft = async () => {
+    if (!aiQuizDraft) return;
+    try {
+      await rejectAiGeneration(aiQuizDraft.generationId);
+      clearAiQuizDraft();
+      toast.success(t('ai.quizDraftRejected'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
     }
   };
 
@@ -1671,6 +1939,91 @@ export function SessionsPage() {
       toast.error(getApiErrorMessage(error, t('sessions.reviewSaveFailed')));
     } finally {
       setReviewingSubmission(undefined);
+    }
+  };
+
+  const requestAiActivityFeedbackDraft = async (submissionId: number) => {
+    setAiDraftingSubmission(submissionId);
+    try {
+      const draft = await generateAiFeedbackDraft(submissionId, {
+        submissionType: 'session_activity',
+        language: i18n.language || 'ky',
+        tone: 'encouraging',
+        includeScoreSuggestion: true,
+      });
+      setAiDrafts((current) => ({
+        ...current,
+        [submissionId]: {
+          generationId: draft.generationId,
+          output: draft.output,
+        },
+      }));
+      setAiDraftErrors((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      toast.success(t('ai.feedbackDraftReady'));
+    } catch (error) {
+      const requestId = getBackendRequestId(error);
+      setAiDraftErrors((current) => ({
+        ...current,
+        [submissionId]: requestId ? t('ai.requestId', { requestId }) : getApiErrorMessage(error, t('ai.feedbackDraftFailed')),
+      }));
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftFailed')));
+    } finally {
+      setAiDraftingSubmission(undefined);
+    }
+  };
+
+  const acceptAiActivityDraft = async (submissionId: number) => {
+    const draft = aiDrafts[submissionId];
+    if (!draft) return;
+    try {
+      setReviewDrafts((current) => ({
+        ...current,
+        [submissionId]: {
+          score: draft.output.suggestedScore === undefined || draft.output.suggestedScore === null
+            ? current[submissionId]?.score ?? ''
+            : String(draft.output.suggestedScore),
+          reviewComment: draft.output.feedback || current[submissionId]?.reviewComment || '',
+        },
+      }));
+      await acceptAiGeneration(draft.generationId);
+      setAiDrafts((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      setAiDraftErrors((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      toast.success(t('ai.feedbackDraftAccepted'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
+    }
+  };
+
+  const rejectAiActivityDraft = async (submissionId: number) => {
+    const draft = aiDrafts[submissionId];
+    if (!draft) return;
+    try {
+      await rejectAiGeneration(draft.generationId);
+      setAiDrafts((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      setAiDraftErrors((current) => {
+        const next = { ...current };
+        delete next[submissionId];
+        return next;
+      });
+      toast.success(t('ai.feedbackDraftRejected'));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
     }
   };
 
@@ -2038,7 +2391,7 @@ export function SessionsPage() {
                         <span>{selectedSession.title}</span>
                       </div>
                       {canManageSessionActivities ? (
-                      <button type="button" className="secondary-button" onClick={() => setCreateModal('activity')} disabled={savingActivity}>
+                      <button type="button" className="secondary-button" onClick={openActivityModal} disabled={savingActivity}>
                         {t('sessions.addActivity')}
                       </button>
                       ) : null}
@@ -2116,6 +2469,68 @@ export function SessionsPage() {
                                     placeholder={t('sessions.reviewComment')}
                                   />
                                   </label>
+                                  {aiFeedbackDraftEnabled ? (
+                                  <div className="ai-feedback-panel">
+                                    <div className="ai-feedback-actions">
+                                      <button
+                                        type="button"
+                                        className="secondary-button"
+                                        onClick={() => void requestAiActivityFeedbackDraft(item.id!)}
+                                        disabled={aiDraftingSubmission === item.id || reviewingSubmission === item.id}
+                                      >
+                                        {aiDraftingSubmission === item.id ? t('ai.generating') : t('ai.suggestFeedback')}
+                                      </button>
+                                      {aiDrafts[item.id] ? (
+                                        <>
+                                          <button type="button" className="secondary-button" onClick={() => void acceptAiActivityDraft(item.id!)}>
+                                            {t('ai.useDraft')}
+                                          </button>
+                                          <button type="button" className="link-button danger" onClick={() => void rejectAiActivityDraft(item.id!)}>
+                                            {t('ai.cancelDraft')}
+                                          </button>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                    {aiDrafts[item.id] ? (
+                                      <div className="ai-feedback-preview">
+                                        <strong>{t('ai.feedbackDraft')}</strong>
+                                        <textarea
+                                          value={aiDrafts[item.id].output.feedback}
+                                          onChange={(event) => setAiDrafts((current) => ({
+                                            ...current,
+                                            [item.id!]: {
+                                              ...current[item.id!],
+                                              output: {
+                                                ...current[item.id!].output,
+                                                feedback: event.target.value,
+                                              },
+                                            },
+                                          }))}
+                                          aria-label={t('ai.feedbackDraft')}
+                                        />
+                                        {aiDrafts[item.id].output.suggestedScore !== undefined && aiDrafts[item.id].output.suggestedScore !== null ? (
+                                          <input
+                                            value={String(aiDrafts[item.id].output.suggestedScore)}
+                                            onChange={(event) => setAiDrafts((current) => ({
+                                              ...current,
+                                              [item.id!]: {
+                                                ...current[item.id!],
+                                                output: {
+                                                  ...current[item.id!].output,
+                                                  suggestedScore: event.target.value.trim() ? Number(event.target.value) : null,
+                                                },
+                                              },
+                                            }))}
+                                            inputMode="numeric"
+                                            aria-label={t('sessions.score')}
+                                          />
+                                        ) : null}
+                                        {aiDrafts[item.id].output.nextStep ? <span>{aiDrafts[item.id].output.nextStep}</span> : null}
+                                      </div>
+                                    ) : null}
+                                    {aiDraftErrors[item.id] ? <span className="field-error">{aiDraftErrors[item.id]}</span> : null}
+                                  </div>
+                                  ) : null}
                                   <div className="activity-actions">
                                     <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'approved')} disabled={reviewingSubmission === item.id}>{t('courses.approve')}</button>
                                     <button type="button" className="secondary-button" onClick={() => void submitActivityReview(activityResponses.activity.id, item.id!, 'needs_revision')} disabled={reviewingSubmission === item.id}>{t('sessions.revise')}</button>
@@ -2268,6 +2683,40 @@ export function SessionsPage() {
                     ) : null}
                   </div>
                   {materialError ? <span className="field-error">{materialError}</span> : null}
+                  {canManageSessionMaterials && aiWorksheetDraftEnabled ? (
+                    <section className="ai-draft-panel">
+                      <div>
+                        <strong>{t('ai.worksheetDraft')}</strong>
+                        <span>{t('ai.worksheetDraftHelp')}</span>
+                      </div>
+                      <div className="activity-actions">
+                        <button type="button" className="secondary-button" onClick={() => void requestAiWorksheetDraft()} disabled={aiWorksheetDrafting || uploadingMaterial || !sessionId}>
+                          {aiWorksheetDrafting ? t('ai.generating') : t('ai.suggestWorksheet')}
+                        </button>
+                        {aiWorksheetDraft ? (
+                          <>
+                            <button type="button" className="secondary-button" onClick={() => void acceptAiWorksheetDraft()}>
+                              {t('ai.useDraft')}
+                            </button>
+                            <button type="button" className="secondary-button danger" onClick={() => void rejectAiWorksheetDraft()}>
+                              {t('ai.cancelDraft')}
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                      {aiWorksheetDraft ? (
+                        <label>
+                          {t('ai.worksheetDraft')}
+                          <textarea
+                            value={aiWorksheetText}
+                            onChange={(event) => setAiWorksheetText(event.target.value)}
+                            rows={10}
+                          />
+                        </label>
+                      ) : null}
+                      {aiWorksheetDraftError ? <span className="field-error">{aiWorksheetDraftError}</span> : null}
+                    </section>
+                  ) : null}
                   <div className="stack-list">
                     {(selectedSession.materials ?? []).map((material, index) => (
                       <article key={`${material.storageKey ?? material.url}-${index}`} className="stack-list-item material-list-item">
@@ -3020,7 +3469,7 @@ export function SessionsPage() {
         </FormModal>
       ) : null}
       {createModal === 'activity' && canManageSessionActivities ? (
-        <FormModal labelledBy="add-activity-title" className="decision-modal form-modal activity-form-modal" onClose={() => setCreateModal(null)} onSubmit={submitActivity}>
+        <FormModal labelledBy="add-activity-title" className="decision-modal form-modal activity-form-modal" onClose={closeCreateModal} onSubmit={submitActivity}>
             <div className="modal-header-block">
               <span>{selectedSession?.title ?? t('sessions.sessionRequired')}</span>
               <h2 id="add-activity-title">{t('sessions.addActivity')}</h2>
@@ -3079,6 +3528,44 @@ export function SessionsPage() {
             </div>
             {activityForm.type === 'quiz' ? (
               <div className="quiz-builder">
+                {aiSessionQuizDraftEnabled ? (
+                  <section className="ai-draft-panel">
+                    <div>
+                      <strong>{t('ai.quizDraft')}</strong>
+                      <span>{t('ai.quizDraftHelp')}</span>
+                    </div>
+                    <div className="activity-actions">
+                      <button type="button" className="secondary-button" onClick={() => void requestAiSessionQuizDraft()} disabled={aiQuizDrafting || savingActivity || !sessionId}>
+                        {aiQuizDrafting ? t('ai.generating') : t('ai.suggestQuiz')}
+                      </button>
+                      {aiQuizDraft ? (
+                        <>
+                          <button type="button" className="secondary-button" onClick={() => void acceptAiSessionQuizDraft()}>
+                            {t('ai.useDraft')}
+                          </button>
+                          <button type="button" className="secondary-button danger" onClick={() => void rejectAiSessionQuizDraft()}>
+                            {t('ai.cancelDraft')}
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                    {aiQuizDraft ? (
+                      <div className="ai-draft-preview">
+                        <strong>{aiQuizDraft.output.title}</strong>
+                        {aiQuizDraft.output.description ? <p>{aiQuizDraft.output.description}</p> : null}
+                        <ol>
+                          {aiQuizDraft.output.questions.map((question, questionIndex) => (
+                            <li key={`${question.prompt}-${questionIndex}`}>
+                              <span>{question.prompt}</span>
+                              <small>{t('sessions.questionOptionCount', { count: question.options.length })}</small>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    ) : null}
+                    {aiQuizDraftError ? <span className="field-error">{aiQuizDraftError}</span> : null}
+                  </section>
+                ) : null}
                 {activityForm.quizQuestions.map((question, questionIndex) => (
                   <section className="quiz-question-card" key={questionIndex}>
                     <div className="quiz-question-header">
@@ -3203,7 +3690,7 @@ export function SessionsPage() {
               </div>
             ) : null}
             <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={() => setCreateModal(null)} disabled={savingActivity}>{t('courses.cancel')}</button>
+              <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={savingActivity}>{t('courses.cancel')}</button>
               <button type="submit" disabled={savingActivity}>{savingActivity ? t('courses.saving') : t('sessions.addActivity')}</button>
             </div>
         </FormModal>

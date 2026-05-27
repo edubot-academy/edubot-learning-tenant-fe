@@ -2,7 +2,7 @@ import { type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FormModal, Modal } from '../../components/Modal';
-import type { CompanyMember, Course } from '../../types/domain';
+import type { AiCourseDraftOutput, CompanyMember, Course } from '../../types/domain';
 import type { CourseFormState, CourseTypeOption, TenantCourseType } from './courseComponents';
 
 function memberDisplayName(member: CompanyMember, fallback: string) {
@@ -133,6 +133,13 @@ export function CourseCreateModal({
   videoEnabled,
   setForm,
   courseTypeDetail,
+  aiCourseDraftEnabled,
+  aiCourseDraft,
+  aiCourseDrafting,
+  aiCourseDraftError,
+  onRequestAiCourseDraft,
+  onUseAiCourseDraft,
+  onCancelAiCourseDraft,
   onClose,
   onSubmit,
 }: {
@@ -147,6 +154,13 @@ export function CourseCreateModal({
   videoEnabled: boolean;
   setForm: Dispatch<SetStateAction<CourseFormState>>;
   courseTypeDetail: (value: TenantCourseType) => string;
+  aiCourseDraftEnabled?: boolean;
+  aiCourseDraft?: AiCourseDraftOutput | null;
+  aiCourseDrafting?: boolean;
+  aiCourseDraftError?: string;
+  onRequestAiCourseDraft?: () => void;
+  onUseAiCourseDraft?: () => void;
+  onCancelAiCourseDraft?: () => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -171,6 +185,45 @@ export function CourseCreateModal({
         setForm={setForm}
         courseTypeDetail={courseTypeDetail}
       />
+      {aiCourseDraftEnabled ? (
+        <section className="ai-draft-panel">
+          <div>
+            <strong>{t('ai.courseDraft')}</strong>
+            <span>{t('ai.courseDraftHelp')}</span>
+          </div>
+          <div className="activity-actions">
+            <button type="button" className="secondary-button" onClick={onRequestAiCourseDraft} disabled={aiCourseDrafting || creatingCourse || !form.title.trim()}>
+              {aiCourseDrafting ? t('ai.generating') : t('ai.suggestCourse')}
+            </button>
+            {aiCourseDraft ? (
+              <>
+                <button type="button" className="secondary-button" onClick={onUseAiCourseDraft}>
+                  {t('ai.useDraft')}
+                </button>
+                <button type="button" className="secondary-button danger" onClick={onCancelAiCourseDraft}>
+                  {t('ai.cancelDraft')}
+                </button>
+              </>
+            ) : null}
+          </div>
+          {aiCourseDraft ? (
+            <div className="ai-draft-preview">
+              <strong>{aiCourseDraft.title}</strong>
+              <p>{aiCourseDraft.description}</p>
+              <small>{aiCourseDraft.syllabus}</small>
+              <ol>
+                {aiCourseDraft.sections.map((section, index) => (
+                  <li key={`${section.title}-${index}`}>
+                    <span>{section.title}</span>
+                    <small>{section.lessons.map((lesson) => lesson.title).join(' · ')}</small>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+          {aiCourseDraftError ? <small className="field-error">{aiCourseDraftError}</small> : null}
+        </section>
+      ) : null}
       {!videoEnabled ? <p className="muted-text">{t('courses.videoControlled')}</p> : null}
       <div className="modal-actions">
         <button type="button" className="secondary-button" onClick={onClose}>{t('courses.cancel')}</button>

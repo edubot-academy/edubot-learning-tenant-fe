@@ -19,6 +19,34 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.16.0 - 2026-05-28
+
+### Added
+
+- Added AI-assisted draft workflows for course outlines, homework, session quizzes, session worksheets, activity feedback, and student support messages.
+- Added tenant AI capability checks so AI controls only appear when the backend enables the relevant workflow.
+- Added API contracts, domain types, and request-error handling for AI draft generation, acceptance, rejection, and backend request IDs.
+
+### Changed
+
+- Kept AI draft actions explicitly draft-only: course, homework, quiz, feedback, worksheet, and support-message drafts require user review before they affect forms or workflows.
+- Improved Kyrgyz, Russian, and English AI copy, including clearer Russian `ИИ` terminology and Kyrgyz student/support wording.
+
+### Fixed
+
+- Prevented support-message AI drafts from appearing or generating when the user cannot contact students.
+- Kept worksheet and support-message drafts open when clipboard copy fails instead of marking the generation as accepted.
+- Cleared session AI draft state when switching or creating sessions so stale drafts do not carry across lesson contexts.
+
+### Tests
+
+- Added coverage for AI draft flows in courses, homework, sessions, support, API clients, and backend error handling.
+- `npm test` passes with 36 test files and 222 tests.
+- `npm test -- --run src/features/courses/CoursesPage.test.tsx src/features/homework/HomeworkPage.test.tsx src/features/sessions/SessionsPage.test.tsx src/features/support/StudentSupportPage.test.tsx src/services/api.test.ts src/lib/apiErrors.test.ts src/i18n/translationKeys.test.ts` passes.
+- `npm run lint` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
 ## 1.15.6 - 2026-05-26
 
 ### Added

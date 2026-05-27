@@ -3,10 +3,14 @@ import i18n from '../i18n/config';
 type ApiErrorPayload = {
   code?: unknown;
   errorCode?: unknown;
+  requestId?: unknown;
+  traceId?: unknown;
   error?: {
     code?: unknown;
     messageKey?: unknown;
     labelKey?: unknown;
+    requestId?: unknown;
+    traceId?: unknown;
   };
   messageKey?: unknown;
   labelKey?: unknown;
@@ -53,6 +57,21 @@ const ERROR_CATEGORY_PREFIXES: Array<[string, string]> = [
 export function getBackendErrorCode(error: unknown): string | null {
   const payload = getPayload(error);
   return stableString(payload?.error?.code) ?? stableString(payload?.code) ?? stableString(payload?.errorCode);
+}
+
+export function getBackendRequestId(error: unknown): string | null {
+  const payload = getPayload(error);
+  const headers = error && typeof error === 'object' && 'response' in error
+    ? (error as { response?: { headers?: Record<string, unknown> } }).response?.headers
+    : undefined;
+  return (
+    stableString(payload?.error?.requestId) ??
+    stableString(payload?.requestId) ??
+    stableString(payload?.error?.traceId) ??
+    stableString(payload?.traceId) ??
+    stableString(headers?.['x-request-id']) ??
+    stableString(headers?.['x-correlation-id'])
+  );
 }
 
 function getBackendTranslationKey(error: unknown): string | null {

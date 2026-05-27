@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import i18n from '../i18n/config';
-import { getApiErrorMessage, getApiResponseMessage, getBackendErrorCode } from './apiErrors';
+import { getApiErrorMessage, getApiResponseMessage, getBackendErrorCode, getBackendRequestId } from './apiErrors';
 
 describe('api error helpers', () => {
   it('extracts backend error codes from axios-like errors', () => {
@@ -102,5 +102,11 @@ describe('api error helpers', () => {
     };
 
     expect(getApiErrorMessage(error, 'Fallback')).toBe('Fallback');
+  });
+
+  it('extracts request ids from backend payloads and response headers', () => {
+    expect(getBackendRequestId({ response: { data: { error: { requestId: 'req-nested' } } } })).toBe('req-nested');
+    expect(getBackendRequestId({ response: { data: { traceId: 'trace-top' } } })).toBe('trace-top');
+    expect(getBackendRequestId({ response: { data: {}, headers: { 'x-request-id': 'req-header' } } })).toBe('req-header');
   });
 });

@@ -7,8 +7,12 @@ import i18n from '../../i18n/config';
 import { HomeworkPage } from './HomeworkPage';
 
 const api = vi.hoisted(() => ({
+  acceptAiGeneration: vi.fn(),
   createSessionHomework: vi.fn(),
   deleteSessionHomework: vi.fn(),
+  generateAiFeedbackDraft: vi.fn(),
+  generateAiHomeworkDraft: vi.fn(),
+  getAiLmsCapabilities: vi.fn(),
   getHomeworkReviewQueue: vi.fn(),
   getHomeworkReviewRoster: vi.fn(),
   getHomeworkSummary: vi.fn(),
@@ -19,6 +23,7 @@ const api = vi.hoisted(() => ({
   listSessionHomework: vi.fn(),
   listTenantCourses: vi.fn(),
   openHomeworkSubmissionAttachment: vi.fn(),
+  rejectAiGeneration: vi.fn(),
   reviewHomeworkSubmission: vi.fn(),
   updateSessionHomework: vi.fn(),
 }));
@@ -140,6 +145,7 @@ describe('HomeworkPage', () => {
     api.listGroupSessions.mockResolvedValue([session]);
     api.listGroupStudents.mockResolvedValue([{ id: 1, userId: 201, fullName: 'Aida Student', email: 'aida@example.test' }]);
     api.listSessionHomework.mockResolvedValue([]);
+    api.getAiLmsCapabilities.mockResolvedValue({ feedbackDraft: { enabled: true }, homeworkDraft: { enabled: true } });
     api.getHomeworkSummary.mockResolvedValue({ total: 0, needsReview: 0, missing: 0, overdue: 0 });
     api.getHomeworkReviewQueue.mockResolvedValue({
       items: [],
@@ -238,5 +244,103 @@ describe('HomeworkPage', () => {
 
     await waitFor(() => expect(api.listCourseGroups).toHaveBeenCalledWith(102));
     expect(screen.queryByText('Group unavailable')).not.toBeInTheDocument();
+  });
+
+  it('generates an AI feedback draft and copies it into the review form', async () => {
+    api.listSessionHomework.mockResolvedValue([{
+      id: 501,
+      sessionId: 901,
+      courseId: 101,
+      groupId: 301,
+      title: 'Equation practice',
+      maxScore: 10,
+      isPublished: true,
+    }]);
+    api.getHomeworkReviewRoster.mockResolvedValue({
+      items: [{
+        studentId: 201,
+        fullName: 'Aida Student',
+        reviewState: 'needs_review',
+        hasSubmission: true,
+        isLate: false,
+        submission: {
+          id: 701,
+          homeworkId: 501,
+          studentId: 201,
+          answerText: 'x = 1',
+          status: 'submitted',
+        },
+      }],
+      summary: { total: 1, pendingSubmission: 0, missing: 0, needsReview: 1, approved: 0, rejected: 0, needsRevision: 0, late: 0 },
+    });
+    api.generateAiFeedbackDraft.mockResolvedValue({
+      generationId: 9001,
+      status: 'draft',
+      output: {
+        feedback: 'Good start. Add one more explanation step.',
+        suggestedScore: 8,
+        nextStep: 'Show the equation balance step.',
+      },
+    });
+
+    renderPage('/homework?courseId=101&groupId=301&sessionId=901&homeworkId=501');
+
+    await waitFor(() => expect(screen.getByRole('option', { name: /Lesson 1/ })).toBeInTheDocument(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Review' })).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest feedback with AI' }));
+
+    await waitFor(() => expect(api.generateAiFeedbackDraft).toHaveBeenCalledWith(701, {
+      submissionType: 'homework',
+      language: 'en',
+      tone: 'encouraging',
+      includeScoreSuggestion: true,
+    }));
+    expect(await screen.findByDisplayValue('Good start. Add one more explanation step.')).toBeInTheDocument();
+    expect(screen.getByText('Show the equation balance step.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+
+    await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9001));
+    expect(screen.getAllByDisplayValue('Good start. Add one more explanation step.').length).toBeGreaterThan(0);
+    expect(screen.getAllByDisplayValue('8').length).toBeGreaterThan(0);
+  });
+
+  it('uses an AI homework draft in the create form without creating homework automatically', async () => {
+    api.generateAiHomeworkDraft.mockResolvedValue({
+      generationId: 9003,
+      status: 'draft',
+      output: {
+        title: 'Linear equations homework',
+        description: 'Solve three equations and explain each step.',
+        rubric: [
+          { criterion: 'Correct answers', points: 6 },
+          { criterion: 'Clear explanation', points: 4 },
+        ],
+        maxScore: 10,
+      },
+    });
+
+    renderPage('/homework?courseId=101&groupId=301&sessionId=901');
+
+    await waitFor(() => expect(screen.getByRole('option', { name: /Lesson 1/ })).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create homework' })[0]);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Create homework' })).toBeInTheDocument(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Suggest homework with AI' })).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest homework with AI' }));
+
+    await waitFor(() => expect(api.generateAiHomeworkDraft).toHaveBeenCalledWith(901, {
+      language: 'en',
+      topic: 'Lesson 1',
+      maxScore: undefined,
+    }));
+    expect(await screen.findByText('Linear equations homework')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+
+    await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9003));
+    expect(screen.getByDisplayValue('Linear equations homework')).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Solve three equations/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('10')).toBeInTheDocument();
+    expect(api.createSessionHomework).not.toHaveBeenCalled();
   });
 });

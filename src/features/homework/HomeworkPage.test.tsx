@@ -323,24 +323,49 @@ describe('HomeworkPage', () => {
     renderPage('/homework?courseId=101&groupId=301&sessionId=901');
 
     await waitFor(() => expect(screen.getByRole('option', { name: /Lesson 1/ })).toBeInTheDocument(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Create homework' })[0]).toBeEnabled(), { timeout: 5000 });
     fireEvent.click(screen.getAllByRole('button', { name: 'Create homework' })[0]);
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Create homework' })).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'AI draft' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Suggest homework with AI' })).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.change(screen.getByLabelText('Instructions for AI'), {
+      target: { value: 'Create 5 tasks and include one challenge question.' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Suggest homework with AI' }));
 
     await waitFor(() => expect(api.generateAiHomeworkDraft).toHaveBeenCalledWith(901, {
       language: 'en',
       topic: 'Lesson 1',
+      instructions: 'Create 5 tasks and include one challenge question.',
       maxScore: undefined,
     }));
-    expect(await screen.findByText('Linear equations homework')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Linear equations homework')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Use draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use in manual form' }));
 
     await waitFor(() => expect(api.acceptAiGeneration).toHaveBeenCalledWith(9003));
+    expect(screen.getByRole('button', { name: 'Manual' })).toHaveClass('active');
     expect(screen.getByDisplayValue('Linear equations homework')).toBeInTheDocument();
     expect(screen.getByDisplayValue(/Solve three equations/)).toBeInTheDocument();
     expect(screen.getByDisplayValue('10')).toBeInTheDocument();
     expect(api.createSessionHomework).not.toHaveBeenCalled();
+  }, 10000);
+
+  it('does not submit manual homework while AI draft mode is active', async () => {
+    renderPage('/homework?courseId=101&groupId=301&sessionId=901');
+
+    await waitFor(() => expect(screen.getByRole('option', { name: /Lesson 1/ })).toBeInTheDocument(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Create homework' })[0]).toBeEnabled(), { timeout: 5000 });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create homework' })[0]);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Create homework' })).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'AI draft' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'AI seed topic' } });
+
+    const createForm = screen.getByLabelText('Title').closest('form');
+    expect(createForm).not.toBeNull();
+    fireEvent.submit(createForm!);
+
+    expect(api.createSessionHomework).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'AI draft' })).toHaveClass('active');
   });
 });

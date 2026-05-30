@@ -267,7 +267,12 @@ describe('api browser stores', () => {
 
     await generateAiSessionQuizDraft(77, { language: 'ky', questionCount: 3, includeExplanations: false });
     await generateAiCourseDraft({ language: 'ky', topic: 'Algebra', courseType: 'offline', sectionCount: 4, lessonsPerSection: 4 });
-    await generateAiHomeworkDraft(88, { language: 'ky', topic: 'Linear equations', maxScore: 10 });
+    await generateAiHomeworkDraft(88, {
+      language: 'ky',
+      topic: 'Linear equations',
+      instructions: 'Create 5 tasks and include one challenge question.',
+      maxScore: 10,
+    });
     await generateAiWorksheetDraft(99, { language: 'ky', topic: 'Practice', includeAnswerKey: true });
     await generateAiMessageDraft(14, { language: 'ky', recipient: 'guardian', purpose: 'progress update', courseId: 7 });
 
@@ -282,7 +287,12 @@ describe('api browser stores', () => {
       },
       {
         url: '/ai-lms/sessions/88/homework-draft',
-        body: { language: 'ky', topic: 'Linear equations', maxScore: 10 },
+        body: {
+          language: 'ky',
+          topic: 'Linear equations',
+          instructions: 'Create 5 tasks and include one challenge question.',
+          maxScore: 10,
+        },
       },
       {
         url: '/ai-lms/sessions/99/worksheet-draft',

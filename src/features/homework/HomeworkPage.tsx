@@ -64,6 +64,26 @@ type AiHomeworkDraftState = {
   output: AiHomeworkDraftResponse['output'];
 };
 
+const cleanAiHomeworkDraftOutput = (output: AiHomeworkDraftResponse['output']): AiHomeworkDraftResponse['output'] => {
+  const nested = typeof output.description === 'string' && output.description.trim().startsWith('{')
+    ? (() => {
+        try {
+          return JSON.parse(output.description) as Partial<AiHomeworkDraftResponse['output']>;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+  const merged = nested && (nested.description || nested.title)
+    ? { ...output, ...nested }
+    : output;
+  return {
+    ...merged,
+    description: String(merged.description ?? '').replace(/\\n/g, '\n').replace(/\\"/g, '"').trim(),
+    maxScore: Number(merged.maxScore) > 0 ? Number(merged.maxScore) : null,
+  };
+};
+
 function isHomeworkCourseReady(course: Course | undefined | null) {
   return isCourseWorkflowReady(course);
 }
@@ -102,6 +122,8 @@ export function HomeworkPage() {
   const [aiHomeworkDraft, setAiHomeworkDraft] = useState<AiHomeworkDraftState | null>(null);
   const [aiHomeworkDrafting, setAiHomeworkDrafting] = useState(false);
   const [aiHomeworkDraftError, setAiHomeworkDraftError] = useState('');
+  const [aiHomeworkInstructions, setAiHomeworkInstructions] = useState('');
+  const [createHomeworkMode, setCreateHomeworkMode] = useState<'manual' | 'ai'>('manual');
   const [expandedReviewStudentId, setExpandedReviewStudentId] = useState<number | undefined>();
   const [assigneeQuery, setAssigneeQuery] = useState('');
   const [form, setForm] = useState(emptyForm);
@@ -662,6 +684,8 @@ export function HomeworkPage() {
 
   const submitHomework = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (createHomeworkMode === 'ai') return;
+
     const nextErrors = getHomeworkFormErrors(form, Boolean(sessionId && selectedSessionReady));
     if (!sessionId) {
       nextErrors.session = t('homework.errorSessionRequired');
@@ -716,11 +740,12 @@ export function HomeworkPage() {
       const draft = await generateAiHomeworkDraft(sessionId, {
         language: i18n.language || 'ky',
         topic: form.title.trim() || selectedSession?.title || selectedCourse?.title,
+        ...(aiHomeworkInstructions.trim() ? { instructions: aiHomeworkInstructions.trim() } : {}),
         maxScore: form.maxScore ? Number(form.maxScore) : undefined,
       });
       setAiHomeworkDraft({
         generationId: draft.generationId,
-        output: draft.output,
+        output: cleanAiHomeworkDraftOutput(draft.output),
       });
       toast.success(t('ai.homeworkDraftReady'));
     } catch (error) {
@@ -747,9 +772,17 @@ export function HomeworkPage() {
       await acceptAiGeneration(aiHomeworkDraft.generationId);
       toast.success(t('ai.homeworkDraftAccepted'));
       setAiHomeworkDraft(null);
+      setAiHomeworkDraftError('');
+      setCreateHomeworkMode('manual');
     } catch (error) {
       toast.error(getApiErrorMessage(error, t('ai.feedbackDraftActionFailed')));
     }
+  };
+
+  const updateAiHomeworkDraftOutput = (patch: Partial<AiHomeworkDraftResponse['output']>) => {
+    setAiHomeworkDraft((current) => current
+      ? { ...current, output: { ...current.output, ...patch } }
+      : current);
   };
 
   const rejectAiHomeworkDraft = async () => {
@@ -767,6 +800,8 @@ export function HomeworkPage() {
     setIsCreateModalOpen(false);
     setForm(emptyForm);
     setFormErrors({});
+    setAiHomeworkInstructions('');
+    setCreateHomeworkMode('manual');
     setAssigneeQuery('');
     setAiHomeworkDraft(null);
     setAiHomeworkDraftError('');
@@ -1570,134 +1605,238 @@ export function HomeworkPage() {
               <p>{selectedSession ? t('homework.assignmentAddedToSession', { title: selectedSession.title }) : t('homework.chooseSessionBeforeCreate')}</p>
             </div>
             {aiHomeworkDraftEnabled ? (
-              <div className="settings-panel compact">
+              <div className="segmented-control homework-create-mode-tabs" aria-label={t('homework.createHomework')}>
+                <button
+                  type="button"
+                  className={createHomeworkMode === 'manual' ? 'active' : ''}
+                  onClick={() => setCreateHomeworkMode('manual')}
+                >
+                  {t('ai.manualMode')}
+                </button>
+                <button
+                  type="button"
+                  className={createHomeworkMode === 'ai' ? 'active' : ''}
+                  onClick={() => setCreateHomeworkMode('ai')}
+                >
+                  {t('ai.aiDraftMode')}
+                </button>
+              </div>
+            ) : null}
+            {createHomeworkMode === 'ai' && aiHomeworkDraftEnabled ? (
+              <div className="settings-panel compact homework-ai-mode-panel">
                 <div className="section-heading-row compact">
                   <div>
                     <h3>{t('ai.homeworkDraft')}</h3>
-                    <span>{t('homework.saveDraft')}</span>
+                    <span>{t('ai.aiDraftModeHelp')}</span>
                   </div>
+                </div>
+                <label>
+                  {t('courses.title')}
+                  <input
+                    value={form.title}
+                    onChange={(event) => {
+                      setForm((current) => ({ ...current, title: event.target.value }));
+                      setFormErrors((current) => ({ ...current, title: '' }));
+                    }}
+                    className={formErrors.title ? 'input-error' : ''}
+                    aria-invalid={!!formErrors.title}
+                    placeholder={selectedSession?.title || t('courses.title')}
+                    autoFocus
+                  />
+                  {formErrors.title ? <span className="field-error">{formErrors.title}</span> : null}
+                </label>
+                <label>
+                  {t('ai.homeworkInstructions')}
+                  <textarea
+                    value={aiHomeworkInstructions}
+                    onChange={(event) => setAiHomeworkInstructions(event.target.value)}
+                    placeholder={t('ai.homeworkInstructionsPlaceholder')}
+                    rows={4}
+                    disabled={aiHomeworkDrafting}
+                  />
+                </label>
+                <label>
+                  {t('homework.maxScore')}
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={form.maxScore}
+                    onChange={(event) => {
+                      setForm((current) => ({ ...current, maxScore: event.target.value }));
+                      setFormErrors((current) => ({ ...current, maxScore: '' }));
+                    }}
+                    className={formErrors.maxScore ? 'input-error' : ''}
+                    aria-invalid={!!formErrors.maxScore}
+                  />
+                  {formErrors.maxScore ? <span className="field-error">{formErrors.maxScore}</span> : null}
+                </label>
+                <div className="modal-actions homework-ai-actions">
                   <button
                     type="button"
                     className="secondary-button"
+                    onClick={() => setCreateHomeworkMode('manual')}
+                  >
+                    {t('ai.manualMode')}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => void requestAiHomeworkDraft()}
                     disabled={!sessionId || !selectedSessionReady || aiHomeworkDrafting}
                   >
-                    {aiHomeworkDrafting ? t('ai.generating') : t('ai.suggestHomework')}
+                    {aiHomeworkDrafting ? t('ai.generating') : aiHomeworkDraft ? t('ai.regenerateDraft') : t('ai.suggestHomework')}
                   </button>
                 </div>
                 {aiHomeworkDraftError ? <p className="field-error">{aiHomeworkDraftError}</p> : null}
                 {aiHomeworkDraft ? (
-                  <div className="generation-preview">
-                    <span><strong>{aiHomeworkDraft.output.title}</strong></span>
-                    <p>{aiHomeworkDraft.output.description}</p>
+                  <div className="homework-ai-editor">
+                    <div className="section-heading-row compact">
+                      <div>
+                        <h3>{t('ai.homeworkDraftReady')}</h3>
+                        <span>{t('ai.reviewAiDraftHelp')}</span>
+                      </div>
+                    </div>
+                    <label>
+                      {t('courses.title')}
+                      <input
+                        value={aiHomeworkDraft.output.title}
+                        onChange={(event) => updateAiHomeworkDraftOutput({ title: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      {t('courses.description')}
+                      <textarea
+                        value={homeworkDraftDescription(aiHomeworkDraft.output)}
+                        onChange={(event) => updateAiHomeworkDraftOutput({ description: event.target.value, rubric: [] })}
+                        rows={9}
+                      />
+                    </label>
+                    <label>
+                      {t('homework.maxScore')}
+                      <input
+                        type="number"
+                        min="0"
+                        max="1000"
+                        value={aiHomeworkDraft.output.maxScore ?? ''}
+                        onChange={(event) => updateAiHomeworkDraftOutput({
+                          maxScore: event.target.value === '' ? null : Number(event.target.value),
+                        })}
+                      />
+                    </label>
                     {aiHomeworkDraft.output.rubric?.length ? (
-                      <ul className="stack-list compact">
-                        {aiHomeworkDraft.output.rubric.map((item, index) => (
-                          <li key={`${item.criterion ?? 'criterion'}-${index}`}>
-                            {item.criterion}
-                            {item.points !== undefined && item.points !== null ? ` (${item.points})` : ''}
-                          </li>
-                        ))}
-                      </ul>
+                      <details className="homework-ai-rubric">
+                        <summary>{t('homework.rubric')}</summary>
+                        <ul className="stack-list compact">
+                          {aiHomeworkDraft.output.rubric.map((item, index) => (
+                            <li key={`${item.criterion ?? 'criterion'}-${index}`}>
+                              {item.criterion}
+                              {item.points !== undefined && item.points !== null ? ` (${item.points})` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
                     ) : null}
-                    <div className="generation-actions">
-                      <button type="button" onClick={() => void applyAiHomeworkDraft()}>{t('ai.useDraft')}</button>
+                    <div className="modal-actions homework-ai-transfer-actions">
+                      <button type="button" onClick={() => void applyAiHomeworkDraft()}>{t('ai.useInManualForm')}</button>
                       <button type="button" className="secondary-button" onClick={() => void rejectAiHomeworkDraft()}>{t('ai.cancelDraft')}</button>
                     </div>
                   </div>
                 ) : null}
               </div>
-            ) : null}
-            <label>
-              {t('courses.title')}
-              <input
-                value={form.title}
-                onChange={(event) => {
-                  setForm((current) => ({ ...current, title: event.target.value }));
-                  setFormErrors((current) => ({ ...current, title: '' }));
-                }}
-                className={formErrors.title ? 'input-error' : ''}
-                aria-invalid={!!formErrors.title}
-                autoFocus
-              />
-              {formErrors.title ? <span className="field-error">{formErrors.title}</span> : null}
-            </label>
-            <label>
-              {t('courses.description')}
-              <textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
-            </label>
-            <div className="two-col">
-              <label>
-                {t('homework.dueDate')}
-                <input type="datetime-local" value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} />
-              </label>
-              <label>
-                {t('homework.maxScore')}
-                <input
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={form.maxScore}
-                  onChange={(event) => {
-                    setForm((current) => ({ ...current, maxScore: event.target.value }));
-                    setFormErrors((current) => ({ ...current, maxScore: '' }));
-                  }}
-                  className={formErrors.maxScore ? 'input-error' : ''}
-                  aria-invalid={!!formErrors.maxScore}
-                />
-                {formErrors.maxScore ? <span className="field-error">{formErrors.maxScore}</span> : null}
-              </label>
-            </div>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={form.isPublished}
-                onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))}
-              />
-              {t('homework.releaseToStudentsNow')}
-            </label>
-            <div className="settings-panel compact assignee-panel">
-              <div className="section-heading-row compact">
-                <div>
-                  <h3>{t('homework.assignees')}</h3>
-                  <span>{selectedCountLabel(form.assignedStudentIds.length)}</span>
-                </div>
-                <button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, assignedStudentIds: [] }))}>
-                  {t('homework.allStudents')}
-                </button>
-              </div>
-              <label>
-                {t('attendance.findStudent')}
-                <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder={t('attendance.studentSearchPlaceholder')} />
-              </label>
-              <div className="stack-list compact assignee-list">
-                {visibleAssignees.map((student) => (
-                  <label className="checkbox-row" key={student.userId}>
-                    <input
-                      type="checkbox"
-                      checked={form.assignedStudentIds.includes(student.userId)}
-                      onChange={() => toggleAssignee(setForm, student.userId)}
-                    />
-                    {student.fullName || student.email || studentFallback(student.userId)}
-                  </label>
-                ))}
-                {!students.length ? (
-                  <EmptyState
-                    title={t('courses.noStudentsTitle')}
-                    detail={t('homework.noAssigneeStudentsDetail')}
+            ) : (
+              <>
+                <label>
+                  {t('courses.title')}
+                  <input
+                    value={form.title}
+                    onChange={(event) => {
+                      setForm((current) => ({ ...current, title: event.target.value }));
+                      setFormErrors((current) => ({ ...current, title: '' }));
+                    }}
+                    className={formErrors.title ? 'input-error' : ''}
+                    aria-invalid={!!formErrors.title}
+                    autoFocus
                   />
-                ) : null}
-                {students.length > 0 && !visibleAssignees.length ? (
-                  <EmptyState title={t('courses.noMatchingStudents')} detail={t('homework.noMatchingAssigneesDetail')} />
-                ) : null}
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={saving}>{t('courses.cancel')}</button>
-              <button type="submit" disabled={!sessionId || !selectedSessionReady || saving}>
-                {saving ? t('courses.creating') : form.isPublished ? t('homework.createAndRelease') : t('homework.saveDraft')}
-              </button>
-            </div>
+                  {formErrors.title ? <span className="field-error">{formErrors.title}</span> : null}
+                </label>
+                <label>
+                  {t('courses.description')}
+                  <textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
+                </label>
+                <div className="two-col">
+                  <label>
+                    {t('homework.dueDate')}
+                    <input type="datetime-local" value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} />
+                  </label>
+                  <label>
+                    {t('homework.maxScore')}
+                    <input
+                      type="number"
+                      min="0"
+                      max="1000"
+                      value={form.maxScore}
+                      onChange={(event) => {
+                        setForm((current) => ({ ...current, maxScore: event.target.value }));
+                        setFormErrors((current) => ({ ...current, maxScore: '' }));
+                      }}
+                      className={formErrors.maxScore ? 'input-error' : ''}
+                      aria-invalid={!!formErrors.maxScore}
+                    />
+                    {formErrors.maxScore ? <span className="field-error">{formErrors.maxScore}</span> : null}
+                  </label>
+                </div>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={form.isPublished}
+                    onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))}
+                  />
+                  {t('homework.releaseToStudentsNow')}
+                </label>
+                <div className="settings-panel compact assignee-panel">
+                  <div className="section-heading-row compact">
+                    <div>
+                      <h3>{t('homework.assignees')}</h3>
+                      <span>{selectedCountLabel(form.assignedStudentIds.length)}</span>
+                    </div>
+                    <button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, assignedStudentIds: [] }))}>
+                      {t('homework.allStudents')}
+                    </button>
+                  </div>
+                  <label>
+                    {t('attendance.findStudent')}
+                    <input value={assigneeQuery} onChange={(event) => setAssigneeQuery(event.target.value)} placeholder={t('attendance.studentSearchPlaceholder')} />
+                  </label>
+                  <div className="stack-list compact assignee-list">
+                    {visibleAssignees.map((student) => (
+                      <label className="checkbox-row" key={student.userId}>
+                        <input
+                          type="checkbox"
+                          checked={form.assignedStudentIds.includes(student.userId)}
+                          onChange={() => toggleAssignee(setForm, student.userId)}
+                        />
+                        {student.fullName || student.email || studentFallback(student.userId)}
+                      </label>
+                    ))}
+                    {!students.length ? (
+                      <EmptyState
+                        title={t('courses.noStudentsTitle')}
+                        detail={t('homework.noAssigneeStudentsDetail')}
+                      />
+                    ) : null}
+                    {students.length > 0 && !visibleAssignees.length ? (
+                      <EmptyState title={t('courses.noMatchingStudents')} detail={t('homework.noMatchingAssigneesDetail')} />
+                    ) : null}
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={saving}>{t('courses.cancel')}</button>
+                  <button type="submit" disabled={!sessionId || !selectedSessionReady || saving}>
+                    {saving ? t('courses.creating') : form.isPublished ? t('homework.createAndRelease') : t('homework.saveDraft')}
+                  </button>
+                </div>
+              </>
+            )}
         </FormModal>
       ) : null}
       {homeworkPendingDelete ? (

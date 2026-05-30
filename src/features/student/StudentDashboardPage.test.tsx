@@ -187,7 +187,7 @@ describe('StudentDashboardPage loading', () => {
     render(<MemoryRouter><StudentDashboardPage view="todo" /></MemoryRouter>);
 
     fireEvent.click(await screen.findByRole('button', { name: /Submitted/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Start task' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View submission' }));
 
     expect(screen.getByText('Submission history')).toBeInTheDocument();
     expect(screen.getAllByText('Latest answer').length).toBeGreaterThan(0);
@@ -286,6 +286,10 @@ describe('StudentDashboardPage loading', () => {
 
     expect(await screen.findByText('Resource 1')).toBeInTheDocument();
     expect(screen.getByText('Showing 12 of 14')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open' })[0]);
+    expect(screen.getByRole('dialog', { name: 'Resource 1' })).toBeInTheDocument();
+    expect(screen.getByTitle('Resource 1')).toHaveAttribute('src', 'https://example.test/resource-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Recordings' }));
     expect(await screen.findByText('Recorded session')).toBeInTheDocument();

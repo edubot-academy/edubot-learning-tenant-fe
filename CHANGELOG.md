@@ -19,6 +19,34 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.16.1 - 2026-05-31
+
+### Added
+
+- Added editable AI homework draft mode with teacher instructions, draft review fields, and manual-form transfer before homework creation.
+- Added in-app student material previews with download and open-in-new-tab fallback actions.
+
+### Changed
+
+- Redesigned the student materials page with lighter filters, clearer material cards, recent-material badges, lesson context, and modal-based opening.
+- Redesigned the student homework/task page to prioritize revision and overdue work, simplify task summaries, make due-date metadata quieter, and use state-aware actions.
+- Improved the student homework submission modal with task instructions, guided answer placeholders, grouped attachments, sticky submit controls, and clearer readiness messaging.
+- Localized the new student materials, task, submission, and AI homework draft copy in English, Kyrgyz, and Russian.
+
+### Fixed
+
+- Prevented AI homework draft mode from accidentally submitting the manual homework form through implicit form submission.
+- Stabilized homework AI draft regression tests under the full concurrent test suite.
+
+### Tests
+
+- Added and updated coverage for AI homework draft mode, AI-mode submit prevention, student material previews, and state-aware student task actions.
+- `npm test -- HomeworkPage.test.tsx StudentDashboardPage.test.tsx api.test.ts` passes.
+- `npm test` passes with 36 test files and 223 tests.
+- `npm run lint` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
 ## 1.16.0 - 2026-05-28
 
 ### Added

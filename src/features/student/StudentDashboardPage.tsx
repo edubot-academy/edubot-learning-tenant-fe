@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiAward, FiBell, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiFileText, FiHelpCircle, FiPlayCircle } from 'react-icons/fi';
+import { FiArrowLeft, FiAward, FiBell, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiDownload, FiExternalLink, FiFileText, FiHelpCircle, FiPlayCircle } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
-import { FormModal } from '../../components/Modal';
+import { FormModal, Modal } from '../../components/Modal';
 import { CountFilterRow } from '../../components/CountFilterRow';
 import {
   createStudentSupportRequest,
@@ -69,6 +69,13 @@ type StudentMaterialListItem = {
   material?: { title?: string; url?: string | null; type?: string };
 };
 
+type StudentMaterialPreview = {
+  title: string;
+  url: string;
+  typeText: string;
+  context: string;
+};
+
 export type StudentDashboardView = 'today' | 'todo' | 'courses' | 'courseDetail' | 'sessionDetail' | 'materials' | 'progress' | 'help';
 type TodoFilter = 'open' | 'overdue' | 'submitted' | 'needs_revision' | 'completed';
 type MaterialFilter = 'all' | 'resources' | 'recordings';
@@ -105,6 +112,14 @@ function dueLabel(value: string | null | undefined, dueTemplate: (date: string) 
 function taskContext(task?: StudentTaskItem | StudentHomeworkItem | null) {
   if (!task) return '';
   return task.courseTitle ?? (!isActivityTask(task) ? task.sessionTitle : undefined) ?? '';
+}
+
+function taskCourseTitle(task?: StudentTaskItem | StudentHomeworkItem | null) {
+  return task?.courseTitle ?? '';
+}
+
+function taskSessionTitle(task?: StudentTaskItem | StudentHomeworkItem | null) {
+  return task?.sessionTitle ?? '';
 }
 
 function taskSubmission(task?: StudentTaskItem | StudentHomeworkItem | null) {
@@ -240,6 +255,13 @@ function materialTypeText(item: StudentMaterialListItem, fallback: string) {
   return extension && extension.length <= 5 ? extension.toUpperCase() : fallback;
 }
 
+function isRecentlyAdded(value?: string | null) {
+  const timestamp = Date.parse(value ?? '');
+  if (!Number.isFinite(timestamp)) return false;
+  const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+  return Date.now() - timestamp >= 0 && Date.now() - timestamp <= fourteenDays;
+}
+
 function rawTaskStatus(task: StudentTaskItem | StudentHomeworkItem) {
   return studentTaskState(task);
 }
@@ -252,6 +274,19 @@ function taskFilterKey(task: StudentTaskItem | StudentHomeworkItem, now = Date.n
   const dueTime = Date.parse(studentTaskDueDate(task) ?? '');
   if (Number.isFinite(dueTime) && dueTime < now) return 'overdue';
   return 'open';
+}
+
+function taskSortWeight(task: StudentTaskItem | StudentHomeworkItem) {
+  const state = taskFilterKey(task);
+  const stateWeight: Record<TodoFilter, number> = {
+    needs_revision: 0,
+    overdue: 1,
+    open: 2,
+    submitted: 3,
+    completed: 4,
+  };
+  const dueTime = Date.parse(studentTaskDueDate(task) ?? '');
+  return [stateWeight[state], Number.isFinite(dueTime) ? dueTime : Number.MAX_SAFE_INTEGER] as const;
 }
 
 function settledValue<T>(result: PromiseSettledResult<T>, fallback: T) {
@@ -293,6 +328,7 @@ export function StudentDashboardPage({
   const [notificationTotalPages, setNotificationTotalPages] = useState(1);
   const [reminders, setReminders] = useState<StudentReminder[]>([]);
   const [selectedTask, setSelectedTask] = useState<StudentTaskItem | StudentHomeworkItem | null>(null);
+  const [selectedMaterialPreview, setSelectedMaterialPreview] = useState<StudentMaterialPreview | null>(null);
   const [submitForm, setSubmitForm] = useState(emptySubmitForm);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number[]>>({});
   const [todoFilter, setTodoFilter] = useState<TodoFilter>('open');
@@ -820,11 +856,18 @@ export function StudentDashboardPage({
       completed: 0,
     });
   }, [studentWorkItems]);
+  const sortedWorkItems = useMemo(() => [...studentWorkItems].sort((first, second) => {
+    const [firstState, firstDue] = taskSortWeight(first);
+    const [secondState, secondDue] = taskSortWeight(second);
+    return firstState - secondState || firstDue - secondDue;
+  }), [studentWorkItems]);
   const filteredWorkItems = useMemo(() => (
     view === 'today'
-      ? studentWorkItems.slice(0, 3)
-      : studentWorkItems.filter((task) => taskFilterKey(task) === todoFilter)
-  ), [studentWorkItems, todoFilter, view]);
+      ? sortedWorkItems.slice(0, 3)
+      : sortedWorkItems.filter((task) => taskFilterKey(task) === todoFilter)
+  ), [sortedWorkItems, todoFilter, view]);
+  const actionableTaskCount = todoCounts.open + todoCounts.overdue + todoCounts.needs_revision;
+  const nextActionTask = sortedWorkItems.find((task) => ['needs_revision', 'overdue', 'open'].includes(taskFilterKey(task))) ?? null;
 
   const nextHomework = useMemo(() => {
     return homework.find((item) => {
@@ -1092,21 +1135,53 @@ export function StudentDashboardPage({
       ? <ErrorState message={t('student.sectionCouldNotLoad', { section: label })} action={<button type="button" className="secondary-button" onClick={retryStudentLoad}>{t('actions.retry')}</button>} />
       : null
   );
+  const taskActionLabel = (state: TodoFilter) => {
+    if (state === 'needs_revision') return t('student.resubmitTask');
+    if (state === 'submitted') return t('student.viewSubmission');
+    if (state === 'completed') return t('student.viewResult');
+    return t('student.startTask');
+  };
+  const taskStateLabel = (state: TodoFilter) => t(`student.taskFilter.${state}`);
+  const taskDueClass = (task: StudentTaskItem | StudentHomeworkItem, state: TodoFilter) => {
+    if (!studentTaskDueDate(task)) return 'no-deadline';
+    return state;
+  };
+  const taskDueSummary = (task: StudentTaskItem | StudentHomeworkItem, state: TodoFilter) => {
+    const dueAt = studentTaskDueDate(task);
+    if (!dueAt) return t('student.noDueDate');
+    if (state === 'overdue') return t('student.overdueSince', { date: formatDate(dueAt) });
+    return dueText(dueAt);
+  };
+  const taskSummaryText = actionableTaskCount
+    ? [
+        t('student.taskSummaryTodo', { count: actionableTaskCount }),
+        todoCounts.overdue ? t('student.taskSummaryOverdue', { count: todoCounts.overdue }) : '',
+        todoCounts.needs_revision ? t('student.taskSummaryRevision', { count: todoCounts.needs_revision }) : '',
+      ].filter(Boolean).join(' · ')
+    : t('student.tasksNoUrgentDeadlines');
   const taskSection = (
     <section className={`content-section student-task-section ${view === 'todo' ? 'student-task-page-section' : ''}`}>
       <div className="section-heading-row">
         <div>
           <h2>{t('student.tasks')}</h2>
-          <span>{t('student.openTasksNeedAttention', { count: openWorkItems.length })}</span>
+          <span>{taskSummaryText}</span>
         </div>
       </div>
       {sectionError('tasks', t('student.tasks')) ?? (
         <>
           {view === 'todo' && studentWorkItems.length ? (
+            <div className="student-task-summary-strip">
+              <div>
+                <strong>{nextActionTask ? t('student.nextTaskLabel', { title: nextActionTask.title ?? t('student.task') }) : t('student.allCaughtUp')}</strong>
+                <span>{nextActionTask ? taskDueSummary(nextActionTask, taskFilterKey(nextActionTask)) : t('student.tasksNoUrgentDeadlines')}</span>
+              </div>
+            </div>
+          ) : null}
+          {view === 'todo' && studentWorkItems.length ? (
             <CountFilterRow
               className="student-filter-row student-task-filter-row"
               ariaLabel={t('student.taskFilters')}
-              items={(['open', 'overdue', 'submitted', 'needs_revision', 'completed'] as const).map((key) => ({
+              items={(['needs_revision', 'overdue', 'open', 'submitted', 'completed'] as const).map((key) => ({
                 key,
                 label: t(`student.taskFilter.${key}`),
                 count: todoCounts[key],
@@ -1119,32 +1194,43 @@ export function StudentDashboardPage({
             <EmptyState title={t('student.tasksFilteredEmptyTitle')} detail={t('student.tasksFilteredEmptyDetail')} />
           ) : (
             <div className="student-task-list">
-              {filteredWorkItems.map((task, index) => (
-                <article className="student-task-card" key={task.id ?? index}>
-                  <div className="student-task-main">
-                    <strong>{task.title ?? (isActivityTask(task) ? activityTypeLabel(task.type, t('student.activity')) : t('student.homeworkFallback', { number: index + 1 }))}</strong>
-                    <div className="student-task-meta">
-                      <span className="student-task-course">{displayText(taskContext(task), t('student.courseNotSet'))}</span>
-                      <span className="student-task-due"><FiClock /> {dueText(studentTaskDueDate(task))}</span>
-                      <small>{isActivityTask(task) ? activityTypeLabel(task.type ?? task.taskType ?? task.activityType, t('student.activity')) : t('navigation.homework')}</small>
+              {filteredWorkItems.map((task, index) => {
+                const state = taskFilterKey(task);
+                const title = task.title ?? (isActivityTask(task) ? activityTypeLabel(task.type, t('student.activity')) : t('student.homeworkFallback', { number: index + 1 }));
+                const courseTitle = taskCourseTitle(task);
+                const sessionTitle = taskSessionTitle(task);
+                const showSessionTitle = Boolean(sessionTitle && sessionTitle !== courseTitle);
+                const score = taskSubmission(task)?.score ?? (isActivityTask(task) ? taskAttempt(task)?.score : null);
+                return (
+                  <article className={`student-task-card state-${state}${task === nextActionTask ? ' is-next-task' : ''}`} key={task.id ?? index}>
+                    <div className="student-task-main">
+                      <div className="student-task-title-row">
+                        <strong>{title}</strong>
+                        {state === 'open' ? null : <span className={`status-badge ${statusClass(state)}`}>{taskStateLabel(state)}</span>}
+                      </div>
+                      <div className="student-task-meta">
+                        <span className="student-task-course"><FiBookOpen aria-hidden="true" />{displayText(courseTitle || taskContext(task), t('student.courseNotSet'))}</span>
+                        {showSessionTitle ? <span className="student-task-session"><FiCalendar aria-hidden="true" />{sessionTitle}</span> : null}
+                        <span className={`student-task-due ${taskDueClass(task, state)}`}><FiClock aria-hidden="true" /> {dueText(studentTaskDueDate(task))}</span>
+                        <small>{isActivityTask(task) ? activityTypeLabel(task.type ?? task.taskType ?? task.activityType, t('student.activity')) : t('navigation.homework')}</small>
+                      </div>
+                      {taskSubmission(task)?.reviewComment ? <small className="student-task-feedback">{t('student.review')}: {taskSubmission(task)?.reviewComment}</small> : null}
+                      {score != null ? (
+                        <small className="student-task-score">{t('student.score')}: {score}</small>
+                      ) : null}
                     </div>
-                    {taskSubmission(task)?.reviewComment ? <small>{t('student.review')}: {taskSubmission(task)?.reviewComment}</small> : null}
-                    {taskSubmission(task)?.score != null || (isActivityTask(task) && taskAttempt(task)?.score != null) ? (
-                      <small>{t('student.score')}: {taskSubmission(task)?.score ?? (isActivityTask(task) ? taskAttempt(task)?.score : null)}</small>
-                    ) : null}
-                  </div>
-                  <div className="student-task-action">
-                    <span className={`status-badge ${statusClass(isActivityTask(task) ? task.status : task.reviewState ?? task.status)}`}>{statusLabel(isActivityTask(task) ? task.status : task.reviewState ?? task.status, t('student.open'))}</span>
-                    <button
-                      type="button"
-                      className={`student-task-start-button${view === 'today' && primaryTask && task.id === primaryTask.id ? ' secondary' : ''}`}
-                      onClick={() => selectTask(task)}
-                    >
-                      {t('student.startTask')}
-                    </button>
-                  </div>
-                </article>
-              ))}
+                    <div className="student-task-action">
+                      <button
+                        type="button"
+                        className={`student-task-start-button${view === 'today' && primaryTask && task.id === primaryTask.id ? ' secondary' : ''}`}
+                        onClick={() => selectTask(task)}
+                      >
+                        {taskActionLabel(state)}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
               {view === 'todo' && filteredWorkItems.length === studentWorkItems.length ? (
                 <p className="student-task-list-note">{t('student.tasksListComplete')}</p>
               ) : null}
@@ -1564,6 +1650,12 @@ export function StudentDashboardPage({
 
         {view === 'materials' ? (
         <section className="content-section full student-materials-section">
+          <div className="student-materials-summary">
+            <div>
+              <strong>{t('student.materialsAvailable', { count: materialDisplayTotal })}</strong>
+              <span>{t('student.materialsLibraryHint')}</span>
+            </div>
+          </div>
           {showMaterialToolbar ? (
             <div className="student-filter-toolbar">
               <div className="segmented-control" aria-label={t('student.materialTypeFilter')}>
@@ -1598,6 +1690,10 @@ export function StudentDashboardPage({
                 const title = materialTitle(item, kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }));
                 const typeText = materialTypeText(item, kind === 'recording' ? t('student.recording') : t('student.resource'));
                 const openUrl = materialUrl(item);
+                const sessionTitle = session.sessionTitle ?? session.title;
+                const showSessionTitle = Boolean(sessionTitle && sessionTitle !== title);
+                const addedAt = session.startsAt;
+                const courseLabel = displayText(session.courseTitle, t('student.courseNotSet'));
                 const MaterialIcon = kind === 'recording' ? FiPlayCircle : FiFileText;
                 return (
                 <article className="student-material-row" key={key}>
@@ -1606,12 +1702,34 @@ export function StudentDashboardPage({
                     <span>{typeText}</span>
                   </div>
                   <div className="student-material-copy">
-                    <strong>{title}</strong>
-                    <span>{displayText(session.courseTitle, t('student.courseNotSet'))} · {dateText(session.startsAt)}</span>
+                    <div className="student-material-title-row">
+                      <strong>{title}</strong>
+                      {isRecentlyAdded(addedAt) ? <span className="student-material-new-badge">{t('student.newMaterial')}</span> : null}
+                    </div>
+                    <div className="student-material-context">
+                      <span><FiBookOpen aria-hidden="true" />{courseLabel}</span>
+                      {showSessionTitle ? <span><FiCalendar aria-hidden="true" />{sessionTitle}</span> : null}
+                      <span>{kind === 'recording' ? t('student.recordingMaterial') : t('student.fileMaterial')}</span>
+                      {addedAt ? <span>{t('student.addedOn', { date: dateText(addedAt) })}</span> : null}
+                    </div>
                   </div>
                   <div className="student-material-actions">
-                    {openUrl ? <a className="primary-link-button" href={openUrl} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
-                    {session.id ? <Link className="secondary-link-button subtle" to={`/student/sessions/${session.id}`}>{t('student.sessionDetails')}</Link> : null}
+                    {openUrl ? (
+                      <button
+                        type="button"
+                        className="primary-link-button"
+                        onClick={() => setSelectedMaterialPreview({
+                          title,
+                          url: openUrl,
+                          typeText,
+                          context: [courseLabel, showSessionTitle ? sessionTitle : null].filter(Boolean).join(' · '),
+                        })}
+                      >
+                        <FiExternalLink aria-hidden="true" />
+                        {t('student.openMaterial')}
+                      </button>
+                    ) : null}
+                    {session.id ? <Link className="secondary-link-button subtle" to={`/student/sessions/${session.id}`}><FiBookOpen aria-hidden="true" />{t('student.relatedLesson')}</Link> : null}
                   </div>
                 </article>
               );
@@ -1910,6 +2028,30 @@ export function StudentDashboardPage({
         ) : null}
       </div>
 
+      {selectedMaterialPreview ? (
+        <Modal
+          labelledBy="student-material-preview-title"
+          className="decision-modal student-material-preview-modal"
+          onClose={() => setSelectedMaterialPreview(null)}
+        >
+          <div className="modal-header-block">
+            <span>{selectedMaterialPreview.typeText}</span>
+            <h2 id="student-material-preview-title">{selectedMaterialPreview.title}</h2>
+            {selectedMaterialPreview.context ? <p>{selectedMaterialPreview.context}</p> : null}
+          </div>
+          <div className="student-material-preview-frame">
+            <iframe
+              title={selectedMaterialPreview.title}
+              src={selectedMaterialPreview.url}
+            />
+          </div>
+          <div className="modal-actions">
+            <a className="secondary-link-button" href={selectedMaterialPreview.url} download><FiDownload aria-hidden="true" />{t('student.downloadMaterial')}</a>
+            <a className="primary-link-button" href={selectedMaterialPreview.url} target="_blank" rel="noreferrer"><FiExternalLink aria-hidden="true" />{t('student.openInNewTab')}</a>
+          </div>
+        </Modal>
+      ) : null}
+
       {selectedTask ? (
         <FormModal
           labelledBy="student-submit-title"
@@ -1918,11 +2060,14 @@ export function StudentDashboardPage({
           onSubmit={submitSelectedTask}
         >
             <div className="modal-header-block">
-              <span>{statusLabel(isActivityTask(selectedTask) ? selectedTask.status : selectedTask.reviewState ?? selectedTask.status, t('student.open'))}</span>
+              <span>{t('student.submitTask')}</span>
               <h2 id="student-submit-title">{selectedTask.title ?? t('student.submitTask')}</h2>
               <p>{readable(taskContext(selectedTask))} · {dueText(studentTaskDueDate(selectedTask))}</p>
             </div>
-            {selectedTask.description ? <p className="panel-note">{selectedTask.description}</p> : null}
+            <div className="student-task-brief">
+              <strong>{t('student.taskInstructions')}</strong>
+              <p>{selectedTask.description || t('student.taskInstructionsFallback')}</p>
+            </div>
             {isActivityTask(selectedTask) && (selectedTask.kind === 'quiz' || selectedTask.taskType === 'quiz') ? (
               <>
                 <p className={`panel-note ${canSubmitSelectedTask ? 'success' : ''}`}>
@@ -1949,30 +2094,47 @@ export function StudentDashboardPage({
             ) : (
               <>
                 {selectedTaskRequirements.allowText ? (
-                  <label>
+                  <label className="student-answer-field">
                     {t('student.answer')}
-                    <textarea value={submitForm.answerText} onChange={(event) => setSubmitForm((current) => ({ ...current, answerText: event.target.value }))} />
-                  </label>
-                ) : null}
-                {selectedTaskRequirements.allowLink ? (
-                  <label>
-                    {t('student.attachmentLink')}
-                    <input value={submitForm.linkUrl} onChange={(event) => setSubmitForm((current) => ({ ...current, linkUrl: event.target.value }))} />
-                  </label>
-                ) : null}
-                {selectedTaskRequirements.allowFile ? (
-                  <label className="file-button">
-                    {submitting ? t('student.uploading') : t('student.uploadAttachment')}
-                    <input
-                      type="file"
-                      disabled={submitting}
-                      accept={selectedTaskRequirements.allowedFileTypes?.join(',') || undefined}
-                      onChange={(event) => void uploadAttachment(event.target.files?.[0])}
+                    <textarea
+                      value={submitForm.answerText}
+                      onChange={(event) => setSubmitForm((current) => ({ ...current, answerText: event.target.value }))}
+                      placeholder={t('student.answerPlaceholder')}
+                      autoFocus
                     />
                   </label>
                 ) : null}
-                {selectedTaskRequirements.allowFile && submitForm.attachmentUrl ? (
-                  <p className="panel-note">{t('student.uploadedAttachment')}: {submitForm.attachmentUrl}</p>
+                {selectedTaskRequirements.allowLink || selectedTaskRequirements.allowFile ? (
+                  <div className="student-attachment-panel">
+                    <div>
+                      <strong>{t('student.attachYourWork')}</strong>
+                      <span>{t('student.attachYourWorkHint')}</span>
+                    </div>
+                    {selectedTaskRequirements.allowLink ? (
+                      <label>
+                        {t('student.attachmentLink')}
+                        <input
+                          value={submitForm.linkUrl}
+                          onChange={(event) => setSubmitForm((current) => ({ ...current, linkUrl: event.target.value }))}
+                          placeholder={t('student.attachmentLinkPlaceholder')}
+                        />
+                      </label>
+                    ) : null}
+                    {selectedTaskRequirements.allowFile ? (
+                      <label className="file-button student-upload-button">
+                        {submitting ? t('student.uploading') : t('student.uploadAttachment')}
+                        <input
+                          type="file"
+                          disabled={submitting}
+                          accept={selectedTaskRequirements.allowedFileTypes?.join(',') || undefined}
+                          onChange={(event) => void uploadAttachment(event.target.files?.[0])}
+                        />
+                      </label>
+                    ) : null}
+                    {selectedTaskRequirements.allowFile && submitForm.attachmentUrl ? (
+                      <p className="panel-note success">{t('student.uploadedAttachment')}: {submitForm.attachmentUrl}</p>
+                    ) : null}
+                  </div>
                 ) : null}
                 {!selectedTaskRequirements.allowText && !selectedTaskRequirements.allowLink && !selectedTaskRequirements.allowFile ? (
                   <p className="panel-note">{t('student.noSubmissionMethods')}</p>
@@ -2002,7 +2164,12 @@ export function StudentDashboardPage({
                 </div>
               </div>
             ) : null}
-            <div className="modal-actions">
+            <div className="student-submit-readiness">
+              <span className={canSubmitSelectedTask ? 'ready' : ''}>
+                {canSubmitSelectedTask ? t('student.readyToSubmit') : t('student.submitRequirementHint')}
+              </span>
+            </div>
+            <div className="modal-actions student-submit-actions">
               <button type="button" className="secondary-button" onClick={() => setSelectedTask(null)} disabled={submitting}>{t('student.cancel')}</button>
               <button type="submit" disabled={submitting || !canSubmitSelectedTask}>{submitting ? t('student.submitting') : t('student.submit')}</button>
             </div>

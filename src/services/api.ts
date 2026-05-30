@@ -635,7 +635,7 @@ export async function generateAiSessionQuizDraft(
 
 export async function generateAiHomeworkDraft(
   sessionId: number,
-  payload: { language?: string; topic?: string; maxScore?: number },
+  payload: { language?: string; topic?: string; instructions?: string; maxScore?: number },
 ) {
   const { data } = await api.post<AiHomeworkDraftResponse>(`/ai-lms/sessions/${sessionId}/homework-draft`, payload);
   return data;

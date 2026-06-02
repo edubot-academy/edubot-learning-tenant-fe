@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { FiAlertTriangle, FiShield, FiUserCheck } from 'react-icons/fi';
@@ -499,7 +500,9 @@ export function MembersPage() {
                   {filteredMembers.map((member) => (
                     <tr key={`${member.userId}-${member.role}`}>
                       <td data-label={t('groups.name')}>
-                        <strong>{memberNameDisplay(member)}</strong>
+                        <Link className="people-name-link" to={`/people/${member.userId}`}>
+                          {memberNameDisplay(member)}
+                        </Link>
                         <small>{t('members.userId', { id: member.userId })}</small>
                         <div className="member-role-stack">
                           {(rolesByUser[member.userId] ?? []).map((item) => (
@@ -554,7 +557,9 @@ export function MembersPage() {
                 <article className="member-card" key={`card-${member.userId}-${member.role}`}>
                   <div className="member-card-header">
                     <div>
-                      <strong>{memberNameDisplay(member)}</strong>
+                      <Link className="people-name-link" to={`/people/${member.userId}`}>
+                        {memberNameDisplay(member)}
+                      </Link>
                       <span>{memberEmailDisplay(member)}</span>
                     </div>
                     <span className="metadata-text">{roleLabel(member.role)}</span>

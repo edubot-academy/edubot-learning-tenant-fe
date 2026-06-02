@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -178,9 +178,10 @@ describe('StudentDashboardPage loading', () => {
         sessionId: 80,
         kind: 'activity',
         title: 'Draft response',
+        description: 'Goal: improve the text\\n\\n1. Hero headline\\n2. Hero subtitle\\n3. CTA text',
         status: 'submitted',
         mySubmission: { id: 1, answerText: 'Latest answer', status: 'submitted', submittedAt: '2026-01-02T00:00:00.000Z', score: 82, reviewComment: 'Good revision' },
-        submissionHistory: [{ id: 2, answerText: 'First answer', status: 'rejected', submittedAt: '2026-01-01T00:00:00.000Z', reviewComment: 'Add evidence' }],
+        submissionHistory: [{ id: 2, answerText: 'First answer', status: 'rejected', submittedAt: '2026-01-01T00:00:00.000Z', reviewComment: 'Add evidence', attachmentUrl: 'https://example.test/evidence.pdf' }],
       },
     ]);
 
@@ -189,10 +190,14 @@ describe('StudentDashboardPage loading', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Submitted/ }));
     fireEvent.click(screen.getByRole('button', { name: 'View submission' }));
 
+    expect(document.querySelector('.student-task-description')?.textContent).toBe('Goal: improve the text\n\n1. Hero headline\n2. Hero subtitle\n3. CTA text');
     expect(screen.getByText('Submission history')).toBeInTheDocument();
     expect(screen.getAllByText('Latest answer').length).toBeGreaterThan(0);
     expect(screen.getByText('First answer')).toBeInTheDocument();
     expect(screen.getAllByText(/Good revision/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Open attachment' }));
+    expect(screen.getAllByRole('dialog', { name: 'Draft response' })).toHaveLength(2);
+    expect(screen.getByTitle('Draft response')).toHaveAttribute('src', 'https://example.test/evidence.pdf');
   });
 
   it('uses task submission requirements to hide unavailable methods', async () => {
@@ -346,7 +351,7 @@ describe('StudentDashboardPage loading', () => {
       progress: { progressPercent: 30 },
     });
     vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
-      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2026-06-01T10:00:00.000Z' },
+      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2099-06-01T10:00:00.000Z' },
     ]);
     vi.mocked(api.listStudentTasks).mockResolvedValue([
       { id: 701, sessionId: 501, courseId: 101, kind: 'activity', title: 'Algebra quiz', status: 'assigned' },
@@ -363,8 +368,30 @@ describe('StudentDashboardPage loading', () => {
     expect(await screen.findByText('Algebra live')).toBeInTheDocument();
     expect(screen.getByText('Algebra quiz')).toBeInTheDocument();
     expect(screen.getByText('Formula sheet')).toBeInTheDocument();
+    const materialRow = screen.getByText('Formula sheet').closest('article');
+    expect(materialRow).not.toBeNull();
+    fireEvent.click(within(materialRow!).getByRole('button', { name: 'Open' }));
+    expect(screen.getByRole('dialog', { name: 'Formula sheet' })).toBeInTheDocument();
+    expect(screen.getByTitle('Formula sheet')).toHaveAttribute('src', 'https://example.test/formula.pdf');
     expect(api.listStudentTasks).toHaveBeenCalledWith({ limit: 50, courseId: 101 });
     expect(api.getStudentResourcesPage).toHaveBeenCalledWith({ page: 1, limit: 50, courseId: 101 });
+  });
+
+  it('defensively hides non-visible course sessions from course detail', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.getStudentCourseDetail).mockResolvedValue({
+      course: { id: 101, title: 'Math', groupName: 'Group A' },
+      sessions: [
+        { sessionId: 501, courseId: 101, title: 'Visible live', startsAt: '2099-06-01T10:00:00.000Z', status: 'scheduled' },
+        { sessionId: 502, courseId: 101, title: 'Planned live', startsAt: '2099-06-02T10:00:00.000Z', status: 'planned' },
+      ],
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="courseDetail" courseId={101} /></MemoryRouter>);
+
+    expect(await screen.findByText('Visible live')).toBeInTheDocument();
+    expect(screen.queryByText('Planned live')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Session details' })).toHaveAttribute('href', '/student/sessions/501');
   });
 
   it('keeps homework link submissions separate from uploaded files', async () => {
@@ -441,7 +468,7 @@ describe('StudentDashboardPage loading', () => {
   it('submits support requests with selected learning context', async () => {
     vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
     vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
-      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2026-06-01T10:00:00.000Z' },
+      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2099-06-01T10:00:00.000Z' },
     ]);
     vi.mocked(api.createStudentSupportRequest).mockResolvedValue({
       id: 1,
@@ -449,7 +476,7 @@ describe('StudentDashboardPage loading', () => {
       priority: 'high',
       message: 'I cannot open the quiz',
       status: 'open',
-      createdAt: '2026-06-01T10:00:00.000Z',
+      createdAt: '2099-06-01T10:00:00.000Z',
     });
 
     render(<MemoryRouter><StudentDashboardPage view="help" /></MemoryRouter>);
@@ -474,11 +501,28 @@ describe('StudentDashboardPage loading', () => {
     });
   });
 
+  it('does not offer hidden sessions as support request context', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
+      { sessionId: 501, courseId: 101, title: 'Visible live', startsAt: '2099-06-01T10:00:00.000Z', status: 'scheduled' },
+      { sessionId: 502, courseId: 101, title: 'Planned live', startsAt: '2099-06-02T10:00:00.000Z', status: 'planned' },
+    ]);
+
+    render(<MemoryRouter><StudentDashboardPage view="help" /></MemoryRouter>);
+
+    expect((await screen.findAllByText('Send request')).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText('Related course'), { target: { value: '101' } });
+
+    const sessionSelect = screen.getByLabelText('Related session');
+    expect(sessionSelect).toHaveTextContent('Visible live');
+    expect(sessionSelect).not.toHaveTextContent('Planned live');
+  });
+
   it('keeps today usable when the home summary endpoint fails', async () => {
     vi.mocked(api.getStudentHome).mockRejectedValue(new Error('home failed'));
     vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
     vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
-      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2026-06-01T10:00:00.000Z' },
+      { id: 501, courseId: 101, title: 'Algebra live', startsAt: '2099-06-01T10:00:00.000Z' },
     ]);
     vi.mocked(api.listStudentTasks).mockResolvedValue([
       { id: 701, sessionId: 501, courseId: 101, kind: 'activity', title: 'Algebra quiz', status: 'assigned' },
@@ -489,6 +533,19 @@ describe('StudentDashboardPage loading', () => {
     expect((await screen.findAllByText('Algebra quiz')).length).toBeGreaterThan(0);
     expect(screen.getByText('Algebra live')).toBeInTheDocument();
     expect(screen.queryByText('Could not load student workspace')).not.toBeInTheDocument();
+  });
+
+  it('renders student session dates when the API returns startAt aliases', async () => {
+    vi.mocked(api.getStudentHome).mockResolvedValue(null);
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
+      { sessionId: 501, courseId: 101, courseTitle: 'Math', title: 'Alias live', startAt: '2099-06-01T10:00:00.000Z', status: 'scheduled' },
+    ]);
+
+    render(<MemoryRouter><StudentDashboardPage view="today" /></MemoryRouter>);
+
+    expect(await screen.findByText('Alias live')).toBeInTheDocument();
+    expect(screen.getAllByText(/Jun 1/).length).toBeGreaterThan(0);
   });
 
   it('keeps the help form usable when support options and history fail', async () => {

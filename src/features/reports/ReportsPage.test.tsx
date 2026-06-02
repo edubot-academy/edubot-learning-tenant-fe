@@ -1,12 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n/config';
 import { ReportsPage } from './ReportsPage';
 
 const api = vi.hoisted(() => ({
   getTenantDashboard: vi.fn(),
+  getTenantLearningProgressReport: vi.fn(),
   getTenantReportSummary: vi.fn(),
   getTenantReportTimeSeries: vi.fn(),
 }));
@@ -17,6 +19,10 @@ const toast = vi.hoisted(() => ({
 
 vi.mock('react-hot-toast', () => ({
   default: toast,
+}));
+
+vi.mock('../auth/AuthProvider', () => ({
+  useAuth: () => ({ user: { id: 1, role: 'admin' } }),
 }));
 
 vi.mock('recharts', () => ({
@@ -34,7 +40,7 @@ vi.mock('recharts', () => ({
 vi.mock('../../services/api', () => api);
 
 vi.mock('../tenant/TenantProvider', () => ({
-  useTenant: () => ({ activeTenant: { id: 42, name: 'Tenant A', featureFlags: {} } }),
+  useTenant: () => ({ activeTenant: { id: 42, name: 'Tenant A', featureFlags: {}, permissions: { canViewReports: true } } }),
 }));
 
 const overview = {
@@ -86,10 +92,54 @@ describe('ReportsPage', () => {
         certificates: [],
       },
     });
+    api.getTenantLearningProgressReport.mockResolvedValue({
+      generatedAt: '2026-05-14T00:00:00.000Z',
+      scope: { companyId: 42, role: 'owner', tenantWide: true, atRiskThreshold: 40 },
+      summary: {
+        instructors: 1,
+        groups: 1,
+        students: 2,
+        avgProgress: 55,
+        completedStudents: 1,
+        atRiskStudents: 1,
+      },
+      instructors: [{
+        instructorId: 7,
+        fullName: 'Teacher One',
+        email: 'teacher@test.dev',
+        groupCount: 1,
+        studentCount: 2,
+        avgProgress: 55,
+        completedStudents: 1,
+        atRiskStudents: 1,
+      }],
+      groups: [{
+        groupId: 9,
+        groupName: 'Group A',
+        courseId: 3,
+        courseTitle: 'Frontend',
+        instructorId: 7,
+        instructorName: 'Teacher One',
+        studentCount: 2,
+        avgProgress: 55,
+        completedStudents: 1,
+        atRiskStudents: 1,
+      }],
+      students: [{
+        enrollmentId: 11,
+        studentId: 21,
+        fullName: 'Student One',
+        courseTitle: 'Frontend',
+        groupName: 'Group A',
+        progressPercent: 10,
+        completed: false,
+        atRisk: true,
+      }],
+    });
   });
 
   it('keeps dashboard reports visible when one report endpoint fails', async () => {
-    render(<ReportsPage />);
+    render(<MemoryRouter><ReportsPage /></MemoryRouter>);
 
     expect(await screen.findByText('Reports')).toBeInTheDocument();
     expect(screen.getByText('Executive summary')).toBeInTheDocument();
@@ -99,5 +149,9 @@ describe('ReportsPage', () => {
     expect(api.getTenantDashboard).toHaveBeenCalledWith(42);
     expect(api.getTenantReportSummary).toHaveBeenCalledWith(42);
     expect(api.getTenantReportTimeSeries).toHaveBeenCalledWith(42);
+    expect(api.getTenantLearningProgressReport).toHaveBeenCalledWith(42);
+    expect(screen.getByText('Learning progress')).toBeInTheDocument();
+    expect(screen.getByText('Teacher One')).toBeInTheDocument();
+    expect(screen.getByText('Student One')).toBeInTheDocument();
   });
 });

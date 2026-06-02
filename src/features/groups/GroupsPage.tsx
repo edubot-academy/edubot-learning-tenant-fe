@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { FiArrowRight, FiCalendar, FiCheckSquare, FiClipboard, FiCopy, FiEdit2, FiExternalLink, FiPlus, FiRefreshCw, FiTrash2, FiUsers } from 'react-icons/fi';
+import { FiArrowRight, FiCalendar, FiCheckSquare, FiClipboard, FiCopy, FiEdit2, FiExternalLink, FiPlus, FiRefreshCw, FiTrash2, FiUser, FiUsers } from 'react-icons/fi';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
@@ -70,7 +70,7 @@ function validGroupWorkspaceTab(value: string | null): GroupWorkspaceTab {
 }
 
 export function GroupsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { activeTenant } = useTenant();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -123,6 +123,9 @@ export function GroupsPage() {
 
   const selectedCourse = useMemo(() => courses.find((course) => course.id === courseId), [courseId, courses]);
   const selectedGroup = useMemo(() => groups.find((group) => group.id === groupId), [groupId, groups]);
+  const selectedInstructor = selectedGroup?.instructorId
+    ? selectedGroup.instructor ?? members.find((member) => member.userId === selectedGroup.instructorId)
+    : null;
   const selectedIndividualStudent = selectedGroup?.deliveryMode === 'individual' ? students[0] : undefined;
   const selectedGroupEnrollmentReady = Boolean(selectedGroup && ['planned', 'open', 'active'].includes(String(selectedGroup.status || '')));
   const selectedIndividualStudentName = selectedIndividualStudent
@@ -203,6 +206,19 @@ export function GroupsPage() {
     const now = Date.now();
     return sortedSessions.find((session) => new Date(session.startsAt ?? 0).getTime() >= now) ?? sortedSessions[0];
   }, [sortedSessions]);
+  const formatGroupDate = (value?: string | null) => {
+    if (!value) return t('states.notSet');
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return t('states.notSet');
+    return new Intl.DateTimeFormat(i18n.language, { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  };
+  const groupDateRangeLabel = selectedGroup?.startDate || selectedGroup?.endDate
+    ? t('groups.dateRange', {
+      start: selectedGroup.startDate ? formatGroupDate(selectedGroup.startDate) : t('states.notSet'),
+      end: selectedGroup.endDate ? formatGroupDate(selectedGroup.endDate) : t('states.notSet'),
+    })
+    : t('groups.notScheduled');
+  const nextSessionLabel = nextSession ? formatDate(nextSession.startsAt) : t('groups.noSessionsTitle');
   const selectedCourseBlocker = (() => {
     if (!selectedCourse) return t('courses.blockerChooseCourse');
     if (!['offline', 'online_live'].includes(String(selectedCourse.courseType ?? ''))) return t('courses.blockerDeliveryType');
@@ -914,76 +930,105 @@ export function GroupsPage() {
           </button>
         </section>
       ) : (
-        <div className="workspace-grid">
-          <section className="content-section">
-            <div className="section-heading-row">
-              <div><h2>{t('navigation.courses')}</h2><span>{t('groups.courseSelectionHint')}</span></div>
+        <section className="group-selector-panel">
+          <div className="group-selector-header">
+            <div>
+              <h2>{t('groups.selectionTitle')}</h2>
+              <span>{t('groups.selectionDetail')}</span>
+            </div>
+            <div className="group-selector-actions">
               {canCoordinateGroups ? (
-                <button type="button" className="primary-button" onClick={() => { setGroupForm(emptyGroupForm(defaultTimezone)); setCreateErrors({}); setEnrollmentMode('existing'); setStudentQuery(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> {t('groups.createGroup')}</button>
+                <button type="button" className={selectedCourse && selectedGroup ? 'secondary-button' : 'primary-button'} onClick={() => { setGroupForm(emptyGroupForm(defaultTimezone)); setCreateErrors({}); setEnrollmentMode('existing'); setStudentQuery(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setIsCreateOpen(true); }} disabled={!selectedCourseReady} title={!selectedCourseReady ? selectedCourseBlocker : undefined}><FiPlus /> {t('groups.createGroup')}</button>
               ) : null}
-            </div>
-            {selectedCourse && selectedGroup ? (
-              <div className="context-collapse-action">
+              {selectedCourse && selectedGroup ? (
                 <button type="button" className="secondary-button" onClick={() => setSelectorsExpanded(false)}>{t('groups.collapseSelection')}</button>
-              </div>
-            ) : null}
-            {canCoordinateGroups && !selectedCourseReady ? (
-              <p className="panel-note">{selectedCourseBlocker}</p>
-            ) : null}
-            {ineligibleCourseCount > 0 ? (
-              <p className="panel-note">{t('groups.ineligibleCourses', { count: ineligibleCourseCount })}</p>
-            ) : null}
-            <input value={courseQuery} onChange={(event) => setCourseQuery(event.target.value)} placeholder={t('groups.searchCourses')} />
-            {loading ? <LoadingState label={t('courses.loading')} /> : null}
-            <div className="stack-list">
-              {filteredCourses.map((course) => (
-                <button key={course.id} type="button" className={`stack-list-item ${course.id === courseId ? 'active' : ''}`} onClick={() => setCourseId(course.id)}>
-                  <div><strong>{course.title}</strong><span>{courseTypeLabel(course.courseType)} · {statusLabel(course.status)}</span></div>
-                  <strong className="muted-count">{course.id === courseId ? isCourseWorkflowReady(course) ? t('groups.groupCount', { count: groups.length }) : t('groups.locked') : t('groups.select')}</strong>
-                </button>
-              ))}
-              {!filteredCourses.length ? <EmptyState title={t('courses.noMatchesTitle')} detail={t('groups.noMatchingCoursesDetail')} action={<Link className="secondary-link-button" to="/courses">{t('overview.openCourses')}</Link>} /> : null}
-            </div>
-          </section>
-
-          <aside className="settings-panel workflow-context-panel">
-            <div className="section-heading-row compact">
-              <div><h2>{t('groups.courseGroups')}</h2><span>{selectedCourse?.title ?? t('groups.chooseCourse')}</span></div>
-            </div>
-            {detailLoading ? <LoadingState label={t('groups.loadingGroups')} /> : null}
-            <div className="stack-list">
-              {groups.map((group) => (
-                <button key={group.id} type="button" className={`stack-list-item ${group.id === groupId ? 'active' : ''}`} onClick={() => setGroupId(group.id)}>
-                  <div><strong>{group.name}</strong><span>{group.code ?? '-'} · {statusLabel(group.status)}</span></div>
-                  <span className={`status-badge delivery-${group.deliveryMode ?? 'group'}`}>{deliveryModeLabel(group.deliveryMode)}</span>
-                </button>
-              ))}
-              {!groups.length ? (
-                <EmptyState
-                  title={t('groups.emptyGroupsTitle')}
-                  detail={selectedCourseReady ? t('groups.emptyGroupsDetail') : selectedCourseBlocker}
-                  action={selectedCourseReady && canCoordinateGroups ? (
-                    <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm(defaultTimezone)); setCreateErrors({}); setEnrollmentMode('existing'); setStudentQuery(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setIsCreateOpen(true); }}>
-                      {t('groups.createGroup')}
-                    </button>
-                  ) : null}
-                />
               ) : null}
             </div>
-          </aside>
-        </div>
+          </div>
+
+          <div className="group-selector-grid">
+            <section className="group-selector-column">
+              <div className="group-selector-column-heading">
+                <div><h3>{t('navigation.courses')}</h3><span>{t('groups.courseSelectionHint')}</span></div>
+              </div>
+              {canCoordinateGroups && !selectedCourseReady ? (
+                <p className="panel-note">{selectedCourseBlocker}</p>
+              ) : null}
+              {ineligibleCourseCount > 0 ? (
+                <p className="panel-note">{t('groups.ineligibleCourses', { count: ineligibleCourseCount })}</p>
+              ) : null}
+              <input value={courseQuery} onChange={(event) => setCourseQuery(event.target.value)} placeholder={t('groups.searchCourses')} />
+              {loading ? <LoadingState label={t('courses.loading')} /> : null}
+              <div className="stack-list">
+                {filteredCourses.map((course) => (
+                  <button key={course.id} type="button" className={`stack-list-item ${course.id === courseId ? 'active' : ''}`} onClick={() => setCourseId(course.id)}>
+                    <div><strong>{course.title}</strong><span>{courseTypeLabel(course.courseType)} · {statusLabel(course.status)}</span></div>
+                    <strong className="muted-count">{course.id === courseId ? isCourseWorkflowReady(course) ? t('groups.groupCount', { count: groups.length }) : t('groups.locked') : t('groups.select')}</strong>
+                  </button>
+                ))}
+                {!filteredCourses.length ? <EmptyState title={t('courses.noMatchesTitle')} detail={t('groups.noMatchingCoursesDetail')} action={<Link className="secondary-link-button" to="/courses">{t('overview.openCourses')}</Link>} /> : null}
+              </div>
+            </section>
+
+            <aside className="group-selector-column group-selector-groups">
+              <div className="group-selector-column-heading">
+                <div><h3>{t('groups.courseGroups')}</h3><span>{selectedCourse?.title ?? t('groups.chooseCourse')}</span></div>
+              </div>
+              {detailLoading ? <LoadingState label={t('groups.loadingGroups')} /> : null}
+              <div className="stack-list">
+                {groups.map((group) => (
+                  <button key={group.id} type="button" className={`stack-list-item ${group.id === groupId ? 'active' : ''}`} onClick={() => setGroupId(group.id)}>
+                    <div><strong>{group.name}</strong><span>{group.code ?? '-'} · {statusLabel(group.status)}</span></div>
+                    <span className={`status-badge delivery-${group.deliveryMode ?? 'group'}`}>{deliveryModeLabel(group.deliveryMode)}</span>
+                  </button>
+                ))}
+                {!groups.length ? (
+                  <EmptyState
+                    title={t('groups.emptyGroupsTitle')}
+                    detail={selectedCourseReady ? t('groups.emptyGroupsDetail') : selectedCourseBlocker}
+                    action={selectedCourseReady && canCoordinateGroups ? (
+                      <button type="button" className="secondary-button" onClick={() => { setGroupForm(emptyGroupForm(defaultTimezone)); setCreateErrors({}); setEnrollmentMode('existing'); setStudentQuery(''); setStudentResults([]); setSelectedStudentId(undefined); setStudentInviteForm(emptyStudentInviteForm); setIsCreateOpen(true); }}>
+                        {t('groups.createGroup')}
+                      </button>
+                    ) : null}
+                  />
+                ) : null}
+              </div>
+            </aside>
+          </div>
+        </section>
       )}
 
       {selectedGroup ? (
         <section className="workflow-section workflow-context-panel group-workspace-panel">
           <div className="section-heading-row group-detail-header">
-            <div>
-              <div className="group-title-row">
-                <h2>{selectedGroup.name}</h2>
-                <span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{statusLabel(selectedGroup.status)}</span>
-                <span className={`status-badge delivery-${selectedGroup.deliveryMode ?? 'group'}`}>{deliveryModeLabel(selectedGroup.deliveryMode)}</span>
+            <div className="group-detail-main">
+              <div>
+                <div className="group-title-row">
+                  <h2>{selectedGroup.name}</h2>
+                  <span className={`status-badge ${selectedGroup.status ?? 'planned'}`}>{statusLabel(selectedGroup.status)}</span>
+                  <span className={`status-badge delivery-${selectedGroup.deliveryMode ?? 'group'}`}>{deliveryModeLabel(selectedGroup.deliveryMode)}</span>
+                </div>
+                <span>{selectedIndividualStudentName || selectedCourse?.title || t('courses.selectedCourse')}</span>
               </div>
-              <span>{selectedIndividualStudentName || selectedCourse?.title || t('courses.selectedCourse')}</span>
+              <div className="group-header-metrics" aria-label={t('groups.groupSnapshot')}>
+                <section>
+                  <span>{t('courses.students')}</span>
+                  <strong>{students.length}</strong>
+                </section>
+                <section>
+                  <span>{t('courses.sessions')}</span>
+                  <strong>{sessions.length}</strong>
+                </section>
+                <section>
+                  <span>{t('groups.capacity')}</span>
+                  <strong>{selectedGroup.seatLimit ?? t('groups.capacityOpen')}</strong>
+                </section>
+                <section>
+                  <span>{t('groups.nextSession')}</span>
+                  <strong>{nextSessionLabel}</strong>
+                </section>
+              </div>
             </div>
             <div className="page-actions group-action-bar">
               <Link className="primary-link-button" to={nextSessionLink}><FiCalendar /> {t('navigation.sessions')}</Link>
@@ -1035,7 +1080,7 @@ export function GroupsPage() {
                 <Link to={nextSessionLink}>
                   <FiCalendar />
                   <span>{t('groups.nextSession')}</span>
-                  <strong>{nextSession ? formatDate(nextSession.startsAt) : t('groups.noSessionsTitle')}</strong>
+                  <strong>{nextSessionLabel}</strong>
                   <FiArrowRight />
                 </Link>
                 <Link to={attendanceLink}>
@@ -1072,9 +1117,11 @@ export function GroupsPage() {
                 </section>
                 <section>
                   <span>{t('groups.dates')}</span>
-                  <strong>{selectedGroup.startDate || selectedGroup.endDate ? `${selectedGroup.startDate ?? '-'} - ${selectedGroup.endDate ?? '-'}` : t('groups.notScheduled')}</strong>
+                  <strong>{groupDateRangeLabel}</strong>
                 </section>
-                <section className="wide-field">
+              </div>
+              <div className="group-detail-card-grid">
+                <section>
                   <span>{t('groups.schedule')}</span>
                   <strong>{scheduleBlockSummary}</strong>
                 </section>
@@ -1082,8 +1129,16 @@ export function GroupsPage() {
                   <span>{t('groups.location')}</span>
                   <strong>{selectedGroup.location || selectedGroup.meetingProvider || t('states.notSet')}</strong>
                 </section>
-              </div>
-              <div className="group-overview-secondary">
+                <section>
+                  <span>{t('groups.instructor')}</span>
+                  {selectedGroup.instructorId ? (
+                    <Link className="people-inline-link group-instructor-link" to={`/people/${selectedGroup.instructorId}`} aria-label={t('groups.openInstructorProfile')}>
+                      <span className="people-mini-avatar"><FiUser /></span>
+                      <strong>{selectedInstructor?.fullName || selectedInstructor?.email || t('reports.unassignedInstructor')}</strong>
+                      <FiArrowRight aria-hidden="true" />
+                    </Link>
+                  ) : <strong>{t('reports.unassignedInstructor')}</strong>}
+                </section>
                 <section>
                   <span>{t('groups.deliveryMode')}</span>
                   <strong>{deliveryModeLabel(selectedGroup.deliveryMode)}</strong>
@@ -1111,7 +1166,9 @@ export function GroupsPage() {
                   return (
                     <article key={student.userId} className="stack-list-item group-student-row">
                       <div className="group-student-main">
-                        <strong>{student.fullName || student.email || t('courses.studentFallback', { id: student.userId })}</strong>
+                        <Link className="people-name-link" to={`/people/${student.userId}`}>
+                          {student.fullName || student.email || t('courses.studentFallback', { id: student.userId })}
+                        </Link>
                         <span>{student.email || t('groups.noEmail')}</span>
                         <span className="group-student-progress">{t('groups.progressPercent', { percent: Math.round(student.progressPercent ?? 0) })}</span>
                       </div>

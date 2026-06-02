@@ -43,6 +43,7 @@ export const instructorNavItems = [
   { to: '/attendance', labelKey: 'navigation.attendance', icon: FiCheckSquare, feature: 'attendance.enabled' },
   { to: '/homework', labelKey: 'navigation.homework', icon: FiClipboard, feature: 'homework.enabled' },
   { to: '/groups', labelKey: 'navigation.groups', icon: FiUsers },
+  { to: '/reports', labelKey: 'navigation.reports', icon: FiBarChart2 },
   { to: '/certificates', labelKey: 'navigation.certificates', icon: FiAward, feature: 'certificates.enabled' },
   { to: '/settings', labelKey: 'navigation.settings', icon: FiSettings },
 ] satisfies NavItem[];

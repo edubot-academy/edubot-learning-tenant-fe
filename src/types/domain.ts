@@ -482,6 +482,138 @@ export type TenantReportTimeSeries = {
   };
 };
 
+export type TenantLearningProgressInstructor = {
+  instructorId?: number | null;
+  fullName?: string | null;
+  email?: string | null;
+  groupCount: number;
+  studentCount: number;
+  avgProgress: number;
+  completedStudents: number;
+  atRiskStudents: number;
+};
+
+export type TenantLearningProgressGroup = {
+  groupId: number;
+  groupName: string;
+  status?: string | null;
+  courseId?: number | null;
+  courseTitle?: string | null;
+  courseType?: string | null;
+  instructorId?: number | null;
+  instructorName?: string | null;
+  studentCount: number;
+  avgProgress: number;
+  completedStudents: number;
+  atRiskStudents: number;
+};
+
+export type TenantLearningProgressStudent = {
+  enrollmentId: number;
+  studentId?: number | null;
+  fullName?: string | null;
+  email?: string | null;
+  phoneNumber?: string | null;
+  courseId?: number | null;
+  courseTitle?: string | null;
+  groupId?: number | null;
+  groupName?: string | null;
+  instructorId?: number | null;
+  instructorName?: string | null;
+  progressPercent: number;
+  completed: boolean;
+  atRisk: boolean;
+  enrolledAt?: string | null;
+  source?: string | null;
+};
+
+export type TenantLearningProgressReport = {
+  generatedAt?: string;
+  scope?: {
+    companyId?: number | null;
+    role?: string | null;
+    tenantWide?: boolean;
+    atRiskThreshold?: number;
+  };
+  summary: {
+    instructors: number;
+    groups: number;
+    students: number;
+    avgProgress: number;
+    completedStudents: number;
+    atRiskStudents: number;
+  };
+  instructors: TenantLearningProgressInstructor[];
+  groups: TenantLearningProgressGroup[];
+  students: TenantLearningProgressStudent[];
+};
+
+export type TenantPersonProfile = {
+  generatedAt?: string;
+  person: {
+    id: number;
+    fullName?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+    role?: string | null;
+    roles?: string[];
+    title?: string | null;
+    avatar?: string | null;
+    bio?: string | null;
+    createdAt?: string | null;
+  };
+  summary: {
+    avgProgress: number;
+    completed: number;
+    atRisk: number;
+    courses: number;
+    groups: number;
+    students?: number | null;
+  };
+  courses: Array<{
+    courseId: number;
+    courseTitle?: string | null;
+    groupCount: number;
+    studentCount: number;
+    avgProgress: number;
+  }>;
+  groups: Array<{
+    groupId?: number | null;
+    groupName?: string | null;
+    courseId?: number | null;
+    courseTitle?: string | null;
+    instructorId?: number | null;
+    instructorName?: string | null;
+    progressPercent?: number;
+    avgProgress?: number;
+    studentCount?: number;
+    completed?: boolean;
+    atRisk?: boolean;
+    enrolledAt?: string | null;
+  }>;
+  students: TenantLearningProgressStudent[];
+  attendance?: {
+    total: number;
+    attended: number;
+    missed: number;
+    late: number;
+    excused: number;
+    rate?: number | null;
+    byStatus?: Record<string, number>;
+  } | null;
+  homework?: {
+    total: number;
+    submitted: number;
+    approved: number;
+    rejected: number;
+    needsRevision: number;
+    pending: number;
+    missing: number;
+    approvalRate?: number | null;
+    byStatus?: Record<string, number>;
+  } | null;
+};
+
 export type WorkspaceItem = {
   id: string;
   type: 'main' | 'tenant';
@@ -559,6 +691,12 @@ export type CourseGroup = {
     startTime: string;
     endTime: string;
   }> | null;
+  instructor?: {
+    id: number;
+    fullName?: string | null;
+    email?: string | null;
+    avatar?: string | null;
+  } | null;
 };
 
 export type SessionGenerationPreview = {
@@ -1179,7 +1317,12 @@ export type StudentSessionSummary = {
   sessionTitle?: string;
   courseTitle?: string;
   groupName?: string | null;
+  status?: string | null;
+  startAt?: string;
+  endAt?: string;
   startsAt?: string;
+  endsAt?: string;
+  location?: string | null;
   liveJoinUrl?: string | null;
   url?: string | null;
   materials?: Array<{ title?: string; url?: string | null; type?: string }>;

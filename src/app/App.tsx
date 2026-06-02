@@ -51,6 +51,7 @@ const CertificatesPage = lazyNamed(() => import('../features/certificates/Certif
 const MembersPage = lazyNamed(() => import('../features/members/MembersPage'), 'MembersPage');
 const OperationsPage = lazyNamed(() => import('../features/operations/OperationsPage'), 'OperationsPage');
 const ReportsPage = lazyNamed(() => import('../features/reports/ReportsPage'), 'ReportsPage');
+const PersonProfilePage = lazyNamed(() => import('../features/people/PersonProfilePage'), 'PersonProfilePage');
 const SettingsPage = lazyNamed(() => import('../features/settings/SettingsPage'), 'SettingsPage');
 const StudentDashboardPage = lazyNamed(() => import('../features/student/StudentDashboardPage'), 'StudentDashboardPage');
 const StudentSupportPage = lazyNamed(() => import('../features/support/StudentSupportPage'), 'StudentSupportPage');
@@ -328,7 +329,9 @@ function OperationsRoute({ children }: { children: React.ReactNode }) {
 function ReportsRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { activeTenant } = useTenant();
-  return canAccessTenantPermissionSurface('reports', user, activeTenant) || canViewOperationalReports(user, activeTenant)
+  return canAccessTenantPermissionSurface('reports', user, activeTenant)
+    || canViewOperationalReports(user, activeTenant)
+    || canViewAssignedLearning(user, activeTenant)
     ? children
     : <AccessDeniedState detailKey="errors.tenantAdminOnlyDetail" to="/" actionKey="actions.goToOverview" />;
 }
@@ -490,6 +493,7 @@ function AppRoutes() {
           <Route path="/members" element={<TenantAdminRoute><MembersPage /></TenantAdminRoute>} />
           <Route path="/operations" element={<OperationsRoute><OperationsPage /></OperationsRoute>} />
           <Route path="/reports" element={<ReportsRoute><ReportsPage /></ReportsRoute>} />
+          <Route path="/people/:userId" element={<StaffRoute><PersonProfilePage /></StaffRoute>} />
           <Route path="/support" element={<SupportRoute><StudentSupportPage /></SupportRoute>} />
           <Route path="/settings" element={<SettingsRoute><SettingsPage /></SettingsRoute>} />
         </Route>

@@ -31,7 +31,7 @@ describe('app navigation visibility', () => {
   it('keeps instructor navigation focused on teaching work', () => {
     const routes = getVisibleNavItems(user('instructor'), tenant('instructor')).map((item) => item.to);
 
-    expect(routes).toEqual(['/', '/sessions', '/attendance', '/homework', '/groups', '/certificates', '/settings']);
+    expect(routes).toEqual(['/', '/sessions', '/attendance', '/homework', '/groups', '/reports', '/certificates', '/settings']);
     expect(routes).toContain('/sessions');
     expect(routes).toContain('/certificates');
     expect(routes).not.toContain('/members');

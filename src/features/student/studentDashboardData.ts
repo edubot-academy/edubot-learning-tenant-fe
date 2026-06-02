@@ -12,6 +12,61 @@ export type StudentTaskLike = {
   attempt?: { passed?: boolean | null; score?: number | null } | null;
 };
 
+export type StudentSessionLike = {
+  id?: number;
+  sessionId?: number;
+  status?: string | null;
+  startsAt?: string | null;
+  startAt?: string | null;
+  endsAt?: string | null;
+  endAt?: string | null;
+  liveJoinUrl?: string | null;
+};
+
+const studentVisibleSessionStatuses = new Set(['scheduled', 'completed']);
+
+export function studentSessionId(session?: StudentSessionLike | null) {
+  return session?.id ?? session?.sessionId;
+}
+
+export function studentSessionStartsAt(session?: StudentSessionLike | null) {
+  return session?.startsAt ?? session?.startAt ?? null;
+}
+
+export function studentSessionEndsAt(session?: StudentSessionLike | null) {
+  return session?.endsAt ?? session?.endAt ?? null;
+}
+
+export function studentSessionTime(value?: string | null) {
+  if (!value) return Number.NaN;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : Number.NaN;
+}
+
+export function isStudentVisibleSession(session?: StudentSessionLike | null) {
+  if (!session) return false;
+  const status = String(session.status ?? 'scheduled').toLowerCase();
+  return studentVisibleSessionStatuses.has(status);
+}
+
+export function isStudentUpcomingSession(session?: StudentSessionLike | null, now = Date.now()) {
+  if (!isStudentVisibleSession(session)) return false;
+  const status = String(session?.status ?? 'scheduled').toLowerCase();
+  const startsAt = studentSessionTime(studentSessionStartsAt(session));
+  return status === 'scheduled' && Number.isFinite(startsAt) && startsAt >= now;
+}
+
+export function studentVisibleLiveJoinUrl(session?: StudentSessionLike | null, now = Date.now()) {
+  if (!session?.liveJoinUrl) return null;
+  if (String(session.status ?? 'scheduled').toLowerCase() !== 'scheduled') return null;
+  const startsAt = studentSessionTime(studentSessionStartsAt(session));
+  const endsAt = studentSessionTime(studentSessionEndsAt(session));
+  if (!Number.isFinite(startsAt)) return null;
+  const openAt = startsAt - 15 * 60 * 1000;
+  const closeAt = (Number.isFinite(endsAt) ? endsAt : startsAt) + 30 * 60 * 1000;
+  return now >= openAt && now <= closeAt ? session.liveJoinUrl : null;
+}
+
 export function studentTaskDueDate(task?: StudentTaskLike | null) {
   if (!task) return undefined;
   return task.kind === 'activity' ? task.dueAt : task.deadline ?? task.dueAt;

@@ -19,6 +19,35 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.17.0 - 2026-06-02
+
+### Added
+
+- Added person profile page with detailed user information, course progress, group assignments, and student statistics.
+- Added learning progress report with instructor-level, group-level, and student-level progress tracking.
+- Added tenant person profile API integration and domain types for comprehensive user profiles.
+- Added learning progress report API with instructor, group, and student progress metrics.
+- Enhanced student dashboard with additional data fields and improved test coverage.
+- Added new i18n translations for person profile and learning progress features in English, Kyrgyz, and Russian.
+
+### Changed
+
+- Enhanced reports page with learning progress report integration and improved visualization.
+- Updated student dashboard data structures to support enhanced progress tracking.
+- Improved app navigation to include person profile routes.
+- Updated domain types to support learning progress and person profile data structures.
+- Enhanced API service with new person profile and learning progress endpoints.
+- Improved app styling for person profile and learning progress components.
+
+### Tests
+
+- Added comprehensive test coverage for person profile page functionality.
+- Enhanced test coverage for student dashboard data and learning progress reports.
+- Updated reports page tests to include learning progress report validation.
+- `npm test` passes with updated test coverage.
+- `npm run lint` passes.
+- `npm run build` passes.
+
 ## 1.16.1 - 2026-05-31
 
 ### Added

@@ -52,7 +52,9 @@ import type {
   StudentTaskItem,
   Tenant,
   TenantActivityLog,
+  TenantLearningProgressReport,
   TenantOverview,
+  TenantPersonProfile,
   TenantReportSummary,
   TenantReportTimeSeries,
   TenantMemberResolveResult,
@@ -219,6 +221,16 @@ export async function getTenantReportSummary(tenantId: number) {
 
 export async function getTenantReportTimeSeries(tenantId: number) {
   const { data } = await api.get<TenantReportTimeSeries>(`/companies/${tenantId}/reports/time-series`);
+  return data;
+}
+
+export async function getTenantLearningProgressReport(tenantId: number) {
+  const { data } = await api.get<TenantLearningProgressReport>(`/companies/${tenantId}/reports/learning-progress`);
+  return data;
+}
+
+export async function getTenantPersonProfile(tenantId: number, userId: number) {
+  const { data } = await api.get<TenantPersonProfile>(`/companies/${tenantId}/people/${userId}/profile`);
   return data;
 }
 

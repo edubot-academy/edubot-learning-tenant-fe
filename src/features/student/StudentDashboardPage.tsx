@@ -60,7 +60,20 @@ import type {
   StudentTaskSubmissionRequirements,
 } from '../../types/domain';
 import type { StudentPagedResponse } from '../../services/api';
-import { isCurrentStudentLoad, nextStudentLoadId, prioritizeStudentTasks, settledStudentValue, sortOpenStudentTasks, studentTaskDueDate, studentTaskState } from './studentDashboardData';
+import {
+  isCurrentStudentLoad,
+  isStudentUpcomingSession,
+  isStudentVisibleSession,
+  nextStudentLoadId,
+  prioritizeStudentTasks,
+  settledStudentValue,
+  sortOpenStudentTasks,
+  studentSessionId,
+  studentSessionStartsAt,
+  studentTaskDueDate,
+  studentTaskState,
+  studentVisibleLiveJoinUrl,
+} from './studentDashboardData';
 
 type StudentMaterialListItem = {
   kind: 'resource' | 'recording';
@@ -195,7 +208,11 @@ function courseTitle(course: StudentCourseSummary, fallback: string) {
 }
 
 function sessionId(session: StudentSessionSummary) {
-  return session.id;
+  return studentSessionId(session);
+}
+
+function sessionStartsAt(session?: StudentSessionSummary | null) {
+  return studentSessionStartsAt(session);
 }
 
 function normalizeMaterialItem(item: StudentSessionSummary | StudentMaterialItem, kind: 'resource' | 'recording', index: number): StudentMaterialListItem {
@@ -222,7 +239,7 @@ function normalizeMaterialItem(item: StudentSessionSummary | StudentMaterialItem
   const session = item as StudentSessionSummary;
   return {
     kind,
-    key: `${kind}-${session.id ?? index}`,
+    key: `${kind}-${sessionId(session) ?? index}`,
     session,
     material: kind === 'resource' ? session.materials?.[0] : { title: session.title ?? session.sessionTitle, url: session.url, type: 'recording' },
   };
@@ -297,6 +314,10 @@ function isRejected(result: PromiseSettledResult<unknown>) {
   return result.status === 'rejected';
 }
 
+function formattedStudentTaskDescription(value?: string | null) {
+  return value?.replace(/\\n/g, '\n') || '';
+}
+
 export function StudentDashboardPage({
   view = 'today',
   courseId: activeCourseId,
@@ -354,6 +375,9 @@ export function StudentDashboardPage({
     sessionId: 'none',
     message: '',
   });
+  const openDocumentPreview = (preview: StudentMaterialPreview) => {
+    setSelectedMaterialPreview(preview);
+  };
   const [submitting, setSubmitting] = useState(false);
   const [loadingMoreNotifications, setLoadingMoreNotifications] = useState(false);
   const studentLoadIdRef = useRef(0);
@@ -447,7 +471,9 @@ export function StudentDashboardPage({
         if (cancelled || !isCurrentStudentLoad(loadId, studentLoadIdRef.current)) return;
         const nextHome = settledValue(homeResult, null) as { activeCourses?: StudentCourseSummary[]; nextSession?: StudentSessionSummary | null; urgentTasks?: StudentTaskItem[]; recentFeedback?: StudentTaskItem[] } | null;
         const nextCourses = settledValue(coursesResult, []);
-        const nextSessions = settledValue(sessionsResult, []);
+        const nextSessions = (settledValue(sessionsResult, []) as StudentSessionSummary[])
+          .filter((session) => isStudentUpcomingSession(session))
+          .map((session) => ({ ...session, liveJoinUrl: studentVisibleLiveJoinUrl(session) }));
         const nextHomework = settledValue(homeworkResult, []);
         const nextCertificatesPage = settledValue(certificatesResult, { items: [], page: 1, totalPages: 1 }) as StudentPagedResponse<StudentCertificateSummary>;
         const nextAttendance = settledValue(attendanceResult, []);
@@ -457,8 +483,20 @@ export function StudentDashboardPage({
         const nextResources = nextResourcesPage.items ?? [];
         const nextRecordings = nextRecordingsPage.items ?? [];
         const nextProgress = settledValue(progressResult, null) as StudentProgressSummary | null;
-        const nextCourseDetail = settledValue(courseDetailResult, null) as StudentCourseDetail | null;
-        const nextSessionDetail = settledValue(sessionDetailResult, null) as StudentSessionDetail | null;
+        const nextCourseDetailRaw = settledValue(courseDetailResult, null) as StudentCourseDetail | null;
+        const nextCourseDetail = nextCourseDetailRaw
+          ? {
+              ...nextCourseDetailRaw,
+              sessions: nextCourseDetailRaw.sessions?.filter(isStudentVisibleSession).map((session) => ({
+                ...session,
+                liveJoinUrl: studentVisibleLiveJoinUrl(session),
+              })),
+            }
+          : null;
+        const nextSessionDetailRaw = settledValue(sessionDetailResult, null) as StudentSessionDetail | null;
+        const nextSessionDetail = nextSessionDetailRaw && isStudentVisibleSession(nextSessionDetailRaw)
+          ? { ...nextSessionDetailRaw, liveJoinUrl: studentVisibleLiveJoinUrl(nextSessionDetailRaw) }
+          : null;
         const nextSupportOptions = settledValue(supportOptionsResult, null) as StudentSupportOptions | null;
         const nextSupportRequests = settledValue(supportRequestsResult, []) as StudentSupportRequest[];
         const nextNotificationsPage = settledValue(notificationsResult, { items: [], page: 1, totalPages: 1 }) as StudentNotificationPage | StudentNotification[];
@@ -467,7 +505,11 @@ export function StudentDashboardPage({
         const nextReminders = settledValue(remindersResult, []) as StudentReminder[];
 
         setCourses(nextHome?.activeCourses?.length ? nextHome.activeCourses : nextCourseDetail?.course ? [nextCourseDetail.course] : nextProgress?.courses?.length ? nextProgress.courses : nextCourses);
-        setSessions(nextHome?.nextSession ? [nextHome.nextSession, ...nextSessions.filter((session: StudentSessionSummary) => session.id !== nextHome.nextSession?.id)] : nextSessions);
+        const rawNextHomeSession = nextHome?.nextSession ?? null;
+        const nextHomeSession = isStudentUpcomingSession(rawNextHomeSession)
+          ? { ...rawNextHomeSession, liveJoinUrl: studentVisibleLiveJoinUrl(rawNextHomeSession) } as StudentSessionSummary
+          : null;
+        setSessions(nextHomeSession ? [nextHomeSession, ...nextSessions.filter((session: StudentSessionSummary) => sessionId(session) !== sessionId(nextHomeSession))] : nextSessions);
         setHomework(nextHomework);
         setCertificates(shouldLoadCertificates ? nextCertificatesPage.items ?? [] : nextProgress?.certificates ?? []);
         setCertificatePage(nextCertificatesPage.page ?? 1);
@@ -549,10 +591,22 @@ export function StudentDashboardPage({
     setTasks(homeworkEnabled ? nextTasks : nextTasks.filter((task: StudentTaskItem) => task.kind !== 'homework'));
 
     if (view === 'courseDetail' && typeof activeCourseId === 'number') {
-      setCourseDetail(await getStudentCourseDetail(activeCourseId));
+      const nextCourseDetail = await getStudentCourseDetail(activeCourseId);
+      setCourseDetail(nextCourseDetail
+        ? {
+            ...nextCourseDetail,
+            sessions: nextCourseDetail.sessions?.filter(isStudentVisibleSession).map((session) => ({
+              ...session,
+              liveJoinUrl: studentVisibleLiveJoinUrl(session),
+            })),
+          }
+        : null);
     }
     if (view === 'sessionDetail' && typeof activeSessionId === 'number') {
-      setSessionDetail(await getStudentSessionDetail(activeSessionId));
+      const nextSessionDetail = await getStudentSessionDetail(activeSessionId);
+      setSessionDetail(nextSessionDetail && isStudentVisibleSession(nextSessionDetail)
+        ? { ...nextSessionDetail, liveJoinUrl: studentVisibleLiveJoinUrl(nextSessionDetail) }
+        : null);
     }
   };
 
@@ -905,7 +959,7 @@ export function StudentDashboardPage({
       kind: 'session' as const,
       eyebrow: t('student.continueLearning'),
       title: nextSession.title ?? nextSession.sessionTitle ?? t('student.joinSession'),
-      detail: `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(nextSession.startsAt)}`,
+      detail: `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(sessionStartsAt(nextSession))}`,
       action: <a className="primary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.joinSession')}</a>,
       icon: FiClock,
     }
@@ -1011,7 +1065,7 @@ export function StudentDashboardPage({
       .filter((session) => supportForm.courseId === 'none' || String(session.courseId) === supportForm.courseId)
       .map((session, index) => ({
         value: String(session.id ?? session.sessionId ?? ''),
-        label: `${session.title ?? session.sessionTitle ?? t('student.sessionFallback', { number: index + 1 })}${session.startsAt ? ` · ${formatDate(session.startsAt)}` : ''}`,
+        label: `${session.title ?? session.sessionTitle ?? t('student.sessionFallback', { number: index + 1 })}${sessionStartsAt(session) ? ` · ${formatDate(sessionStartsAt(session))}` : ''}`,
       }))
       .filter((session) => session.value);
   }, [sessions, supportForm.courseId, t]);
@@ -1084,7 +1138,7 @@ export function StudentDashboardPage({
   }, [activeSessionId, sessionDetail?.homework, sessionDetail?.tasks, studentWorkItems]);
   const selectedSessionMaterials = useMemo(() => {
     if (typeof activeSessionId !== 'number') return [];
-    return materialItems.filter(({ session }) => session.id === activeSessionId);
+    return materialItems.filter(({ session }) => sessionId(session) === activeSessionId);
   }, [activeSessionId, materialItems]);
   const selectedCourseProgress = courseDetail?.progress?.progressPercent ?? selectedCourse?.progressPercent ?? selectedCourse?.progress ?? 0;
   const gradedTasks = useMemo(() => progressSummary?.gradedTasks?.length ? progressSummary.gradedTasks : progressSummary?.recentFeedback ?? [], [progressSummary?.gradedTasks, progressSummary?.recentFeedback]);
@@ -1104,6 +1158,10 @@ export function StudentDashboardPage({
   const PrimaryActionIcon = primaryAction.icon;
   const visibleNotifications = notifications.slice(0, 3);
   const visibleReminders = reminders.slice(0, 4);
+  const nextSessionKey = sessionId(nextSession);
+  const visibleTodaySessions = sessions
+    .filter((session) => !nextSessionKey || sessionId(session) !== nextSessionKey)
+    .slice(0, 4);
   const hasTodayUpdates = visibleNotifications.length > 0 || visibleReminders.length > 0;
   const reminderDetail = (reminder: StudentReminder) => {
     if (reminder.kind === 'session') return t('student.sessionScheduled');
@@ -1275,12 +1333,12 @@ export function StudentDashboardPage({
               <h2>{t('student.nextLiveSession')}</h2>
             </div>
             <strong>{nextSession?.title ?? nextSession?.sessionTitle ?? t('student.noUpcomingSession')}</strong>
-            <span>{nextSession ? `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(nextSession.startsAt)}` : t('student.nothingDueDetail')}</span>
+            <span>{nextSession ? `${displayText(nextSession.courseTitle, t('student.courseNotSet'))} · ${dateText(sessionStartsAt(nextSession))}` : t('student.nothingDueDetail')}</span>
             <div className="student-compact-actions">
               {nextSession?.liveJoinUrl ? (
                 <a className="secondary-link-button" href={nextSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.joinSession')}</a>
-              ) : nextSession?.id ? (
-                <Link className="secondary-link-button" to={`/student/sessions/${nextSession.id}`}>{t('student.sessionDetails')}</Link>
+              ) : nextSession && sessionId(nextSession) ? (
+                <Link className="secondary-link-button" to={`/student/sessions/${sessionId(nextSession)}`}>{t('student.sessionDetails')}</Link>
               ) : (
                 <span className="status-badge approved">{t('student.clear')}</span>
               )}
@@ -1371,6 +1429,43 @@ export function StudentDashboardPage({
       ) : null}
 
       {view === 'today' ? todayOverview : null}
+      {view === 'today' && visibleTodaySessions.length ? (
+        <section className="content-section full student-today-sessions-section">
+          <div className="section-heading-row">
+            <div className="student-panel-heading">
+              <FiCalendar />
+              <h2>{t('student.upcomingSessions')}</h2>
+            </div>
+            <span className="status-badge pending">{t('student.upcomingSessionsCount', { count: sessions.length })}</span>
+          </div>
+          {sectionError('sessions', t('student.upcomingSessions')) ?? (
+            <div className="student-today-session-grid">
+              {visibleTodaySessions.map((session, index) => {
+                const currentSessionId = sessionId(session);
+                const sessionTitle = session.title ?? session.sessionTitle ?? t('student.sessionFallback', { number: index + 1 });
+                return (
+                  <article className="student-today-session-card" key={currentSessionId ?? index}>
+                    <div>
+                      <strong>{sessionTitle}</strong>
+                      <span>{displayText(session.courseTitle, t('student.courseNotSet'))}</span>
+                      <small><FiClock aria-hidden="true" />{dateText(sessionStartsAt(session))}</small>
+                    </div>
+                    <div className="student-today-session-actions">
+                      {session.liveJoinUrl ? (
+                        <a className="primary-link-button" href={session.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.joinSession')}</a>
+                      ) : currentSessionId ? (
+                        <Link className="secondary-link-button" to={`/student/sessions/${currentSessionId}`}>{t('student.sessionDetails')}</Link>
+                      ) : (
+                        <span className="status-badge pending">{t('student.pending')}</span>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {view === 'progress' ? (
       <section className="student-progress-summary" aria-label={t('student.learningHealth')}>
@@ -1477,19 +1572,22 @@ export function StudentDashboardPage({
                 </div>
                 {!selectedCourseSessions.length ? <EmptyState title={t('student.sessionsEmptyTitle')} detail={t('student.sessionsEmptyDetail')} /> : (
                   <div className="stack-list">
-                    {selectedCourseSessions.map((session, index) => (
-                      <article className="stack-list-item" key={session.id ?? index}>
+                    {selectedCourseSessions.map((session, index) => {
+                      const currentSessionId = sessionId(session);
+                      return (
+                      <article className="stack-list-item" key={currentSessionId ?? index}>
                         <div>
                           <strong>{session.title ?? session.sessionTitle ?? t('student.sessionFallback', { number: index + 1 })}</strong>
-                          <span>{dateText(session.startsAt)}</span>
+                          <span>{dateText(sessionStartsAt(session))}</span>
                           <small>{displayText(session.groupName, t('student.groupNotSet'))}</small>
                         </div>
                         <div className="student-material-actions">
-                          {session.id ? <Link className="secondary-link-button" to={`/student/sessions/${session.id}`}>{t('student.sessionDetails')}</Link> : null}
+                          {currentSessionId ? <Link className="secondary-link-button" to={`/student/sessions/${currentSessionId}`}>{t('student.sessionDetails')}</Link> : null}
                           {session.liveJoinUrl ? <a className="secondary-link-button" href={session.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.join')}</a> : null}
                         </div>
                       </article>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </section>
@@ -1522,20 +1620,34 @@ export function StudentDashboardPage({
                 </div>
                 {sectionError('materials', t('student.materials')) ?? (!selectedCourseMaterials.length ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : (
                   <div className="stack-list">
-                    {selectedCourseMaterials.map(({ kind, session, key, material }, index) => (
+                    {selectedCourseMaterials.map(({ kind, session, key, material }, index) => {
+                      const currentSessionId = sessionId(session);
+                      const title = (kind === 'resource' ? material?.title ?? session.sessionTitle ?? session.title : session.sessionTitle ?? session.title ?? material?.title) ?? (kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }));
+                      const typeText = kind === 'recording' ? t('student.recording') : displayText(material?.type, t('student.resource'));
+                      const documentUrl = kind === 'resource' ? material?.url : typeof session.url === 'string' ? session.url : null;
+                      const context = [displayText(session.courseTitle, t('student.courseNotSet')), session.sessionTitle ?? session.title].filter(Boolean).join(' · ');
+                      return (
                       <article className="stack-list-item" key={key}>
                         <div>
-                          <strong>{(kind === 'resource' ? material?.title ?? session.sessionTitle ?? session.title : session.sessionTitle ?? session.title ?? material?.title) ?? (kind === 'recording' ? t('student.recording') : t('student.sessionFallback', { number: index + 1 }))}</strong>
-                          <span>{dateText(session.startsAt)}</span>
-                          <small>{kind === 'recording' ? t('student.recording') : displayText(material?.type, t('student.resource'))}</small>
+                          <strong>{title}</strong>
+                          <span>{dateText(sessionStartsAt(session))}</span>
+                          <small>{typeText}</small>
                         </div>
                         <div className="student-material-actions">
-                          {session.id ? <Link className="secondary-link-button" to={`/student/sessions/${session.id}`}>{t('student.sessionDetails')}</Link> : null}
-                          {kind === 'resource' && material?.url ? <a className="secondary-link-button" href={material.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
-                          {kind === 'recording' && typeof session.url === 'string' ? <a className="secondary-link-button" href={session.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
+                          {currentSessionId ? <Link className="secondary-link-button" to={`/student/sessions/${currentSessionId}`}>{t('student.sessionDetails')}</Link> : null}
+                          {documentUrl ? (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => openDocumentPreview({ title, url: documentUrl, typeText, context })}
+                            >
+                              {t('student.open')}
+                            </button>
+                          ) : null}
                         </div>
                       </article>
-                    ))}
+                      );
+                    })}
                   </div>
                 ))}
               </section>
@@ -1555,7 +1667,7 @@ export function StudentDashboardPage({
                   <div>
                     <span className="eyebrow">{displayText(selectedSession.courseTitle, t('student.courseNotSet'))}</span>
                     <h2>{selectedSessionTitle || t('student.sessionFallback', { number: 1 })}</h2>
-                    <p>{dateText(selectedSession.startsAt)} · {displayText(selectedSession.groupName, t('student.groupNotSet'))}</p>
+                    <p>{dateText(sessionStartsAt(selectedSession))} · {displayText(selectedSession.groupName, t('student.groupNotSet'))}</p>
                   </div>
                   {selectedSession.liveJoinUrl ? <a className="primary-link-button" href={selectedSession.liveJoinUrl} target="_blank" rel="noreferrer">{t('student.joinSession')}</a> : null}
                 </div>
@@ -1571,7 +1683,7 @@ export function StudentDashboardPage({
                     <article className="stack-list-item">
                       <div>
                         <strong>{statusLabel(selectedSessionAttendance.status, t('student.pending'))}</strong>
-                        <span>{dateText(selectedSessionAttendance.sessionDate ?? selectedSession.startsAt)}</span>
+                        <span>{dateText(selectedSessionAttendance.sessionDate ?? sessionStartsAt(selectedSession))}</span>
                         {selectedSessionAttendance.notes ? <small>{selectedSessionAttendance.notes}</small> : null}
                       </div>
                       <span className={`status-badge ${statusClass(selectedSessionAttendance.status)}`}>{statusLabel(selectedSessionAttendance.status, t('student.pending'))}</span>
@@ -1589,31 +1701,68 @@ export function StudentDashboardPage({
                 </div>
                 {sectionError('materials', t('student.materials')) ?? (!selectedSessionMaterials.length && !selectedSession.materials?.length && !selectedSession.url && !('recordingUrl' in selectedSession && selectedSession.recordingUrl) ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : (
                   <div className="stack-list">
-                    {selectedSession.materials?.map((material, index) => (
+                    {selectedSession.materials?.map((material, index) => {
+                      const title = material.title ?? displayText(material.type, t('student.resource'));
+                      const typeText = displayText(material.type, t('student.resource'));
+                      const context = [displayText(selectedSession.courseTitle, t('student.courseNotSet')), selectedSessionTitle].filter(Boolean).join(' · ');
+                      return (
                       <article className="stack-list-item" key={`${material.url ?? material.title}-${index}`}>
                         <div>
-                          <strong>{material.title ?? displayText(material.type, t('student.resource'))}</strong>
-                          <span>{displayText(material.type, t('student.resource'))}</span>
+                          <strong>{title}</strong>
+                          <span>{typeText}</span>
                         </div>
-                        {material.url ? <a className="secondary-link-button" href={material.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
+                        {material.url ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => openDocumentPreview({ title, url: material.url!, typeText, context })}
+                          >
+                            {t('student.open')}
+                          </button>
+                        ) : null}
                       </article>
-                    ))}
-                    {!selectedSession.materials?.length ? selectedSessionMaterials.map(({ kind, key, material }) => (
+                      );
+                    })}
+                    {!selectedSession.materials?.length ? selectedSessionMaterials.map(({ kind, key, material }) => {
+                      const title = material?.title ?? (kind === 'recording' ? t('student.recording') : t('student.resource'));
+                      const typeText = kind === 'recording' ? t('student.recording') : displayText(material?.type, t('student.resource'));
+                      const context = [displayText(selectedSession.courseTitle, t('student.courseNotSet')), selectedSessionTitle].filter(Boolean).join(' · ');
+                      return (
                       <article className="stack-list-item" key={key}>
                         <div>
-                          <strong>{material?.title ?? (kind === 'recording' ? t('student.recording') : t('student.resource'))}</strong>
-                          <span>{kind === 'recording' ? t('student.recording') : displayText(material?.type, t('student.resource'))}</span>
+                          <strong>{title}</strong>
+                          <span>{typeText}</span>
                         </div>
-                        {material?.url ? <a className="secondary-link-button" href={material.url} target="_blank" rel="noreferrer">{t('student.open')}</a> : null}
+                        {material?.url ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => openDocumentPreview({ title, url: material.url!, typeText, context })}
+                          >
+                            {t('student.open')}
+                          </button>
+                        ) : null}
                       </article>
-                    )) : null}
+                      );
+                    }) : null}
                     {(selectedSession.url || ('recordingUrl' in selectedSession && selectedSession.recordingUrl)) ? (
                       <article className="stack-list-item">
                         <div>
                           <strong>{t('student.recording')}</strong>
-                          <span>{dateText(selectedSession.startsAt)}</span>
+                          <span>{dateText(sessionStartsAt(selectedSession))}</span>
                         </div>
-                        <a className="secondary-link-button" href={String(selectedSession.url ?? ('recordingUrl' in selectedSession ? selectedSession.recordingUrl ?? '' : ''))} target="_blank" rel="noreferrer">{t('student.open')}</a>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => openDocumentPreview({
+                            title: t('student.recording'),
+                            url: String(selectedSession.url ?? ('recordingUrl' in selectedSession ? selectedSession.recordingUrl ?? '' : '')),
+                            typeText: t('student.recording'),
+                            context: [displayText(selectedSession.courseTitle, t('student.courseNotSet')), selectedSessionTitle].filter(Boolean).join(' · '),
+                          })}
+                        >
+                          {t('student.open')}
+                        </button>
                       </article>
                     ) : null}
                   </div>
@@ -1692,7 +1841,7 @@ export function StudentDashboardPage({
                 const openUrl = materialUrl(item);
                 const sessionTitle = session.sessionTitle ?? session.title;
                 const showSessionTitle = Boolean(sessionTitle && sessionTitle !== title);
-                const addedAt = session.startsAt;
+                const addedAt = sessionStartsAt(session);
                 const courseLabel = displayText(session.courseTitle, t('student.courseNotSet'));
                 const MaterialIcon = kind === 'recording' ? FiPlayCircle : FiFileText;
                 return (
@@ -1718,7 +1867,7 @@ export function StudentDashboardPage({
                       <button
                         type="button"
                         className="primary-link-button"
-                        onClick={() => setSelectedMaterialPreview({
+                        onClick={() => openDocumentPreview({
                           title,
                           url: openUrl,
                           typeText,
@@ -1729,7 +1878,7 @@ export function StudentDashboardPage({
                         {t('student.openMaterial')}
                       </button>
                     ) : null}
-                    {session.id ? <Link className="secondary-link-button subtle" to={`/student/sessions/${session.id}`}><FiBookOpen aria-hidden="true" />{t('student.relatedLesson')}</Link> : null}
+                    {sessionId(session) ? <Link className="secondary-link-button subtle" to={`/student/sessions/${sessionId(session)}`}><FiBookOpen aria-hidden="true" />{t('student.relatedLesson')}</Link> : null}
                   </div>
                 </article>
               );
@@ -2066,7 +2215,7 @@ export function StudentDashboardPage({
             </div>
             <div className="student-task-brief">
               <strong>{t('student.taskInstructions')}</strong>
-              <p>{selectedTask.description || t('student.taskInstructionsFallback')}</p>
+              <p className="student-task-description">{formattedStudentTaskDescription(selectedTask.description) || t('student.taskInstructionsFallback')}</p>
             </div>
             {isActivityTask(selectedTask) && (selectedTask.kind === 'quiz' || selectedTask.taskType === 'quiz') ? (
               <>
@@ -2157,7 +2306,20 @@ export function StudentDashboardPage({
                       <div className="student-material-actions">
                         <span className={`status-badge ${statusClass(submission.status)}`}>{statusLabel(submission.status, t('student.submitted'))}</span>
                         {submission.score != null ? <span className="status-badge approved">{t('student.score')}: {submission.score}</span> : null}
-                        {submission.attachmentUrl ? <a className="secondary-link-button" href={submission.attachmentUrl} target="_blank" rel="noreferrer">{t('homework.openAttachment')}</a> : null}
+                        {submission.attachmentUrl ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => openDocumentPreview({
+                              title: selectedTask.title ?? t('homework.openAttachment'),
+                              url: submission.attachmentUrl!,
+                              typeText: t('homework.openAttachment'),
+                              context: dateText(submission.submittedAt ?? submission.updatedAt ?? submission.createdAt, t('student.dateNotScheduled')),
+                            })}
+                          >
+                            {t('homework.openAttachment')}
+                          </button>
+                        ) : null}
                       </div>
                     </article>
                   ))}

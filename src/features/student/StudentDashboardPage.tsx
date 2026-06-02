@@ -226,6 +226,7 @@ function normalizeMaterialItem(item: StudentSessionSummary | StudentMaterialItem
         courseId: flat.courseId,
         title: flat.sessionTitle ?? flat.title,
         sessionTitle: flat.sessionTitle ?? flat.title,
+        status: flat.status,
         courseTitle: flat.courseTitle ?? undefined,
         groupName: flat.groupName ?? undefined,
         startsAt: flat.createdAt,
@@ -1073,7 +1074,7 @@ export function StudentDashboardPage({
   const materialItems = useMemo<StudentMaterialListItem[]>(() => [
     ...resources.map((item, index) => normalizeMaterialItem(item, 'resource', index)),
     ...recordings.map((item, index) => normalizeMaterialItem(item, 'recording', index)),
-  ], [recordings, resources]);
+  ].filter(({ session }) => isStudentVisibleSession(session)), [recordings, resources]);
   const materialCourseOptions = useMemo(() => {
     const options = new Map<string, string>();
     courses.forEach((course) => {
@@ -1117,7 +1118,7 @@ export function StudentDashboardPage({
       return [
         ...(courseDetail?.materials ?? []).map((item, index) => normalizeMaterialItem(item, 'resource', index)),
         ...(courseDetail.recordings ?? []).map((item, index) => normalizeMaterialItem(item, 'recording', index)),
-      ];
+      ].filter(({ session }) => isStudentVisibleSession(session));
     }
     if (typeof activeCourseId === 'number') return materialItems.slice(0, 20);
     if (!selectedCourseTitle) return [];

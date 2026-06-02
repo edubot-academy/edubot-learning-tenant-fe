@@ -333,6 +333,31 @@ describe('StudentDashboardPage loading', () => {
     expect(screen.getByLabelText('Course')).toBeInTheDocument();
   });
 
+  it('defensively hides materials from non-visible sessions', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
+      items: [
+        { id: 'resource-1', title: 'Visible resource', url: 'https://example.test/visible', sessionId: 1, sessionTitle: 'Open session', status: 'scheduled', courseId: 101, courseTitle: 'Math' },
+        { id: 'resource-2', title: 'Planned resource', url: 'https://example.test/planned', sessionId: 2, sessionTitle: 'Planned session', status: 'planned', courseId: 101, courseTitle: 'Math' },
+      ],
+      page: 1,
+      totalPages: 1,
+      total: 2,
+    });
+    vi.mocked(api.getStudentRecordingsPage).mockResolvedValue({
+      items: [],
+      page: 1,
+      totalPages: 1,
+      total: 0,
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="materials" /></MemoryRouter>);
+
+    expect(await screen.findByText('Visible resource')).toBeInTheDocument();
+    expect(screen.queryByText('Planned resource')).not.toBeInTheDocument();
+    expect(screen.queryByText('Planned session')).not.toBeInTheDocument();
+  });
+
   it('shows every enrolled course on the courses page', async () => {
     vi.mocked(api.listStudentCourses).mockResolvedValue(
       Array.from({ length: 7 }, (_, index) => ({ id: index + 1, title: `Course ${index + 1}` })),

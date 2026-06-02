@@ -34,6 +34,7 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 - Enhanced reports page with learning progress report integration and improved visualization.
 - Updated student dashboard data structures to support enhanced progress tracking.
+- Filtered student dashboard materials so resources and recordings from hidden sessions are not shown.
 - Improved app navigation to include person profile routes.
 - Updated domain types to support learning progress and person profile data structures.
 - Enhanced API service with new person profile and learning progress endpoints.
@@ -44,9 +45,10 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 - Added comprehensive test coverage for person profile page functionality.
 - Enhanced test coverage for student dashboard data and learning progress reports.
 - Updated reports page tests to include learning progress report validation.
-- `npm test` passes with updated test coverage.
+- `npm test` passes with 36 test files and 230 tests.
 - `npm run lint` passes.
 - `npm run build` passes.
+- `git diff --check` and `git diff --cached --check` pass.
 
 ## 1.16.1 - 2026-05-31
 

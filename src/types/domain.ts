@@ -1335,6 +1335,7 @@ export type StudentMaterialItem = {
   url?: string | null;
   sessionId?: number;
   sessionTitle?: string;
+  status?: string | null;
   courseId?: number | null;
   courseTitle?: string | null;
   groupId?: number | null;

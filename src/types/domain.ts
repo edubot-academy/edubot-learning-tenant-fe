@@ -757,6 +757,9 @@ export type SessionMaterial = {
   title: string;
   url: string;
   storageKey?: string | null;
+  lessonId?: number | null;
+  isPublished?: boolean | null;
+  availableAt?: string | null;
   fileName?: string | null;
   contentType?: string | null;
   size?: number | null;

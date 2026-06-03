@@ -735,6 +735,42 @@ describe('SessionsPage session creation', () => {
     expect(api.updateGroupSession).not.toHaveBeenCalledWith(901, expect.objectContaining({ materials: expect.any(Array) }));
   });
 
+  it('uploads new session materials as drafts until explicitly published', async () => {
+    api.listGroupSessions.mockResolvedValue([{ ...createdSession, materials: [] }]);
+    api.uploadSessionMaterial.mockResolvedValue({
+      title: 'Deck.pdf',
+      url: 'https://files.example.test/deck.pdf',
+      storageKey: 'session-materials/dev/session-901/deck.pdf',
+    });
+
+    const { container } = renderPage('/sessions?courseId=101&groupId=301&sessionId=901');
+
+    await waitFor(() => expect(screen.getAllByText('Lesson 1').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    const tablist = screen.getByRole('tablist', { name: 'Session operations' });
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    fireEvent.keyDown(tablist, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Materials' })).toHaveAttribute('aria-selected', 'true'));
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).toBeInTheDocument();
+    const file = new File(['deck'], 'Deck.pdf', { type: 'application/pdf' });
+    fireEvent.change(input!, { target: { files: [file] } });
+
+    await waitFor(() => expect(api.uploadSessionMaterial).toHaveBeenCalledWith(901, file));
+    await waitFor(() => expect(api.updateGroupSession).toHaveBeenCalledWith(901, {
+      materials: [
+        expect.objectContaining({
+          title: 'Deck.pdf',
+          url: 'https://files.example.test/deck.pdf',
+          storageKey: 'session-materials/dev/session-901/deck.pdf',
+          isPublished: false,
+        }),
+      ],
+    }));
+  });
+
   it('limits instructor course choices to published courses with assigned groups', async () => {
     tenantState.activeTenant = {
       id: 42,

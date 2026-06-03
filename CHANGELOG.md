@@ -19,6 +19,20 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.18.2 - 2026-06-03
+
+### Fixed
+
+- Kept newly uploaded instructor session materials in draft state until explicitly published.
+- Added tenant session material publish and release-date controls so instructors can manage visibility without exposing planned resources to students.
+
+### Tests
+
+- Added regression coverage that uploaded session materials are saved with `isPublished: false`.
+- `npm test -- src/features/sessions/SessionsPage.test.tsx` passes.
+- `npm run lint -- src/features/sessions/SessionsPage.tsx src/i18n/locales/en/common.json src/i18n/locales/ru/common.json src/i18n/locales/ky/common.json src/types/domain.ts` passes.
+- `npm run build` passes.
+
 ## 1.18.1 - 2026-06-03
 
 ### Fixed

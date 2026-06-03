@@ -11,7 +11,7 @@ import './i18n/config';
 import './styles/app.css';
 import './styles/tenant-design-system.css';
 import './styles/instructor-cockpit.css';
-import './styles/instructor-cockpit-order.css';
+import './styles/instructor-cockpit-view.css';
 
 ReactDOM.createRoot(document.querySelector('#root')!).render(
   <React.StrictMode>

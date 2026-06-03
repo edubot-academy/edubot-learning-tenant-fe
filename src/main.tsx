@@ -10,6 +10,7 @@ import { App } from './app/App';
 import './i18n/config';
 import './styles/app.css';
 import './styles/tenant-design-system.css';
+import './styles/instructor-cockpit.css';
 
 ReactDOM.createRoot(document.querySelector('#root')!).render(
   <React.StrictMode>

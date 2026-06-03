@@ -1,0 +1,38 @@
+@layer components {
+  .main-panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-panel > .overview-next-action {
+    order: -8;
+  }
+
+  .main-panel > .stat-grid,
+  .main-panel > .stats-grid {
+    order: -7;
+  }
+
+  .main-panel > .overview-today-strip {
+    order: -6;
+  }
+
+  .main-panel > .overview-priority-strip {
+    order: -5;
+  }
+
+  .main-panel > .overview-today-strip {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .main-panel > .overview-today-strip .overview-today-list {
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+  }
+}

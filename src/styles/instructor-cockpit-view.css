@@ -1,4 +1,3 @@
-@layer components {
   .instructor-cockpit-page {
     display: grid;
     gap: 24px;
@@ -370,7 +369,6 @@
   .instructor-homework-item .ui-status-chip {
     margin-top: 4px;
   }
-}
 
 @media (max-width: 1180px) {
   .instructor-today-grid {

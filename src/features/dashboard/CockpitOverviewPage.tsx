@@ -10,7 +10,6 @@ import {
   FiGrid,
   FiLifeBuoy,
   FiPlusCircle,
-  FiSettings,
 } from 'react-icons/fi';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { getActivityReviewQueue, getInstructorDashboard, getTenantDashboard } from '../../services/api';
@@ -19,7 +18,7 @@ import { enumLabel, commonStatusLabelKeys, courseTypeLabelKeys } from '../../lib
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
 import { useTenant } from '../tenant/TenantProvider';
 import { useAuth } from '../auth/AuthProvider';
-import { canViewStudentSupportContext } from '../tenant/tenantRoles';
+import { canTeachAssignedSessions, canViewStudentSupportContext } from '../tenant/tenantRoles';
 import { OverviewPage as LegacyOverviewPage } from './OverviewPage';
 import { InstructorCockpitView, type CockpitAction, type CockpitPriorityItem, type CockpitTodayOperation } from './InstructorCockpitView';
 
@@ -56,7 +55,8 @@ export function OverviewPage() {
       .then((nextOverview) => {
         if (cancelled) return;
         setOverview(nextOverview);
-        if (nextOverview.permissions?.canManageMembers) return;
+        const permissions = nextOverview.permissions ?? nextOverview.workspace?.permissions;
+        if (permissions?.canManageMembers || !canTeachAssignedSessions(user, activeTenant)) return;
 
         void Promise.all([
           getInstructorDashboard(activeTenantId),
@@ -84,7 +84,7 @@ export function OverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTenantId, t]);
+  }, [activeTenant, activeTenantId, t, user]);
 
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
   const certificatesEnabled = isTenantFeatureEnabled(activeTenant, 'certificates.enabled');
@@ -93,11 +93,12 @@ export function OverviewPage() {
   const canManageMembers = Boolean(overviewPermissions?.canManageMembers);
   const canManageCertificates = Boolean(overviewPermissions?.canManageCertificates);
   const canCreateCourses = Boolean(overviewPermissions?.canCreateCourses);
+  const shouldShowInstructorCockpit = canTeachAssignedSessions(user, activeTenant);
   const assistantSupportEnabled = overview?.role === 'assistant' && canViewStudentSupportContext(user, activeTenant);
 
   const instructorQueues = instructorDashboard?.queues;
-  const instructorTodaySessions = instructorDashboard?.today.sessions ?? [];
-  const instructorUpcomingSessions = instructorDashboard?.upcomingSessions ?? [];
+  const instructorTodaySessions = useMemo(() => instructorDashboard?.today.sessions ?? [], [instructorDashboard]);
+  const instructorUpcomingSessions = useMemo(() => instructorDashboard?.upcomingSessions ?? [], [instructorDashboard]);
   const instructorNextSession = instructorDashboard?.today.nextSession ?? instructorUpcomingSessions[0] ?? null;
   const unmarkedAttendanceCount = instructorQueues?.unmarkedAttendance ?? statNumber(overview?.stats.unmarkedAttendance);
   const homeworkNeedsReviewCount = instructorQueues?.homeworkNeedsReview ?? statNumber(overview?.stats.homeworkNeedsReview);
@@ -271,7 +272,7 @@ export function OverviewPage() {
   if (loading) return <LoadingState label={t('overview.loading')} />;
   if (!overview) return <EmptyState title={t('overview.overviewUnavailableTitle')} detail={t('overview.overviewUnavailableDetail')} />;
 
-  if (canManageMembers) {
+  if (canManageMembers || !shouldShowInstructorCockpit) {
     return <LegacyOverviewPage />;
   }
 

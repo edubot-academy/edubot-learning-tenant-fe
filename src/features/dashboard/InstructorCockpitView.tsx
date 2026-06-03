@@ -128,9 +128,9 @@ export function InstructorCockpitView({
       <header className="instructor-cockpit-header">
         <div>
           <span className="ui-page-kicker">{t('overview.instructorOverview')}</span>
-          <h1 className="ui-page-title">Окутуу кокпити</h1>
+          <h1 className="ui-page-title">{t('overview.instructorCockpitTitle')}</h1>
           <p className="ui-page-description">
-            {tenant.name}: бүгүнкү сабактарды, катышууну, үй тапшырмаларды жана көңүл бурууну талап кылган иштерди бир жерден башкарыңыз.
+            {t('overview.instructorCockpitDescription', { tenant: tenant.name })}
           </p>
         </div>
         <Link className="ui-secondary-action" to="/settings"><FiSettings /> {t('overview.settings')}</Link>
@@ -213,7 +213,7 @@ export function InstructorCockpitView({
         <div className="instructor-cockpit-section-heading">
           <div>
             <span className="ui-page-kicker">{t('overview.primaryActions')}</span>
-            <h2>Ыкчам аракеттер</h2>
+            <h2>{t('overview.quickActions')}</h2>
           </div>
         </div>
         <div className="instructor-action-grid">
@@ -282,7 +282,7 @@ export function InstructorCockpitView({
               )) : (
                 <EmptyState
                   title={t('overview.noSessionsToday')}
-                  detail="Топторуңузда алдыдагы түз же офлайн сабактар пландалганда ушул жерде көрүнөт."
+                  detail={t('overview.sessionsEmptyDetail')}
                   action={<Link className="secondary-link-button" to="/sessions">{t('overview.openSessions')}</Link>}
                 />
               )}
@@ -302,7 +302,7 @@ export function InstructorCockpitView({
                 <Link className="instructor-homework-item" to="/homework" key={homework.id}>
                   <strong>{homework.title}</strong>
                   <small>{homework.courseTitle || homework.groupName || t('overview.homeworkReview')}</small>
-                  <span className="ui-status-chip ui-status-success">{t('overview.submissionsNeedReview', { count: homework.needsReview ?? 0 })}</span>
+                  <span className="ui-status-chip ui-status-success">{t('overview.submissionsNeedReview', { count: homework.queue?.needsReview ?? homework.queue?.needsReviewCount ?? 0 })}</span>
                 </Link>
               )) : (
                 <article className="ui-empty-state">

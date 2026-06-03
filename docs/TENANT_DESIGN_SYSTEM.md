@@ -122,7 +122,7 @@ Use these classes for future page redesigns.
   <header className="ui-page-header">
     <div>
       <p className="ui-page-kicker">Instructor</p>
-      <h1 className="ui-page-title">Окутуу кокпити</h1>
+      <h1 className="ui-page-title">Бүгүнкү сабактар жана иштер</h1>
       <p className="ui-page-description">Бүгүн эмне кылуу керек экенин бир жерден көрүңүз.</p>
     </div>
     <a className="ui-primary-action" href="/sessions">Кийинки сабак</a>

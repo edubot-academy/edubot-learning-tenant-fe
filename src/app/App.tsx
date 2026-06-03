@@ -41,7 +41,7 @@ function lazyNamed<T extends ComponentType<object>>(loader: () => Promise<Record
 const LoginPage = lazyNamed(() => import('../features/auth/LoginPage'), 'LoginPage');
 const PasswordResetPage = lazyNamed(() => import('../features/auth/PasswordResetPage'), 'PasswordResetPage');
 const SetupAccountPage = lazyNamed(() => import('../features/auth/SetupAccountPage'), 'SetupAccountPage');
-const OverviewPage = lazyNamed(() => import('../features/dashboard/OverviewPage'), 'OverviewPage');
+const OverviewPage = lazyNamed(() => import('../features/dashboard/CockpitOverviewPage'), 'OverviewPage');
 const CoursesPage = lazyNamed(() => import('../features/courses/CoursesPage'), 'CoursesPage');
 const GroupsPage = lazyNamed(() => import('../features/groups/GroupsPage'), 'GroupsPage');
 const SessionsPage = lazyNamed(() => import('../features/sessions/SessionsPage'), 'SessionsPage');

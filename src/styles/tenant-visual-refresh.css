@@ -1,0 +1,265 @@
+/*
+ * Tenant UX visual refresh — Phase 1 slice.
+ *
+ * Scope:
+ * - refresh design tokens
+ * - soften the shell/sidebar
+ * - make cards and controls feel more modern
+ * - improve mobile tab bar polish
+ *
+ * No route, data, or business-logic changes.
+ */
+
+:root {
+  --brand-primary: #f17e22;
+  --brand-primary-strong: #e86f16;
+  --brand-primary-dark: #b94c0b;
+  --brand-primary-soft: #fff0e4;
+  --brand-dark: #10213f;
+  --brand-accent: #f4b23d;
+  --brand-teal: #0ea78b;
+  --brand-teal-dark: #1e605e;
+
+  --app-bg: #f6f8fb;
+  --body-gradient:
+    radial-gradient(circle at 0% 0%, rgba(14, 167, 139, 0.11), transparent 320px),
+    radial-gradient(circle at 100% 0%, rgba(241, 126, 34, 0.13), transparent 380px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(246, 248, 251, 0) 420px);
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-muted: #f8fafc;
+  --surface-hover: #fff7ed;
+  --line: rgba(226, 232, 240, 0.92);
+  --line-strong: #d7e0eb;
+  --text: #132039;
+  --text-muted: #64748b;
+  --text-soft: #94a3b8;
+
+  --radius: 12px;
+  --radius-card: 18px;
+  --radius-hero: 24px;
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.045);
+  --shadow-sm: 0 12px 34px rgba(15, 23, 42, 0.065);
+  --shadow-md: 0 24px 72px rgba(15, 23, 42, 0.11);
+  --shadow-primary-hover: 0 14px 30px rgba(241, 126, 34, 0.20);
+}
+
+html[data-theme='dark'] {
+  --app-bg: #0f172a;
+  --body-gradient:
+    radial-gradient(circle at 0% 0%, rgba(32, 199, 169, 0.18), transparent 320px),
+    radial-gradient(circle at 100% 0%, rgba(243, 150, 71, 0.18), transparent 360px),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.4), rgba(15, 23, 42, 0));
+  --surface: rgba(24, 34, 53, 0.94);
+  --surface-muted: rgba(17, 24, 39, 0.92);
+  --surface-hover: #223047;
+  --line: rgba(39, 53, 77, 0.92);
+  --line-strong: #34445f;
+}
+
+body {
+  background: var(--body-gradient), var(--app-bg);
+}
+
+button,
+a.primary-button,
+a.secondary-button,
+.primary-link-button,
+.secondary-link-button,
+input,
+select,
+textarea {
+  border-radius: var(--radius);
+}
+
+button,
+a.primary-button,
+.primary-link-button {
+  letter-spacing: -0.01em;
+}
+
+.ui-panel,
+.ui-panel-muted,
+.ui-workflow-card,
+.ui-metric-link {
+  border-radius: var(--radius-card);
+}
+
+.ui-panel {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: var(--shadow-sm);
+}
+
+.ui-panel-muted,
+.ui-metric-link {
+  background: color-mix(in srgb, var(--surface-muted) 86%, #ffffff);
+}
+
+.ui-workflow-card {
+  min-height: 140px;
+  padding: 16px;
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: var(--shadow-xs);
+}
+
+.ui-workflow-card:hover,
+.ui-metric-link:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-shell {
+  grid-template-columns: 288px minmax(0, 1fr);
+}
+
+.sidebar {
+  gap: 18px;
+  padding: 22px 16px;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(20, 184, 166, 0.24), transparent 230px),
+    linear-gradient(180deg, #14284d 0%, #10213f 48%, #0d1b35 100%);
+  border-right: 1px solid rgba(203, 213, 225, 0.12);
+  box-shadow: 18px 0 54px rgba(15, 23, 42, 0.12);
+}
+
+.brand-block {
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  min-height: 56px;
+  gap: 13px;
+  padding: 6px 4px 8px;
+}
+
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.brand-copy strong {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.brand-copy span {
+  color: #b9c6d8;
+}
+
+.language-compact > button,
+.sidebar-workspace-card,
+.shell-notification-control > button,
+.tenant-select {
+  border-radius: 14px;
+  border-color: rgba(203, 213, 225, 0.16);
+  background: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(12px);
+}
+
+.sidebar-workspace-card {
+  padding: 12px;
+}
+
+.sidebar-section-label {
+  margin: 4px 0 -6px;
+  color: #9fb0c7;
+  letter-spacing: 0.06em;
+}
+
+.sidebar-nav {
+  gap: 6px;
+}
+
+.sidebar-nav a,
+.ghost-button {
+  min-height: 46px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 0 13px;
+  color: #dce6f3;
+}
+
+.sidebar-nav a:hover,
+.ghost-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.sidebar-nav a.active {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  box-shadow:
+    inset 3px 0 0 var(--brand-primary),
+    0 14px 30px rgba(0, 0, 0, 0.13);
+}
+
+.sidebar-current-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--brand-primary);
+  box-shadow: 0 0 0 4px rgba(241, 126, 34, 0.18);
+}
+
+.shell-notification-control > button:hover,
+.shell-notification-control > button.active {
+  border-color: rgba(241, 126, 34, 0.44);
+  background: rgba(241, 126, 34, 0.16);
+}
+
+.shell-notification-menu {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.sidebar-logout {
+  margin-top: auto;
+}
+
+.main-panel {
+  padding: 32px;
+}
+
+.mobile-tabbar {
+  padding: 0 12px 12px;
+}
+
+.mobile-tabbar-inner {
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(14px);
+  padding: 8px;
+}
+
+html[data-theme='dark'] .mobile-tabbar-inner {
+  background: rgba(24, 34, 53, 0.92);
+}
+
+.mobile-tabbar a,
+.mobile-tabbar button {
+  height: 56px;
+  border-radius: 18px;
+}
+
+.mobile-tabbar a.active,
+.mobile-tabbar button.active {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-strong));
+  box-shadow: 0 10px 24px rgba(241, 126, 34, 0.24);
+}
+
+@media (max-width: 1023px) {
+  .app-shell {
+    display: block;
+  }
+
+  .main-panel {
+    padding: 20px 16px 96px;
+  }
+}

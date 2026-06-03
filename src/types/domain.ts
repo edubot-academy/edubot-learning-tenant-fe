@@ -1280,7 +1280,9 @@ export type StudentCourseSummary = {
   progressPercent?: number;
   attendanceRate?: number | null;
   status?: string;
+  groupId?: number | null;
   groupName?: string;
+  groupStatus?: string | null;
   deliveryState?: StudentCourseDeliveryState;
 };
 
@@ -1315,8 +1317,11 @@ export type StudentSessionSummary = {
   groupId?: number | null;
   title?: string;
   sessionTitle?: string;
+  lessonId?: number | null;
+  lessonTitle?: string | null;
   courseTitle?: string;
   groupName?: string | null;
+  groupStatus?: string | null;
   status?: string | null;
   startAt?: string;
   endAt?: string;
@@ -1325,7 +1330,7 @@ export type StudentSessionSummary = {
   location?: string | null;
   liveJoinUrl?: string | null;
   url?: string | null;
-  materials?: Array<{ title?: string; url?: string | null; type?: string }>;
+  materials?: Array<{ title?: string; url?: string | null; type?: string; lessonId?: number | null; lessonTitle?: string | null }>;
 };
 
 export type StudentMaterialItem = {
@@ -1333,13 +1338,16 @@ export type StudentMaterialItem = {
   title?: string;
   type?: string;
   url?: string | null;
-  sessionId?: number;
-  sessionTitle?: string;
+  sessionId?: number | null;
+  sessionTitle?: string | null;
+  lessonId?: number | null;
+  lessonTitle?: string | null;
   status?: string | null;
   courseId?: number | null;
   courseTitle?: string | null;
   groupId?: number | null;
   groupName?: string | null;
+  groupStatus?: string | null;
   createdAt?: string;
 };
 

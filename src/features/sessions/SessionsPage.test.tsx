@@ -441,6 +441,22 @@ describe('SessionsPage session creation', () => {
     );
   });
 
+  it('previews session materials in the shared material modal', async () => {
+    api.listGroupSessions.mockResolvedValueOnce([{
+      ...createdSession,
+      materials: [{ title: 'Deck', url: 'https://files.example.test/deck.pdf' }],
+    }]);
+
+    renderPage('/sessions?courseId=101&groupId=301&sessionId=901');
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Materials' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open file' }));
+
+    expect(screen.getByRole('dialog', { name: 'Deck' })).toBeInTheDocument();
+    expect(screen.getByTitle('Deck')).toHaveAttribute('src', 'https://files.example.test/deck.pdf');
+    expect(screen.getByRole('link', { name: 'Open in new tab' })).toHaveAttribute('href', 'https://files.example.test/deck.pdf');
+  });
+
   it('warns before editing a session with attendance or homework records', async () => {
     api.listGroupSessions.mockResolvedValueOnce([createdSession]);
     api.getSessionAttendance.mockResolvedValueOnce([{ id: 1, studentId: 202, status: 'present' }]);

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiArrowLeft, FiAward, FiBell, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiDownload, FiExternalLink, FiFileText, FiHelpCircle, FiPlayCircle } from 'react-icons/fi';
+import { FiArrowLeft, FiAward, FiBell, FiBookOpen, FiCalendar, FiCheckCircle, FiClock, FiExternalLink, FiFileText, FiHelpCircle, FiPlayCircle } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '../../components/DataState';
-import { FormModal, Modal } from '../../components/Modal';
+import { FormModal } from '../../components/Modal';
+import { MaterialPreviewModal, type MaterialPreview } from '../../components/MaterialPreviewModal';
 import { CountFilterRow } from '../../components/CountFilterRow';
 import {
   createStudentSupportRequest,
@@ -79,14 +80,7 @@ type StudentMaterialListItem = {
   kind: 'resource' | 'recording';
   session: StudentSessionSummary;
   key: string;
-  material?: { title?: string; url?: string | null; type?: string };
-};
-
-type StudentMaterialPreview = {
-  title: string;
-  url: string;
-  typeText: string;
-  context: string;
+  material?: { title?: string; url?: string | null; type?: string; lessonId?: number | null; lessonTitle?: string | null };
 };
 
 export type StudentDashboardView = 'today' | 'todo' | 'courses' | 'courseDetail' | 'sessionDetail' | 'materials' | 'progress' | 'help';
@@ -222,18 +216,22 @@ function normalizeMaterialItem(item: StudentSessionSummary | StudentMaterialItem
       kind,
       key: String(flat.id ?? `${kind}-${flat.sessionId ?? 'unknown'}-${index}`),
       session: {
-        id: flat.sessionId,
+        id: flat.sessionId ?? undefined,
         courseId: flat.courseId,
         title: flat.sessionTitle ?? flat.title,
         sessionTitle: flat.sessionTitle ?? flat.title,
+        lessonId: flat.lessonId ?? undefined,
+        lessonTitle: flat.lessonTitle ?? undefined,
         status: flat.status,
         courseTitle: flat.courseTitle ?? undefined,
+        groupId: flat.groupId ?? undefined,
         groupName: flat.groupName ?? undefined,
+        groupStatus: flat.groupStatus ?? undefined,
         startsAt: flat.createdAt,
         url: flat.url,
-        materials: kind === 'resource' ? [{ title: flat.title, url: flat.url, type: flat.type }] : undefined,
+        materials: kind === 'resource' ? [{ title: flat.title, url: flat.url, type: flat.type, lessonId: flat.lessonId, lessonTitle: flat.lessonTitle }] : undefined,
       },
-      material: { title: flat.title, url: flat.url, type: flat.type },
+      material: { title: flat.title, url: flat.url, type: flat.type, lessonId: flat.lessonId, lessonTitle: flat.lessonTitle },
     };
   }
 
@@ -350,12 +348,14 @@ export function StudentDashboardPage({
   const [notificationTotalPages, setNotificationTotalPages] = useState(1);
   const [reminders, setReminders] = useState<StudentReminder[]>([]);
   const [selectedTask, setSelectedTask] = useState<StudentTaskItem | StudentHomeworkItem | null>(null);
-  const [selectedMaterialPreview, setSelectedMaterialPreview] = useState<StudentMaterialPreview | null>(null);
+  const [selectedMaterialPreview, setSelectedMaterialPreview] = useState<MaterialPreview | null>(null);
   const [submitForm, setSubmitForm] = useState(emptySubmitForm);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number[]>>({});
   const [todoFilter, setTodoFilter] = useState<TodoFilter>('open');
   const [materialFilter, setMaterialFilter] = useState<MaterialFilter>('all');
   const [materialCourseFilter, setMaterialCourseFilter] = useState('all');
+  const [materialGroupFilter, setMaterialGroupFilter] = useState('all');
+  const [materialLessonFilter, setMaterialLessonFilter] = useState('all');
   const [materialVisibleCount, setMaterialVisibleCount] = useState(12);
   const [resourcePage, setResourcePage] = useState(1);
   const [recordingPage, setRecordingPage] = useState(1);
@@ -376,7 +376,7 @@ export function StudentDashboardPage({
     sessionId: 'none',
     message: '',
   });
-  const openDocumentPreview = (preview: StudentMaterialPreview) => {
+  const openDocumentPreview = (preview: MaterialPreview) => {
     setSelectedMaterialPreview(preview);
   };
   const [submitting, setSubmitting] = useState(false);
@@ -399,6 +399,16 @@ export function StudentDashboardPage({
     const numeric = Number(materialCourseFilter);
     return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
   }, [materialCourseFilter]);
+  const selectedMaterialGroupId = useMemo(() => {
+    if (materialGroupFilter === 'all') return undefined;
+    const numeric = Number(materialGroupFilter);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+  }, [materialGroupFilter]);
+  const selectedMaterialLessonId = useMemo(() => {
+    if (materialLessonFilter === 'all') return undefined;
+    const numeric = Number(materialLessonFilter);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+  }, [materialLessonFilter]);
   const selectedCertificateCourseId = useMemo(() => {
     if (certificateCourseFilter === 'all') return undefined;
     const numeric = Number(certificateCourseFilter);
@@ -439,8 +449,8 @@ export function StudentDashboardPage({
       }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
       shouldLoadAttendance ? listStudentAttendance({ limit: view === 'today' ? 8 : 20 }) : Promise.resolve([]),
       shouldLoadTasks ? listStudentTasks({ limit: 50, courseId: view === 'courseDetail' ? activeCourseId : undefined }) : Promise.resolve([]),
-      shouldLoadResourceMaterials ? getStudentResourcesPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
-      shouldLoadRecordingMaterials ? getStudentRecordingsPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
+      shouldLoadResourceMaterials ? getStudentResourcesPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
+      shouldLoadRecordingMaterials ? getStudentRecordingsPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
       shouldLoadProgress ? getStudentProgressSummary() : Promise.resolve(null),
       shouldLoadCourseDetail ? getStudentCourseDetail(activeCourseId) : Promise.resolve(null),
       shouldLoadSessionDetail ? getStudentSessionDetail(activeSessionId) : Promise.resolve(null),
@@ -581,7 +591,7 @@ export function StudentDashboardPage({
     return () => {
       cancelled = true;
     };
-  }, [activeCourseId, activeSessionId, activeTenant?.id, attendanceEnabled, certificateStatusFilter, certificatesEnabled, homeworkEnabled, materialFilter, selectedCertificateCourseId, selectedMaterialCourseId, startStudentLoad, studentReloadToken, succeedStudentLoad, t, view]);
+  }, [activeCourseId, activeSessionId, activeTenant?.id, attendanceEnabled, certificateStatusFilter, certificatesEnabled, homeworkEnabled, materialFilter, selectedCertificateCourseId, selectedMaterialCourseId, selectedMaterialGroupId, selectedMaterialLessonId, startStudentLoad, studentReloadToken, succeedStudentLoad, t, view]);
 
   const reloadStudentData = async () => {
     const [nextHomework, nextTasks] = await Promise.all([
@@ -766,6 +776,8 @@ export function StudentDashboardPage({
       if (materialFilter === 'resources' && kind !== 'resource') return false;
       if (materialFilter === 'recordings' && kind !== 'recording') return false;
       if (materialCourseFilter !== 'all' && String(session.courseId ?? session.courseTitle) !== materialCourseFilter) return false;
+      if (materialGroupFilter !== 'all' && String(session.groupId ?? session.groupName) !== materialGroupFilter) return false;
+      if (materialLessonFilter !== 'all' && String(session.lessonId ?? session.lessonTitle ?? '') !== materialLessonFilter) return false;
       return true;
     }).length;
     if (materialVisibleCount < matchingTotal) {
@@ -779,8 +791,8 @@ export function StudentDashboardPage({
     setLoadingMoreMaterials(true);
     try {
       const [nextResourcesPage, nextRecordingsPage] = await Promise.all([
-        shouldLoadResources ? getStudentResourcesPage({ page: resourcePage + 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: resourcePage, total: resources.length, totalPages: resourcePage }),
-        shouldLoadRecordings ? getStudentRecordingsPage({ page: recordingPage + 1, limit: 50, courseId: selectedMaterialCourseId }) : Promise.resolve({ items: [], page: recordingPage, total: recordings.length, totalPages: recordingPage }),
+        shouldLoadResources ? getStudentResourcesPage({ page: resourcePage + 1, limit: 50, courseId: selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: resourcePage, total: resources.length, totalPages: resourcePage }),
+        shouldLoadRecordings ? getStudentRecordingsPage({ page: recordingPage + 1, limit: 50, courseId: selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: recordingPage, total: recordings.length, totalPages: recordingPage }),
       ]);
       const nextResources = nextResourcesPage.items ?? [];
       const nextRecordings = nextRecordingsPage.items ?? [];
@@ -1090,12 +1102,40 @@ export function StudentDashboardPage({
       .map(([value, label]) => ({ value, label }))
       .sort((first, second) => first.label.localeCompare(second.label));
   }, [courses, materialItems]);
+  const materialGroupOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    courses.forEach((course) => {
+      if (!course.groupName) return;
+      options.set(String(course.groupId ?? course.groupName), course.groupName);
+    });
+    materialItems.forEach(({ session }) => {
+      if (!session.groupName) return;
+      options.set(String(session.groupId ?? session.groupName), session.groupName);
+    });
+    return Array.from(options.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((first, second) => first.label.localeCompare(second.label));
+  }, [courses, materialItems]);
+  const materialLessonOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    materialItems.forEach(({ session, material }) => {
+      const lessonId = session.lessonId ?? material?.lessonId;
+      const lessonTitle = session.lessonTitle ?? material?.lessonTitle;
+      if (!lessonId || !lessonTitle) return;
+      options.set(String(lessonId), lessonTitle);
+    });
+    return Array.from(options.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((first, second) => first.label.localeCompare(second.label));
+  }, [materialItems]);
   const filteredMaterialItems = useMemo(() => materialItems.filter(({ kind, session }) => {
     if (materialFilter === 'resources' && kind !== 'resource') return false;
     if (materialFilter === 'recordings' && kind !== 'recording') return false;
     if (materialCourseFilter !== 'all' && String(session.courseId ?? session.courseTitle) !== materialCourseFilter) return false;
+    if (materialGroupFilter !== 'all' && String(session.groupId ?? session.groupName) !== materialGroupFilter) return false;
+    if (materialLessonFilter !== 'all' && String(session.lessonId ?? session.lessonTitle ?? '') !== materialLessonFilter) return false;
     return true;
-  }), [materialCourseFilter, materialFilter, materialItems]);
+  }), [materialCourseFilter, materialFilter, materialGroupFilter, materialItems, materialLessonFilter]);
   const visibleMaterialItems = useMemo(() => filteredMaterialItems.slice(0, materialVisibleCount), [filteredMaterialItems, materialVisibleCount]);
   const canLoadMoreMaterials = materialVisibleCount < filteredMaterialItems.length || (materialFilter !== 'recordings' && hasMoreResources) || (materialFilter !== 'resources' && hasMoreRecordings);
   const loadedMaterialTotal = filteredMaterialItems.length;
@@ -1105,8 +1145,8 @@ export function StudentDashboardPage({
       ? recordingTotal
       : resourceTotal + recordingTotal;
   const materialDisplayTotal = Math.max(loadedMaterialTotal, serverMaterialTotal);
-  const hasActiveMaterialFilter = materialFilter !== 'all' || materialCourseFilter !== 'all';
-  const showMaterialToolbar = materialItems.length > 0 || materialCourseOptions.length > 0 || hasActiveMaterialFilter;
+  const hasActiveMaterialFilter = materialFilter !== 'all' || materialCourseFilter !== 'all' || materialGroupFilter !== 'all' || materialLessonFilter !== 'all';
+  const showMaterialToolbar = materialItems.length > 0 || materialCourseOptions.length > 0 || materialGroupOptions.length > 0 || materialLessonOptions.length > 0 || hasActiveMaterialFilter;
   const selectedCourseSessions = useMemo(() => {
     if (courseDetail?.sessions?.length) return courseDetail.sessions;
     if (typeof activeCourseId === 'number') return sessions;
@@ -1829,6 +1869,24 @@ export function StudentDashboardPage({
                   </select>
                 </label>
               ) : null}
+              {materialGroupOptions.length ? (
+                <label>
+                  {t('student.groupFilter')}
+                  <select value={materialGroupFilter} onChange={(event) => setMaterialGroupFilter(event.target.value)}>
+                    <option value="all">{t('student.allGroups')}</option>
+                    {materialGroupOptions.map((group) => <option key={group.value} value={group.value}>{group.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              {materialLessonOptions.length ? (
+                <label>
+                  {t('student.lessonFilter')}
+                  <select value={materialLessonFilter} onChange={(event) => setMaterialLessonFilter(event.target.value)}>
+                    <option value="all">{t('student.allLessons')}</option>
+                    {materialLessonOptions.map((lesson) => <option key={lesson.value} value={lesson.value}>{lesson.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
             </div>
           ) : null}
           {sectionError('materials', t('student.materials')) ?? (!materialItems.length && !hasActiveMaterialFilter ? <EmptyState title={t('student.materialsEmptyTitle')} detail={t('student.materialsEmptyDetail')} /> : !filteredMaterialItems.length ? (
@@ -1842,6 +1900,7 @@ export function StudentDashboardPage({
                 const openUrl = materialUrl(item);
                 const sessionTitle = session.sessionTitle ?? session.title;
                 const showSessionTitle = Boolean(sessionTitle && sessionTitle !== title);
+                const lessonTitle = session.lessonTitle ?? item.material?.lessonTitle;
                 const addedAt = sessionStartsAt(session);
                 const courseLabel = displayText(session.courseTitle, t('student.courseNotSet'));
                 const MaterialIcon = kind === 'recording' ? FiPlayCircle : FiFileText;
@@ -1858,6 +1917,7 @@ export function StudentDashboardPage({
                     </div>
                     <div className="student-material-context">
                       <span><FiBookOpen aria-hidden="true" />{courseLabel}</span>
+                      {lessonTitle ? <span><FiBookOpen aria-hidden="true" />{lessonTitle}</span> : null}
                       {showSessionTitle ? <span><FiCalendar aria-hidden="true" />{sessionTitle}</span> : null}
                       <span>{kind === 'recording' ? t('student.recordingMaterial') : t('student.fileMaterial')}</span>
                       {addedAt ? <span>{t('student.addedOn', { date: dateText(addedAt) })}</span> : null}
@@ -1872,7 +1932,7 @@ export function StudentDashboardPage({
                           title,
                           url: openUrl,
                           typeText,
-                          context: [courseLabel, showSessionTitle ? sessionTitle : null].filter(Boolean).join(' · '),
+                          context: [courseLabel, lessonTitle, showSessionTitle ? sessionTitle : null].filter(Boolean).join(' · '),
                         })}
                       >
                         <FiExternalLink aria-hidden="true" />
@@ -2179,27 +2239,7 @@ export function StudentDashboardPage({
       </div>
 
       {selectedMaterialPreview ? (
-        <Modal
-          labelledBy="student-material-preview-title"
-          className="decision-modal student-material-preview-modal"
-          onClose={() => setSelectedMaterialPreview(null)}
-        >
-          <div className="modal-header-block">
-            <span>{selectedMaterialPreview.typeText}</span>
-            <h2 id="student-material-preview-title">{selectedMaterialPreview.title}</h2>
-            {selectedMaterialPreview.context ? <p>{selectedMaterialPreview.context}</p> : null}
-          </div>
-          <div className="student-material-preview-frame">
-            <iframe
-              title={selectedMaterialPreview.title}
-              src={selectedMaterialPreview.url}
-            />
-          </div>
-          <div className="modal-actions">
-            <a className="secondary-link-button" href={selectedMaterialPreview.url} download><FiDownload aria-hidden="true" />{t('student.downloadMaterial')}</a>
-            <a className="primary-link-button" href={selectedMaterialPreview.url} target="_blank" rel="noreferrer"><FiExternalLink aria-hidden="true" />{t('student.openInNewTab')}</a>
-          </div>
-        </Modal>
+        <MaterialPreviewModal preview={selectedMaterialPreview} onClose={() => setSelectedMaterialPreview(null)} />
       ) : null}
 
       {selectedTask ? (

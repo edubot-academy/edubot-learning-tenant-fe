@@ -6,7 +6,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { formatDate, readable } from '../../lib/format';
-import { activityActionLabelKeys, activityTargetLabelKeys, enumLabel, roleLabelKeys } from '../../lib/enumLabels';
+import { activityActionLabelKeys, activityTargetLabelKeys, commonStatusLabelKeys, enumLabel, roleLabelKeys } from '../../lib/enumLabels';
 import { useTenant } from '../tenant/TenantProvider';
 import { useTheme } from '../theme/themeContext';
 import { useAuth } from '../auth/AuthProvider';
@@ -118,6 +118,14 @@ function recordText(record: Record<string, unknown> | null | undefined, key: str
 function recordBoolean(record: Record<string, unknown> | null | undefined, key: string) {
   return record?.[key] === true;
 }
+
+const platformStatusLabelKeys: Record<string, string> = {
+  ...commonStatusLabelKeys,
+  enabled: 'overview.enabled',
+  disabled: 'overview.disabled',
+  linked: 'settings.statusLinked',
+  unlinked: 'settings.statusUnlinked',
+};
 
 function profileFormFromTenant(tenant: Tenant | null) {
   if (!tenant) return emptyProfileForm;
@@ -340,34 +348,37 @@ export function SettingsPage() {
     ? `mailto:${platformContactEmail}?subject=${encodeURIComponent(t('settings.platformRequestSubject', { tenant: activeTenant?.name ?? t('app.defaultTenant') }))}`
     : '';
 
-  const platformManagedItems = useMemo(() => [
-    {
-      icon: FiLock,
-      label: t('settings.tenantStatus'),
-      value: activeTenant?.status || t('states.notSet'),
-      detail: t('settings.tenantStatusDetail'),
-    },
-    {
-      icon: FiCreditCard,
-      label: t('settings.planBilling'),
-      value: activeTenant?.plan || t('states.notSet'),
-      detail: activeTenant?.billingStatus
-        ? t('settings.planBillingStatusDetail', { status: readable(activeTenant.billingStatus) })
-        : t('settings.planBillingDetail'),
-    },
-    {
-      icon: FiGlobe,
-      label: t('settings.domainRouting'),
-      value: activeTenant?.customDomain || activeTenant?.subdomain || t('states.notSet'),
-      detail: t('settings.domainRoutingDetail'),
-    },
-    {
-      icon: FiActivity,
-      label: t('settings.crmLink'),
-      value: activeTenant?.crmLink?.linked ? activeTenant.crmLink.status || t('overview.enabled') : t('overview.disabled'),
-      detail: activeTenant?.crmLink?.crmPrimaryDomain || activeTenant?.crmLink?.crmTenantSlug || t('settings.crmLinkDetail'),
-    },
-  ], [activeTenant, t]);
+  const platformManagedItems = useMemo(() => {
+    const platformStatusLabel = (value?: string | number | boolean | null) => enumLabel(value, platformStatusLabelKeys, t);
+    return [
+      {
+        icon: FiLock,
+        label: t('settings.tenantStatus'),
+        value: platformStatusLabel(activeTenant?.status),
+        detail: t('settings.tenantStatusDetail'),
+      },
+      {
+        icon: FiCreditCard,
+        label: t('settings.planBilling'),
+        value: activeTenant?.plan || t('states.notSet'),
+        detail: activeTenant?.billingStatus
+          ? t('settings.planBillingStatusDetail', { status: platformStatusLabel(activeTenant.billingStatus) })
+          : t('settings.planBillingDetail'),
+      },
+      {
+        icon: FiGlobe,
+        label: t('settings.domainRouting'),
+        value: activeTenant?.customDomain || activeTenant?.subdomain || t('states.notSet'),
+        detail: t('settings.domainRoutingDetail'),
+      },
+      {
+        icon: FiActivity,
+        label: t('settings.crmLink'),
+        value: activeTenant?.crmLink?.linked ? platformStatusLabel(activeTenant.crmLink.status ?? 'linked') : t('overview.disabled'),
+        detail: activeTenant?.crmLink?.crmPrimaryDomain || activeTenant?.crmLink?.crmTenantSlug || t('settings.crmLinkDetail'),
+      },
+    ];
+  }, [activeTenant, t]);
 
   const enabledFeatureCount = useMemo(
     () => featureRows.filter((feature) => feature.enabled).length,

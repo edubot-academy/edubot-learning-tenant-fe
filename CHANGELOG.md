@@ -19,6 +19,33 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.18.0 - 2026-06-03
+
+### Added
+
+- Added a reusable material preview modal component for student and instructor-facing material workflows.
+- Added session material previews so instructors can open session files in-app with download and open-in-new-tab actions.
+- Added group and lesson filters to the student materials library.
+- Added student material API support for lesson-scoped resource and recording queries.
+
+### Changed
+
+- Updated the student materials library to show richer course, group, lesson, and session context.
+- Updated student material filtering so resources and recordings both respect course, group, and lesson filters.
+- Localized additional student dashboard, support category, settings status, group filter, and lesson filter copy in English, Kyrgyz, and Russian.
+- Improved platform-managed settings labels so tenant, billing, and CRM statuses render as human-readable localized text instead of raw backend values.
+
+### Fixed
+
+- Fixed hidden planned-group sessions and materials appearing in student-facing dashboards.
+- Fixed lesson-filtered student materials so matching recordings are not dropped when a lesson is selected.
+
+### Tests
+
+- Added coverage for shared session material previews, student material group/lesson filtering, and planned-group visibility rules.
+- `npm test -- src/features/student/StudentDashboardPage.test.tsx src/features/student/studentDashboardData.test.ts src/features/sessions/SessionsPage.test.tsx` passes.
+- `npm run lint` passes.
+
 ## 1.17.0 - 2026-06-02
 
 ### Added

@@ -274,6 +274,10 @@ describe('StudentDashboardPage loading', () => {
       url: `https://example.test/resource-${index + 1}`,
       sessionId: index + 1,
       sessionTitle: `Session ${index + 1}`,
+      groupId: 10,
+      groupName: 'Group A',
+      lessonId: 100 + index,
+      lessonTitle: `Lesson ${index + 1}`,
       courseTitle: 'Math',
     })),
       page: 1,
@@ -295,12 +299,47 @@ describe('StudentDashboardPage loading', () => {
     expect(screen.getByRole('dialog', { name: 'Resource 1' })).toBeInTheDocument();
     expect(screen.getByTitle('Resource 1')).toHaveAttribute('src', 'https://example.test/resource-1');
     fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
+    expect(screen.getByLabelText('Group')).toBeInTheDocument();
+    expect(screen.getByLabelText('Lesson')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Recordings' }));
     expect(await screen.findByText('Recorded session')).toBeInTheDocument();
     expect(screen.queryByText('Resource 1')).not.toBeInTheDocument();
-    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined });
-    expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined });
+    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: undefined, lessonId: undefined });
+    expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: undefined, lessonId: undefined });
+  });
+
+  it('sends group and lesson filters when loading student materials', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
+      items: [
+        { id: 'resource-1', title: 'Lesson file', url: 'https://example.test/lesson-file', sessionId: 1, sessionTitle: 'Session 1', courseId: 101, courseTitle: 'Math', groupId: 10, groupName: 'Group A', lessonId: 501, lessonTitle: 'Intro lesson' },
+      ],
+      page: 1,
+      totalPages: 1,
+      total: 1,
+    });
+    vi.mocked(api.getStudentRecordingsPage).mockResolvedValue({
+      items: [
+        { id: 'recording-1', title: 'Lesson recording', url: 'https://example.test/lesson-recording', sessionId: 2, sessionTitle: 'Session 2', courseId: 101, courseTitle: 'Math', groupId: 10, groupName: 'Group A', lessonId: 501, lessonTitle: 'Intro lesson' },
+      ],
+      page: 1,
+      totalPages: 1,
+      total: 1,
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="materials" /></MemoryRouter>);
+
+    expect(await screen.findByText('Lesson file')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Group'), { target: { value: '10' } });
+    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: undefined }));
+    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: undefined });
+
+    fireEvent.change(screen.getByLabelText('Lesson'), { target: { value: '501' } });
+    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: 501 }));
+    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: 501 });
+    fireEvent.click(screen.getByRole('button', { name: 'Recordings' }));
+    expect(await screen.findByText('Session 2')).toBeInTheDocument();
   });
 
   it('keeps material filters visible when the selected type has no results', async () => {
@@ -338,7 +377,7 @@ describe('StudentDashboardPage loading', () => {
     vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
       items: [
         { id: 'resource-1', title: 'Visible resource', url: 'https://example.test/visible', sessionId: 1, sessionTitle: 'Open session', status: 'scheduled', courseId: 101, courseTitle: 'Math' },
-        { id: 'resource-2', title: 'Planned resource', url: 'https://example.test/planned', sessionId: 2, sessionTitle: 'Planned session', status: 'planned', courseId: 101, courseTitle: 'Math' },
+        { id: 'resource-2', title: 'Planned resource', url: 'https://example.test/planned', sessionId: 2, sessionTitle: 'Planned session', status: 'scheduled', groupStatus: 'planned', courseId: 101, courseTitle: 'Math' },
       ],
       page: 1,
       totalPages: 1,
@@ -399,7 +438,7 @@ describe('StudentDashboardPage loading', () => {
     expect(screen.getByRole('dialog', { name: 'Formula sheet' })).toBeInTheDocument();
     expect(screen.getByTitle('Formula sheet')).toHaveAttribute('src', 'https://example.test/formula.pdf');
     expect(api.listStudentTasks).toHaveBeenCalledWith({ limit: 50, courseId: 101 });
-    expect(api.getStudentResourcesPage).toHaveBeenCalledWith({ page: 1, limit: 50, courseId: 101 });
+    expect(api.getStudentResourcesPage).toHaveBeenCalledWith({ page: 1, limit: 50, courseId: 101, groupId: undefined, lessonId: undefined });
   });
 
   it('defensively hides non-visible course sessions from course detail', async () => {
@@ -408,7 +447,7 @@ describe('StudentDashboardPage loading', () => {
       course: { id: 101, title: 'Math', groupName: 'Group A' },
       sessions: [
         { sessionId: 501, courseId: 101, title: 'Visible live', startsAt: '2099-06-01T10:00:00.000Z', status: 'scheduled' },
-        { sessionId: 502, courseId: 101, title: 'Planned live', startsAt: '2099-06-02T10:00:00.000Z', status: 'planned' },
+        { sessionId: 502, courseId: 101, title: 'Planned live', startsAt: '2099-06-02T10:00:00.000Z', status: 'scheduled', groupStatus: 'planned' },
       ],
     });
 
@@ -530,7 +569,7 @@ describe('StudentDashboardPage loading', () => {
     vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
     vi.mocked(api.listStudentUpcomingSessions).mockResolvedValue([
       { sessionId: 501, courseId: 101, title: 'Visible live', startsAt: '2099-06-01T10:00:00.000Z', status: 'scheduled' },
-      { sessionId: 502, courseId: 101, title: 'Planned live', startsAt: '2099-06-02T10:00:00.000Z', status: 'planned' },
+      { sessionId: 502, courseId: 101, title: 'Planned live', startsAt: '2099-06-02T10:00:00.000Z', status: 'scheduled', groupStatus: 'planned' },
     ]);
 
     render(<MemoryRouter><StudentDashboardPage view="help" /></MemoryRouter>);

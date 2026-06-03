@@ -78,6 +78,7 @@ describe('student dashboard data helpers', () => {
     expect(isStudentVisibleSession({ status: 'cancelled' })).toBe(false);
     expect(isStudentVisibleSession({ status: 'scheduled' })).toBe(true);
     expect(isStudentVisibleSession({ status: 'completed' })).toBe(true);
+    expect(isStudentVisibleSession({ status: 'scheduled', groupStatus: 'planned' })).toBe(false);
   });
 
   it('treats only future scheduled sessions as upcoming', () => {

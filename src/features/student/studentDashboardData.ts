@@ -16,6 +16,7 @@ export type StudentSessionLike = {
   id?: number;
   sessionId?: number;
   status?: string | null;
+  groupStatus?: string | null;
   startsAt?: string | null;
   startAt?: string | null;
   endsAt?: string | null;
@@ -24,6 +25,7 @@ export type StudentSessionLike = {
 };
 
 const studentVisibleSessionStatuses = new Set(['scheduled', 'completed']);
+const studentVisibleGroupStatuses = new Set(['open', 'active', 'completed']);
 
 export function studentSessionId(session?: StudentSessionLike | null) {
   return session?.id ?? session?.sessionId;
@@ -45,6 +47,10 @@ export function studentSessionTime(value?: string | null) {
 
 export function isStudentVisibleSession(session?: StudentSessionLike | null) {
   if (!session) return false;
+  if (session.groupStatus != null) {
+    const groupStatus = String(session.groupStatus).toLowerCase();
+    if (!studentVisibleGroupStatuses.has(groupStatus)) return false;
+  }
   const status = String(session.status ?? 'scheduled').toLowerCase();
   return studentVisibleSessionStatuses.has(status);
 }

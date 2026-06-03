@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, LoadingState } from '../../components/DataState';
 import { FormModal, Modal } from '../../components/Modal';
+import { MaterialPreviewModal, type MaterialPreview } from '../../components/MaterialPreviewModal';
 import { WorkspaceTabs } from '../../components/WorkspaceTabs';
 import {
   createSessionActivity,
@@ -311,6 +312,7 @@ export function SessionsPage() {
   const [sessionImpactConfirmed, setSessionImpactConfirmed] = useState(false);
   const [enrollmentMode, setEnrollmentMode] = useState<'existing' | 'new'>('existing');
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
+  const [selectedMaterialPreview, setSelectedMaterialPreview] = useState<MaterialPreview | null>(null);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [editGroupErrors, setEditGroupErrors] = useState<GroupValidationErrors>({});
   const [sessionEditErrors, setSessionEditErrors] = useState<Record<string, string>>({});
@@ -495,6 +497,16 @@ export function SessionsPage() {
     value === 'individual' ? t('groups.deliveryIndividual') : t('groups.deliveryGroup')
   );
   const materialFallback = (index: number) => t('sessions.materialFallback', { number: index + 1 });
+  const openMaterialPreview = (material: NonNullable<CourseSession['materials']>[number], index: number) => {
+    if (!material.url) return;
+    const context = [selectedCourse?.title, selectedGroup?.name, selectedSession?.title].filter(Boolean).join(' · ');
+    setSelectedMaterialPreview({
+      title: material.title || materialFallback(index),
+      url: material.url,
+      typeText: t('sessions.tabMaterials'),
+      context,
+    });
+  };
   const studentFallback = (id: number) => t('courses.studentFallback', { id });
   const instructorFallback = (id: number) => t('groups.instructorFallback', { id });
   const activityTypeLabel = (value: string | undefined | null) => {
@@ -2722,7 +2734,7 @@ export function SessionsPage() {
                       <article key={`${material.storageKey ?? material.url}-${index}`} className="stack-list-item material-list-item">
                         <div>
                           <strong>{material.title || materialFallback(index)}</strong>
-                          <a href={material.url} target="_blank" rel="noreferrer">{t('sessions.openFile')}</a>
+                          {material.url ? <button type="button" className="link-button" onClick={() => openMaterialPreview(material, index)}>{t('sessions.openFile')}</button> : null}
                         </div>
                         {canManageSessionMaterials ? (
                         <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'material', materialIndex: index })} disabled={updatingSession}>
@@ -2828,6 +2840,9 @@ export function SessionsPage() {
           </aside>
         </div>
       )}
+      {selectedMaterialPreview ? (
+        <MaterialPreviewModal preview={selectedMaterialPreview} onClose={() => setSelectedMaterialPreview(null)} />
+      ) : null}
       {editGroupOpen && selectedGroup && canCoordinateGroups ? (
         <FormModal labelledBy="edit-group-title" className="decision-modal form-modal group-form-modal" onClose={() => setEditGroupOpen(false)} onSubmit={submitGroupUpdate}>
           <div className="modal-header-block">

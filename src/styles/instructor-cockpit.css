@@ -7,7 +7,6 @@
  * - keep routes, data fetching, permissions, and backend untouched
  */
 
-@layer components {
   .overview-next-action {
     position: relative;
     display: grid;
@@ -330,7 +329,6 @@
   .overview-course-table-wrap {
     border-radius: var(--radius-compact);
   }
-}
 
 @media (max-width: 1100px) {
   .overview-today-list {

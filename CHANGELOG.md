@@ -19,6 +19,16 @@ This project follows [Semantic Versioning](https://semver.org/) and uses the
 
 ## Unreleased
 
+## 1.18.1 - 2026-06-03
+
+### Fixed
+
+- Fixed homework review roster loading so stale or malformed homework rows cannot open against the wrong session after switching sessions.
+
+### Tests
+
+- Added regression coverage for stale homework review roster requests when changing sessions and for session homework rows without a matching session id.
+
 ## 1.18.0 - 2026-06-03
 
 ### Added

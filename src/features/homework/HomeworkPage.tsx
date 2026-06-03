@@ -169,7 +169,12 @@ export function HomeworkPage() {
   const requestedCourseUnavailable = Boolean(requestedCourseId && coursesLoaded && !coursesLoading && !scopedCourses.some((course) => course.id === requestedCourseId) && !requestedCourseHasHomework);
   const requestedGroupUnavailable = Boolean(requestedGroupId && courseId && groupsLoaded && !groupsLoading && !scopedGroups.some((group) => group.id === requestedGroupId) && !requestedGroupHasHomework);
   const requestedSessionUnavailable = Boolean(requestedSessionId && groupId && rosterLoaded && !rosterLoading && !sessions.some((session) => session.id === requestedSessionId) && !requestedSessionHasHomework);
-  const requestedHomeworkUnavailable = Boolean(requestedHomeworkId && sessionId && sessionHomeworkLoaded && !sessionHomeworkLoading && !sessionItems.some((item) => item.id === requestedHomeworkId));
+  const currentSessionItems = useMemo(() => (
+    sessionId
+      ? sessionItems.filter((item) => item.sessionId === sessionId)
+      : []
+  ), [sessionId, sessionItems]);
+  const requestedHomeworkUnavailable = Boolean(requestedHomeworkId && sessionId && sessionHomeworkLoaded && !sessionHomeworkLoading && !currentSessionItems.some((item) => item.id === requestedHomeworkId));
   const hasUnavailableRequest = requestedCourseUnavailable || requestedGroupUnavailable || requestedSessionUnavailable || requestedHomeworkUnavailable;
   const filterHomeworkByAssignedScope = useCallback((nextItems: SessionHomework[]) => (
     canManageAssignedOnly ? nextItems.filter((item) => !item.sessionId || assignedSessionIds.has(item.sessionId)) : nextItems
@@ -210,19 +215,19 @@ export function HomeworkPage() {
   const selectedSession = useMemo(() => sessions.find((session) => session.id === sessionId), [sessionId, sessions]);
   const selectedSessionReady = isHomeworkSessionReady(selectedSession);
   const selectedHomework = useMemo(
-    () => sessionItems.find((item) => item.id === selectedHomeworkId),
-    [selectedHomeworkId, sessionItems],
+    () => currentSessionItems.find((item) => item.id === selectedHomeworkId),
+    [currentSessionItems, selectedHomeworkId],
   );
   const editingHomework = useMemo(
-    () => sessionItems.find((item) => item.id === editHomeworkId),
-    [editHomeworkId, sessionItems],
+    () => currentSessionItems.find((item) => item.id === editHomeworkId),
+    [currentSessionItems, editHomeworkId],
   );
   const sessionHomeworkSummary = useMemo(() => {
-    const needsReview = sessionItems.reduce((total, item) => total + (item.queue?.needsReview ?? 0), 0);
-    const missing = sessionItems.reduce((total, item) => total + (item.queue?.missing ?? 0), 0);
-    const assigned = sessionItems.reduce((total, item) => total + (item.queue?.assigned ?? 0), 0);
-    return { total: sessionItems.length, needsReview, missing, assigned };
-  }, [sessionItems]);
+    const needsReview = currentSessionItems.reduce((total, item) => total + (item.queue?.needsReview ?? 0), 0);
+    const missing = currentSessionItems.reduce((total, item) => total + (item.queue?.missing ?? 0), 0);
+    const assigned = currentSessionItems.reduce((total, item) => total + (item.queue?.assigned ?? 0), 0);
+    return { total: currentSessionItems.length, needsReview, missing, assigned };
+  }, [currentSessionItems]);
   const visibleAssignees = useMemo(() => {
     const normalized = assigneeQuery.trim().toLowerCase();
     if (!normalized) return students;
@@ -590,6 +595,7 @@ export function HomeworkPage() {
 
   const loadReviewRoster = useCallback(async (homeworkId: number) => {
     if (!sessionId) return;
+    if (!currentSessionItems.some((item) => item.id === homeworkId)) return;
     setSelectedHomeworkId(homeworkId);
     setReviewFilter('needsReview');
     setExpandedReviewStudentId(undefined);
@@ -614,18 +620,18 @@ export function HomeworkPage() {
     } finally {
       setReviewLoading(false);
     }
-  }, [sessionId, t]);
+  }, [currentSessionItems, sessionId, t]);
 
   useEffect(() => {
     if (!requestedHomeworkId || !sessionId || selectedHomeworkId === requestedHomeworkId) return;
-    if (!sessionItems.some((item) => item.id === requestedHomeworkId)) return;
+    if (!currentSessionItems.some((item) => item.id === requestedHomeworkId)) return;
     void loadReviewRoster(requestedHomeworkId);
-  }, [loadReviewRoster, requestedHomeworkId, selectedHomeworkId, sessionId, sessionItems]);
+  }, [currentSessionItems, loadReviewRoster, requestedHomeworkId, selectedHomeworkId, sessionId]);
 
   useEffect(() => {
-    if (!sessionId || requestedHomeworkId || selectedHomeworkId || !sessionItems.length) return;
-    void loadReviewRoster(sessionItems[0].id);
-  }, [loadReviewRoster, requestedHomeworkId, selectedHomeworkId, sessionId, sessionItems]);
+    if (!sessionId || requestedHomeworkId || selectedHomeworkId || !currentSessionItems.length) return;
+    void loadReviewRoster(currentSessionItems[0].id);
+  }, [currentSessionItems, loadReviewRoster, requestedHomeworkId, selectedHomeworkId, sessionId]);
 
   const reloadHomeworkLists = async () => {
     const [nextSessionItems, nextSummary, nextItems, nextReviewQueue] = await Promise.all([
@@ -1179,7 +1185,7 @@ export function HomeworkPage() {
             />
           ) : requestedHomeworkUnavailable ? (
             <EmptyState title={t('homework.unavailableHomeworkTitle')} detail={t('homework.unavailableHomeworkDetail')} />
-          ) : !sessionItems.length ? (
+          ) : !currentSessionItems.length ? (
             <EmptyState
               title={t('homework.noSessionHomework')}
               detail={t('homework.createFirstAssignment')}
@@ -1187,7 +1193,7 @@ export function HomeworkPage() {
             />
           ) : (
             <div className="stack-list homework-assignment-list">
-              {sessionItems.map((homework) => (
+              {currentSessionItems.map((homework) => (
                 <article
                   key={homework.id}
                   className={`stack-list-item homework-assignment-item ${selectedHomeworkId === homework.id ? 'active' : ''}`}

@@ -228,6 +228,55 @@ describe('HomeworkPage', () => {
     await waitFor(() => expect(api.listSessionHomework).toHaveBeenLastCalledWith(902));
   });
 
+  it('does not request a review roster with stale homework when switching sessions', async () => {
+    api.listGroupSessions.mockResolvedValue([session, otherSession]);
+    api.listSessionHomework.mockImplementation((sessionId: number) => (
+      Promise.resolve(sessionId === 901 ? [{
+        id: 501,
+        sessionId: 901,
+        courseId: 101,
+        groupId: 301,
+        title: 'Session 1 homework',
+        isPublished: true,
+      }] : [])
+    ));
+    api.getHomeworkReviewRoster.mockResolvedValue({
+      items: [],
+      summary: { total: 0, needsReview: 0, missing: 0, needsRevision: 0, late: 0 },
+    });
+
+    renderPage('/homework?courseId=101&groupId=301&sessionId=901');
+
+    expect(await screen.findByText('Session 1 homework')).toBeInTheDocument();
+    await waitFor(() => expect(api.getHomeworkReviewRoster).toHaveBeenCalledWith(901, 501));
+    api.getHomeworkReviewRoster.mockClear();
+
+    fireEvent.change(screen.getAllByRole('combobox')[2], { target: { value: '902' } });
+
+    await waitFor(() => expect(api.listSessionHomework).toHaveBeenLastCalledWith(902));
+    expect(api.getHomeworkReviewRoster).not.toHaveBeenCalledWith(902, 501);
+  });
+
+  it('ignores session homework rows without a matching session id', async () => {
+    api.listSessionHomework.mockResolvedValue([{
+      id: 501,
+      courseId: 101,
+      groupId: 301,
+      title: 'Malformed homework',
+      isPublished: true,
+    }]);
+    api.getHomeworkReviewRoster.mockResolvedValue({
+      items: [],
+      summary: { total: 0, needsReview: 0, missing: 0, needsRevision: 0, late: 0 },
+    });
+
+    renderPage('/homework?courseId=101&groupId=301&sessionId=901');
+
+    await waitFor(() => expect(api.listSessionHomework).toHaveBeenCalledWith(901));
+    expect(screen.queryByText('Malformed homework')).not.toBeInTheDocument();
+    expect(api.getHomeworkReviewRoster).not.toHaveBeenCalledWith(901, 501);
+  });
+
   it('clears stale dependent params when switching course from a deep link', async () => {
     api.listTenantCourses.mockResolvedValue([course, otherCourse]);
     api.listCourseGroups.mockImplementation((courseId: number) => (

@@ -1,0 +1,161 @@
+/*
+ * Engagement hardening layer
+ *
+ * This file intentionally loads last. It reduces the risk of broad Phase 1 CSS overlay
+ * selectors affecting destructive/icon controls, and normalizes non-standard font weights
+ * to predictable values across browsers and fonts.
+ */
+
+/* Normalize non-standard font weights used during rapid visual iteration. */
+body:has(.student-workspace-grid),
+body:has(.student-progress-summary),
+body:has(.course-action-grid),
+body:has(.course-context-strip),
+body:has(.student-today-sessions-section) {
+  --engagement-weight-heavy: 900;
+  --engagement-weight-strong: 800;
+  --engagement-weight-medium: 700;
+}
+
+body:has(.student-workspace-grid) .brand-mark,
+body:has(.student-progress-summary) .brand-mark,
+body:has(.course-action-grid) .brand-mark,
+body:has(.course-context-strip) .brand-mark,
+body:has(.student-today-sessions-section) .brand-mark,
+body:has(.student-workspace-grid) .brand-copy strong,
+body:has(.student-progress-summary) .brand-copy strong,
+body:has(.course-action-grid) .brand-copy strong,
+body:has(.course-context-strip) .brand-copy strong,
+body:has(.student-today-sessions-section) .brand-copy strong,
+body:has(.student-workspace-grid) .page-header h1,
+body:has(.student-progress-summary) .page-header h1,
+body:has(.course-action-grid) .page-header h1,
+body:has(.course-context-strip) .page-header h1,
+body:has(.student-today-sessions-section) .page-header h1,
+body:has(.student-workspace-grid) .student-priority-card h2,
+body:has(.student-workspace-grid) .student-priority-card strong,
+body:has(.student-workspace-grid) .student-priority-card .student-priority-title,
+body:has(.student-today-sessions-section) .student-priority-card h2,
+body:has(.student-today-sessions-section) .student-priority-card strong,
+body:has(.student-progress-summary) .student-progress-next-step h2,
+body:has(.student-progress-summary) .student-progress-next-step strong,
+body:has(.student-workspace-grid) .student-home-side h2,
+body:has(.student-workspace-grid) .student-home-side h3,
+body:has(.student-workspace-grid) .student-home-side strong,
+body:has(.student-today-sessions-section) .student-home-side h2,
+body:has(.student-today-sessions-section) .student-home-side h3,
+body:has(.student-today-sessions-section) .student-home-side strong,
+body:has(.student-workspace-grid) .status-badge,
+body:has(.student-progress-summary) .status-badge,
+body:has(.course-action-grid) .status-badge,
+body:has(.course-context-strip) .status-badge,
+body:has(.student-today-sessions-section) .status-badge {
+  font-weight: var(--engagement-weight-heavy);
+}
+
+body:has(.student-workspace-grid) .brand-copy span,
+body:has(.student-progress-summary) .brand-copy span,
+body:has(.course-action-grid) .brand-copy span,
+body:has(.course-context-strip) .brand-copy span,
+body:has(.student-today-sessions-section) .brand-copy span,
+body:has(.student-workspace-grid) .student-priority-card p,
+body:has(.student-workspace-grid) .student-priority-card small,
+body:has(.student-workspace-grid) .student-priority-card span:not(.status-badge),
+body:has(.student-today-sessions-section) .student-priority-card p,
+body:has(.student-today-sessions-section) .student-priority-card small,
+body:has(.student-today-sessions-section) .student-priority-card span:not(.status-badge),
+body:has(.student-progress-summary) .student-progress-next-step p,
+body:has(.student-progress-summary) .student-progress-next-step small,
+body:has(.student-progress-summary) .student-progress-next-step span:not(.status-badge),
+body:has(.student-workspace-grid) .student-summary-item span,
+body:has(.student-workspace-grid) .student-summary-item small,
+body:has(.student-today-sessions-section) .student-summary-item span,
+body:has(.student-today-sessions-section) .student-summary-item small {
+  font-weight: var(--engagement-weight-strong);
+}
+
+body:has(.student-workspace-grid) .page-header p,
+body:has(.student-progress-summary) .page-header p,
+body:has(.course-action-grid) .page-header p,
+body:has(.course-context-strip) .page-header p,
+body:has(.student-today-sessions-section) .page-header p {
+  font-weight: var(--engagement-weight-medium);
+}
+
+/* Prevent broad primary button rules from hijacking icon, language, danger, and table actions. */
+body:has(.student-workspace-grid) button.icon-button,
+body:has(.student-progress-summary) button.icon-button,
+body:has(.course-action-grid) button.icon-button,
+body:has(.course-context-strip) button.icon-button,
+body:has(.student-today-sessions-section) button.icon-button,
+body:has(.student-workspace-grid) .icon-button,
+body:has(.student-progress-summary) .icon-button,
+body:has(.course-action-grid) .icon-button,
+body:has(.course-context-strip) .icon-button,
+body:has(.student-today-sessions-section) .icon-button {
+  min-width: auto;
+  min-height: auto;
+  border-radius: inherit;
+  box-shadow: none;
+}
+
+body:has(.student-workspace-grid) .danger-button,
+body:has(.student-progress-summary) .danger-button,
+body:has(.course-action-grid) .danger-button,
+body:has(.course-context-strip) .danger-button,
+body:has(.student-today-sessions-section) .danger-button,
+body:has(.student-workspace-grid) button[aria-label*='delete' i],
+body:has(.student-progress-summary) button[aria-label*='delete' i],
+body:has(.course-action-grid) button[aria-label*='delete' i],
+body:has(.course-context-strip) button[aria-label*='delete' i],
+body:has(.student-today-sessions-section) button[aria-label*='delete' i],
+body:has(.student-workspace-grid) button[aria-label*='өчүр' i],
+body:has(.student-progress-summary) button[aria-label*='өчүр' i],
+body:has(.course-action-grid) button[aria-label*='өчүр' i],
+body:has(.course-context-strip) button[aria-label*='өчүр' i],
+body:has(.student-today-sessions-section) button[aria-label*='өчүр' i] {
+  background: #fff1f2;
+  color: #b91c1c;
+  border: 2px solid rgba(185, 28, 28, 0.16);
+  box-shadow: 0 4px 0 rgba(185, 28, 28, 0.12);
+}
+
+body:has(.student-workspace-grid) .table-wrap button,
+body:has(.student-progress-summary) .table-wrap button,
+body:has(.course-action-grid) .table-wrap button,
+body:has(.course-context-strip) .table-wrap button,
+body:has(.student-today-sessions-section) .table-wrap button {
+  min-height: 36px;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+/* Ensure disabled controls still read as disabled after engagement button styling. */
+body:has(.student-workspace-grid) button:disabled,
+body:has(.student-progress-summary) button:disabled,
+body:has(.course-action-grid) button:disabled,
+body:has(.course-context-strip) button:disabled,
+body:has(.student-today-sessions-section) button:disabled,
+body:has(.student-workspace-grid) .primary-link-button[aria-disabled='true'],
+body:has(.student-progress-summary) .primary-link-button[aria-disabled='true'],
+body:has(.course-action-grid) .primary-link-button[aria-disabled='true'],
+body:has(.course-context-strip) .primary-link-button[aria-disabled='true'],
+body:has(.student-today-sessions-section) .primary-link-button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:has(.student-workspace-grid) *,
+  body:has(.student-progress-summary) *,
+  body:has(.course-action-grid) *,
+  body:has(.course-context-strip) *,
+  body:has(.student-today-sessions-section) * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

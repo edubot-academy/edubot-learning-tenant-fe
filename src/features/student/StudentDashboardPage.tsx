@@ -278,6 +278,27 @@ function isRecentlyAdded(value?: string | null) {
   return Date.now() - timestamp >= 0 && Date.now() - timestamp <= fourteenDays;
 }
 
+function isStudentVisibleMaterialSession(session?: StudentSessionSummary | null) {
+  if (!isStudentVisibleSession(session)) return false;
+  if (session?.status == null) return true;
+  return String(session.status).toLowerCase() === 'completed';
+}
+
+function materialLessonValue(session: StudentSessionSummary, material?: StudentMaterialListItem['material']) {
+  const lessonId = session.lessonId ?? material?.lessonId;
+  const lessonTitle = session.lessonTitle ?? material?.lessonTitle;
+  return lessonId ? String(lessonId) : lessonTitle ?? '';
+}
+
+function materialFilterOptionsWithActive(
+  options: Array<{ value: string; label: string }>,
+  activeValue: string,
+  fallbackLabel: string,
+) {
+  if (activeValue === 'all' || options.some((option) => option.value === activeValue)) return options;
+  return [{ value: activeValue, label: fallbackLabel }, ...options];
+}
+
 function rawTaskStatus(task: StudentTaskItem | StudentHomeworkItem) {
   return studentTaskState(task);
 }
@@ -355,6 +376,7 @@ export function StudentDashboardPage({
   const [materialFilter, setMaterialFilter] = useState<MaterialFilter>('all');
   const [materialCourseFilter, setMaterialCourseFilter] = useState('all');
   const [materialGroupFilter, setMaterialGroupFilter] = useState('all');
+  const [materialSessionFilter, setMaterialSessionFilter] = useState('all');
   const [materialLessonFilter, setMaterialLessonFilter] = useState('all');
   const [materialVisibleCount, setMaterialVisibleCount] = useState(12);
   const [resourcePage, setResourcePage] = useState(1);
@@ -404,6 +426,11 @@ export function StudentDashboardPage({
     const numeric = Number(materialGroupFilter);
     return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
   }, [materialGroupFilter]);
+  const selectedMaterialSessionId = useMemo(() => {
+    if (materialSessionFilter === 'all') return undefined;
+    const numeric = Number(materialSessionFilter);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+  }, [materialSessionFilter]);
   const selectedMaterialLessonId = useMemo(() => {
     if (materialLessonFilter === 'all') return undefined;
     const numeric = Number(materialLessonFilter);
@@ -449,8 +476,8 @@ export function StudentDashboardPage({
       }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
       shouldLoadAttendance ? listStudentAttendance({ limit: view === 'today' ? 8 : 20 }) : Promise.resolve([]),
       shouldLoadTasks ? listStudentTasks({ limit: 50, courseId: view === 'courseDetail' ? activeCourseId : undefined }) : Promise.resolve([]),
-      shouldLoadResourceMaterials ? getStudentResourcesPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
-      shouldLoadRecordingMaterials ? getStudentRecordingsPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
+      shouldLoadResourceMaterials ? getStudentResourcesPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId, groupId: selectedMaterialGroupId, sessionId: selectedMaterialSessionId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
+      shouldLoadRecordingMaterials ? getStudentRecordingsPage({ page: 1, limit: 50, courseId: view === 'courseDetail' ? activeCourseId : selectedMaterialCourseId, groupId: selectedMaterialGroupId, sessionId: selectedMaterialSessionId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: 1, totalPages: 1 }),
       shouldLoadProgress ? getStudentProgressSummary() : Promise.resolve(null),
       shouldLoadCourseDetail ? getStudentCourseDetail(activeCourseId) : Promise.resolve(null),
       shouldLoadSessionDetail ? getStudentSessionDetail(activeSessionId) : Promise.resolve(null),
@@ -591,7 +618,7 @@ export function StudentDashboardPage({
     return () => {
       cancelled = true;
     };
-  }, [activeCourseId, activeSessionId, activeTenant?.id, attendanceEnabled, certificateStatusFilter, certificatesEnabled, homeworkEnabled, materialFilter, selectedCertificateCourseId, selectedMaterialCourseId, selectedMaterialGroupId, selectedMaterialLessonId, startStudentLoad, studentReloadToken, succeedStudentLoad, t, view]);
+  }, [activeCourseId, activeSessionId, activeTenant?.id, attendanceEnabled, certificateStatusFilter, certificatesEnabled, homeworkEnabled, materialFilter, selectedCertificateCourseId, selectedMaterialCourseId, selectedMaterialGroupId, selectedMaterialLessonId, selectedMaterialSessionId, startStudentLoad, studentReloadToken, succeedStudentLoad, t, view]);
 
   const reloadStudentData = async () => {
     const [nextHomework, nextTasks] = await Promise.all([
@@ -772,12 +799,13 @@ export function StudentDashboardPage({
 
   const loadMoreMaterials = async () => {
     if (loadingMoreMaterials) return;
-    const matchingTotal = materialItems.filter(({ kind, session }) => {
+    const matchingTotal = materialItems.filter(({ kind, session, material }) => {
       if (materialFilter === 'resources' && kind !== 'resource') return false;
       if (materialFilter === 'recordings' && kind !== 'recording') return false;
       if (materialCourseFilter !== 'all' && String(session.courseId ?? session.courseTitle) !== materialCourseFilter) return false;
       if (materialGroupFilter !== 'all' && String(session.groupId ?? session.groupName) !== materialGroupFilter) return false;
-      if (materialLessonFilter !== 'all' && String(session.lessonId ?? session.lessonTitle ?? '') !== materialLessonFilter) return false;
+      if (materialSessionFilter !== 'all' && String(sessionId(session) ?? '') !== materialSessionFilter) return false;
+      if (materialLessonFilter !== 'all' && materialLessonValue(session, material) !== materialLessonFilter) return false;
       return true;
     }).length;
     if (materialVisibleCount < matchingTotal) {
@@ -791,8 +819,8 @@ export function StudentDashboardPage({
     setLoadingMoreMaterials(true);
     try {
       const [nextResourcesPage, nextRecordingsPage] = await Promise.all([
-        shouldLoadResources ? getStudentResourcesPage({ page: resourcePage + 1, limit: 50, courseId: selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: resourcePage, total: resources.length, totalPages: resourcePage }),
-        shouldLoadRecordings ? getStudentRecordingsPage({ page: recordingPage + 1, limit: 50, courseId: selectedMaterialCourseId, groupId: selectedMaterialGroupId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: recordingPage, total: recordings.length, totalPages: recordingPage }),
+        shouldLoadResources ? getStudentResourcesPage({ page: resourcePage + 1, limit: 50, courseId: selectedMaterialCourseId, groupId: selectedMaterialGroupId, sessionId: selectedMaterialSessionId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: resourcePage, total: resources.length, totalPages: resourcePage }),
+        shouldLoadRecordings ? getStudentRecordingsPage({ page: recordingPage + 1, limit: 50, courseId: selectedMaterialCourseId, groupId: selectedMaterialGroupId, sessionId: selectedMaterialSessionId, lessonId: selectedMaterialLessonId }) : Promise.resolve({ items: [], page: recordingPage, total: recordings.length, totalPages: recordingPage }),
       ]);
       const nextResources = nextResourcesPage.items ?? [];
       const nextRecordings = nextRecordingsPage.items ?? [];
@@ -1086,7 +1114,7 @@ export function StudentDashboardPage({
   const materialItems = useMemo<StudentMaterialListItem[]>(() => [
     ...resources.map((item, index) => normalizeMaterialItem(item, 'resource', index)),
     ...recordings.map((item, index) => normalizeMaterialItem(item, 'recording', index)),
-  ].filter(({ session }) => isStudentVisibleSession(session)), [recordings, resources]);
+  ].filter(({ session }) => isStudentVisibleMaterialSession(session)), [recordings, resources]);
   const materialCourseOptions = useMemo(() => {
     const options = new Map<string, string>();
     courses.forEach((course) => {
@@ -1121,21 +1149,55 @@ export function StudentDashboardPage({
     materialItems.forEach(({ session, material }) => {
       const lessonId = session.lessonId ?? material?.lessonId;
       const lessonTitle = session.lessonTitle ?? material?.lessonTitle;
-      if (!lessonId || !lessonTitle) return;
-      options.set(String(lessonId), lessonTitle);
+      if (!lessonTitle) return;
+      options.set(lessonId ? String(lessonId) : lessonTitle, lessonTitle);
     });
     return Array.from(options.entries())
       .map(([value, label]) => ({ value, label }))
       .sort((first, second) => first.label.localeCompare(second.label));
   }, [materialItems]);
-  const filteredMaterialItems = useMemo(() => materialItems.filter(({ kind, session }) => {
+  const materialSessionOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    materialItems.forEach(({ session }, index) => {
+      const id = sessionId(session);
+      if (!id) return;
+      const title = session.sessionTitle ?? session.title ?? t('student.sessionFallback', { number: index + 1 });
+      const startsAt = sessionStartsAt(session);
+      options.set(String(id), `${title}${startsAt ? ` · ${formatDate(startsAt)}` : ''}`);
+    });
+    return Array.from(options.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((first, second) => first.label.localeCompare(second.label));
+  }, [materialItems, t]);
+  const materialCourseSelectOptions = useMemo(
+    () => materialFilterOptionsWithActive(materialCourseOptions, materialCourseFilter, materialCourseFilter),
+    [materialCourseFilter, materialCourseOptions],
+  );
+  const materialGroupSelectOptions = useMemo(
+    () => materialFilterOptionsWithActive(materialGroupOptions, materialGroupFilter, materialGroupFilter),
+    [materialGroupFilter, materialGroupOptions],
+  );
+  const materialSessionSelectOptions = useMemo(
+    () => materialFilterOptionsWithActive(
+      materialSessionOptions,
+      materialSessionFilter,
+      t('student.sessionFallback', { number: materialSessionFilter }),
+    ),
+    [materialSessionFilter, materialSessionOptions, t],
+  );
+  const materialLessonSelectOptions = useMemo(
+    () => materialFilterOptionsWithActive(materialLessonOptions, materialLessonFilter, materialLessonFilter),
+    [materialLessonFilter, materialLessonOptions],
+  );
+  const filteredMaterialItems = useMemo(() => materialItems.filter(({ kind, session, material }) => {
     if (materialFilter === 'resources' && kind !== 'resource') return false;
     if (materialFilter === 'recordings' && kind !== 'recording') return false;
     if (materialCourseFilter !== 'all' && String(session.courseId ?? session.courseTitle) !== materialCourseFilter) return false;
     if (materialGroupFilter !== 'all' && String(session.groupId ?? session.groupName) !== materialGroupFilter) return false;
-    if (materialLessonFilter !== 'all' && String(session.lessonId ?? session.lessonTitle ?? '') !== materialLessonFilter) return false;
+    if (materialSessionFilter !== 'all' && String(sessionId(session) ?? '') !== materialSessionFilter) return false;
+    if (materialLessonFilter !== 'all' && materialLessonValue(session, material) !== materialLessonFilter) return false;
     return true;
-  }), [materialCourseFilter, materialFilter, materialGroupFilter, materialItems, materialLessonFilter]);
+  }), [materialCourseFilter, materialFilter, materialGroupFilter, materialItems, materialLessonFilter, materialSessionFilter]);
   const visibleMaterialItems = useMemo(() => filteredMaterialItems.slice(0, materialVisibleCount), [filteredMaterialItems, materialVisibleCount]);
   const canLoadMoreMaterials = materialVisibleCount < filteredMaterialItems.length || (materialFilter !== 'recordings' && hasMoreResources) || (materialFilter !== 'resources' && hasMoreRecordings);
   const loadedMaterialTotal = filteredMaterialItems.length;
@@ -1145,8 +1207,8 @@ export function StudentDashboardPage({
       ? recordingTotal
       : resourceTotal + recordingTotal;
   const materialDisplayTotal = Math.max(loadedMaterialTotal, serverMaterialTotal);
-  const hasActiveMaterialFilter = materialFilter !== 'all' || materialCourseFilter !== 'all' || materialGroupFilter !== 'all' || materialLessonFilter !== 'all';
-  const showMaterialToolbar = materialItems.length > 0 || materialCourseOptions.length > 0 || materialGroupOptions.length > 0 || materialLessonOptions.length > 0 || hasActiveMaterialFilter;
+  const hasActiveMaterialFilter = materialFilter !== 'all' || materialCourseFilter !== 'all' || materialGroupFilter !== 'all' || materialSessionFilter !== 'all' || materialLessonFilter !== 'all';
+  const showMaterialToolbar = materialItems.length > 0 || materialCourseSelectOptions.length > 0 || materialGroupSelectOptions.length > 0 || materialSessionSelectOptions.length > 0 || materialLessonSelectOptions.length > 0 || hasActiveMaterialFilter;
   const selectedCourseSessions = useMemo(() => {
     if (courseDetail?.sessions?.length) return courseDetail.sessions;
     if (typeof activeCourseId === 'number') return sessions;
@@ -1158,7 +1220,7 @@ export function StudentDashboardPage({
       return [
         ...(courseDetail?.materials ?? []).map((item, index) => normalizeMaterialItem(item, 'resource', index)),
         ...(courseDetail.recordings ?? []).map((item, index) => normalizeMaterialItem(item, 'recording', index)),
-      ].filter(({ session }) => isStudentVisibleSession(session));
+      ].filter(({ session }) => isStudentVisibleMaterialSession(session));
     }
     if (typeof activeCourseId === 'number') return materialItems.slice(0, 20);
     if (!selectedCourseTitle) return [];
@@ -1860,30 +1922,39 @@ export function StudentDashboardPage({
                   </button>
                 ))}
               </div>
-              {materialCourseOptions.length ? (
+              {materialCourseSelectOptions.length || materialCourseFilter !== 'all' ? (
                 <label>
                   {t('student.courseFilter')}
                   <select value={materialCourseFilter} onChange={(event) => setMaterialCourseFilter(event.target.value)}>
                     <option value="all">{t('student.allCourses')}</option>
-                    {materialCourseOptions.map((course) => <option key={course.value} value={course.value}>{course.label}</option>)}
+                    {materialCourseSelectOptions.map((course) => <option key={course.value} value={course.value}>{course.label}</option>)}
                   </select>
                 </label>
               ) : null}
-              {materialGroupOptions.length ? (
+              {materialGroupSelectOptions.length || materialGroupFilter !== 'all' ? (
                 <label>
                   {t('student.groupFilter')}
                   <select value={materialGroupFilter} onChange={(event) => setMaterialGroupFilter(event.target.value)}>
                     <option value="all">{t('student.allGroups')}</option>
-                    {materialGroupOptions.map((group) => <option key={group.value} value={group.value}>{group.label}</option>)}
+                    {materialGroupSelectOptions.map((group) => <option key={group.value} value={group.value}>{group.label}</option>)}
                   </select>
                 </label>
               ) : null}
-              {materialLessonOptions.length ? (
+              {materialSessionSelectOptions.length || materialSessionFilter !== 'all' ? (
+                <label>
+                  {t('student.sessionFilter')}
+                  <select value={materialSessionFilter} onChange={(event) => setMaterialSessionFilter(event.target.value)}>
+                    <option value="all">{t('student.allSessions')}</option>
+                    {materialSessionSelectOptions.map((session) => <option key={session.value} value={session.value}>{session.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              {materialLessonSelectOptions.length || materialLessonFilter !== 'all' ? (
                 <label>
                   {t('student.lessonFilter')}
                   <select value={materialLessonFilter} onChange={(event) => setMaterialLessonFilter(event.target.value)}>
                     <option value="all">{t('student.allLessons')}</option>
-                    {materialLessonOptions.map((lesson) => <option key={lesson.value} value={lesson.value}>{lesson.label}</option>)}
+                    {materialLessonSelectOptions.map((lesson) => <option key={lesson.value} value={lesson.value}>{lesson.label}</option>)}
                   </select>
                 </label>
               ) : null}

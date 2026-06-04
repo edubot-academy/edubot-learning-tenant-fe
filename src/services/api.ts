@@ -1115,22 +1115,22 @@ export async function getStudentSessionDetail(sessionId: number) {
   return data;
 }
 
-export async function listStudentResources(params: { courseId?: number; groupId?: number; lessonId?: number; limit?: number; page?: number; type?: string; from?: string; to?: string } = {}) {
+export async function listStudentResources(params: { courseId?: number; groupId?: number; sessionId?: number; lessonId?: number; limit?: number; page?: number; type?: string; from?: string; to?: string } = {}) {
   const page = await getStudentResourcesPage(params);
   return page.items;
 }
 
-export async function getStudentResourcesPage(params: { courseId?: number; groupId?: number; lessonId?: number; limit?: number; page?: number; type?: string; from?: string; to?: string } = {}) {
+export async function getStudentResourcesPage(params: { courseId?: number; groupId?: number; sessionId?: number; lessonId?: number; limit?: number; page?: number; type?: string; from?: string; to?: string } = {}) {
   const { data } = await api.get<Array<StudentSessionSummary | StudentMaterialItem> | StudentPagedResponse<StudentSessionSummary | StudentMaterialItem>>('/student/resources', { params });
   return toStudentPage(data);
 }
 
-export async function listStudentRecordings(params: { courseId?: number; groupId?: number; lessonId?: number; limit?: number; page?: number; from?: string; to?: string } = {}) {
+export async function listStudentRecordings(params: { courseId?: number; groupId?: number; sessionId?: number; lessonId?: number; limit?: number; page?: number; from?: string; to?: string } = {}) {
   const page = await getStudentRecordingsPage(params);
   return page.items;
 }
 
-export async function getStudentRecordingsPage(params: { courseId?: number; groupId?: number; lessonId?: number; limit?: number; page?: number; from?: string; to?: string } = {}) {
+export async function getStudentRecordingsPage(params: { courseId?: number; groupId?: number; sessionId?: number; lessonId?: number; limit?: number; page?: number; from?: string; to?: string } = {}) {
   const { data } = await api.get<Array<StudentSessionSummary | StudentMaterialItem> | StudentPagedResponse<StudentSessionSummary | StudentMaterialItem>>('/student/recordings', { params });
   return toStudentPage(data);
 }

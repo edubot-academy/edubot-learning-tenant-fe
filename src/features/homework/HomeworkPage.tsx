@@ -64,6 +64,8 @@ type AiHomeworkDraftState = {
   output: AiHomeworkDraftResponse['output'];
 };
 
+type HomeworkReviewItem = HomeworkReviewRoster['items'][number];
+
 const cleanAiHomeworkDraftOutput = (output: AiHomeworkDraftResponse['output']): AiHomeworkDraftResponse['output'] => {
   const nested = typeof output.description === 'string' && output.description.trim().startsWith('{')
     ? (() => {
@@ -124,7 +126,7 @@ export function HomeworkPage() {
   const [aiHomeworkDraftError, setAiHomeworkDraftError] = useState('');
   const [aiHomeworkInstructions, setAiHomeworkInstructions] = useState('');
   const [createHomeworkMode, setCreateHomeworkMode] = useState<'manual' | 'ai'>('manual');
-  const [expandedReviewStudentId, setExpandedReviewStudentId] = useState<number | undefined>();
+  const [activeReviewStudentId, setActiveReviewStudentId] = useState<number | undefined>();
   const [assigneeQuery, setAssigneeQuery] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -269,6 +271,10 @@ export function HomeworkPage() {
     const rows = reviewRoster?.items ?? [];
     return filterHomeworkReviewItems(rows, reviewFilter);
   }, [reviewFilter, reviewRoster?.items]);
+  const activeReviewItem = useMemo<HomeworkReviewItem | undefined>(
+    () => reviewRoster?.items.find((item) => item.studentId === activeReviewStudentId),
+    [activeReviewStudentId, reviewRoster?.items],
+  );
   const homeworkFormMessage = (message?: string) => {
     if (!message) return '';
     const messages: Record<string, string> = {
@@ -465,7 +471,7 @@ export function HomeworkPage() {
     setReviewDrafts({});
     setAiDrafts({});
     setAiDraftErrors({});
-    setExpandedReviewStudentId(undefined);
+    setActiveReviewStudentId(undefined);
     setGroupsLoaded(false);
     setRosterLoaded(false);
     setSessionHomeworkLoaded(false);
@@ -511,7 +517,7 @@ export function HomeworkPage() {
     setReviewDrafts({});
     setAiDrafts({});
     setAiDraftErrors({});
-    setExpandedReviewStudentId(undefined);
+    setActiveReviewStudentId(undefined);
     setEditHomeworkId(undefined);
     setRosterLoaded(false);
     setSessionHomeworkLoaded(false);
@@ -569,7 +575,7 @@ export function HomeworkPage() {
     setReviewDrafts({});
     setAiDrafts({});
     setAiDraftErrors({});
-    setExpandedReviewStudentId(undefined);
+    setActiveReviewStudentId(undefined);
     setEditHomeworkId(undefined);
     setSessionHomeworkLoaded(false);
     if (!sessionId) return;
@@ -598,7 +604,7 @@ export function HomeworkPage() {
     if (!currentSessionItems.some((item) => item.id === homeworkId)) return;
     setSelectedHomeworkId(homeworkId);
     setReviewFilter('needsReview');
-    setExpandedReviewStudentId(undefined);
+    setActiveReviewStudentId(undefined);
     setReviewLoading(true);
     try {
       const roster = await getHomeworkReviewRoster(sessionId, homeworkId);
@@ -917,6 +923,7 @@ export function HomeworkPage() {
       void getHomeworkReviewQueue({ limit: 20 })
         .then((nextQueue) => setReviewQueue(filterReviewQueueByAssignedScope(nextQueue)))
         .catch(() => undefined);
+      setActiveReviewStudentId(undefined);
       toast.success(t('homework.reviewSaved'));
     } catch {
       toast.error(t('homework.reviewSaveFailed'));
@@ -1290,145 +1297,40 @@ export function HomeworkPage() {
                 onSelect={setReviewFilter}
               />
               <div className="stack-list">
-                {filteredReviewItems.map((item) => {
-                  const isExpanded = expandedReviewStudentId === item.studentId;
-                  return (
-                    <article key={item.studentId} className={`stack-list-item homework-review-item ${item.reviewState}`}>
-                      <div className="homework-review-summary">
-                        <strong>{item.fullName || item.email || studentFallback(item.studentId)}</strong>
-                        <span>
-                          <span className={`status-badge ${item.reviewState}`}>{reviewStateLabel(item.reviewState)}</span>
-                          {item.isLate ? ` · ${t('homework.reviewLate')}` : ''}
-                        </span>
-                        {item.submission?.answerText ? <p>{isExpanded ? item.submission.answerText : `${item.submission.answerText.slice(0, 110)}${item.submission.answerText.length > 110 ? '...' : ''}`}</p> : null}
-                        {item.submission?.attachmentUrl && item.submission.id ? (
-                          <button
-                            type="button"
-                            className="link-button"
-                            onClick={() => void openHomeworkSubmissionAttachment(sessionId!, selectedHomeworkId!, item.submission!.id)}
-                          >
-                            {t('homework.openAttachment')}
-                          </button>
-                        ) : null}
-                      </div>
-                      {item.submission?.id ? (
-                        <div className="review-controls homework-review-controls">
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => setExpandedReviewStudentId(isExpanded ? undefined : item.studentId)}
-                          >
-                            {isExpanded ? t('homework.hideReview') : t('homework.review')}
-                          </button>
-                          {isExpanded ? (
-                            <>
-                              <label>
-                                {t('homework.score')}
-                                <input
-                                  value={reviewDrafts[item.submission.id]?.score ?? ''}
-                                  onChange={(event) => setReviewDrafts((current) => ({
-                                    ...current,
-                                    [item.submission!.id]: {
-                                      score: event.target.value,
-                                      reviewComment: current[item.submission!.id]?.reviewComment ?? '',
-                                    },
-                                  }))}
-                                  inputMode="numeric"
-                                />
-                              </label>
-                              <label>
-                                {t('homework.reviewComment')}
-                                <textarea
-                                  value={reviewDrafts[item.submission.id]?.reviewComment ?? ''}
-                                  onChange={(event) => setReviewDrafts((current) => ({
-                                    ...current,
-                                    [item.submission!.id]: {
-                                      score: current[item.submission!.id]?.score ?? '',
-                                      reviewComment: event.target.value,
-                                    },
-                                  }))}
-                                  placeholder={t('homework.reviewCommentPlaceholder')}
-                                />
-                              </label>
-                              {aiFeedbackDraftEnabled ? (
-                              <div className="ai-feedback-panel">
-                                <div className="ai-feedback-actions">
-                                  <button
-                                    type="button"
-                                    className="secondary-button"
-                                    onClick={() => void requestAiFeedbackDraft(item.submission!.id)}
-                                    disabled={aiDraftingSubmission === item.submission.id || reviewingSubmission === item.submission.id}
-                                  >
-                                    <FiZap />
-                                    {aiDraftingSubmission === item.submission.id ? t('ai.generating') : t('ai.suggestFeedback')}
-                                  </button>
-                                  {aiDrafts[item.submission.id] ? (
-                                    <>
-                                      <button type="button" className="secondary-button" onClick={() => void acceptAiDraft(item.submission!.id)}>
-                                        {t('ai.useDraft')}
-                                      </button>
-                                      <button type="button" className="link-button danger" onClick={() => void rejectAiDraft(item.submission!.id)}>
-                                        {t('ai.cancelDraft')}
-                                      </button>
-                                    </>
-                                  ) : null}
-                                </div>
-                                {aiDrafts[item.submission.id] ? (
-                                  <div className="ai-feedback-preview">
-                                    <strong>{t('ai.feedbackDraft')}</strong>
-                                    <textarea
-                                      value={aiDrafts[item.submission.id].output.feedback}
-                                      onChange={(event) => setAiDrafts((current) => ({
-                                        ...current,
-                                        [item.submission!.id]: {
-                                          ...current[item.submission!.id],
-                                          output: {
-                                            ...current[item.submission!.id].output,
-                                            feedback: event.target.value,
-                                          },
-                                        },
-                                      }))}
-                                      aria-label={t('ai.feedbackDraft')}
-                                    />
-                                    {aiDrafts[item.submission.id].output.suggestedScore !== undefined && aiDrafts[item.submission.id].output.suggestedScore !== null ? (
-                                      <input
-                                        value={String(aiDrafts[item.submission.id].output.suggestedScore)}
-                                        onChange={(event) => setAiDrafts((current) => ({
-                                          ...current,
-                                          [item.submission!.id]: {
-                                            ...current[item.submission!.id],
-                                            output: {
-                                              ...current[item.submission!.id].output,
-                                              suggestedScore: event.target.value.trim() ? Number(event.target.value) : null,
-                                            },
-                                          },
-                                        }))}
-                                        inputMode="numeric"
-                                        aria-label={t('homework.score')}
-                                      />
-                                    ) : null}
-                                    {aiDrafts[item.submission.id].output.nextStep ? <span>{aiDrafts[item.submission.id].output.nextStep}</span> : null}
-                                  </div>
-                                ) : null}
-                                {aiDraftErrors[item.submission.id] ? <span className="field-error">{aiDraftErrors[item.submission.id]}</span> : null}
-                              </div>
-                              ) : null}
-                              <div className="activity-actions">
-                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'approved')} disabled={reviewingSubmission === item.submission.id}>{t('courses.approve')}</button>
-                                <button type="button" className="secondary-button" onClick={() => void submitReview(item.submission!.id, 'needs_revision')} disabled={reviewingSubmission === item.submission.id}>{t('sessions.revise')}</button>
-                                <button type="button" className="link-button danger" onClick={() => void submitReview(item.submission!.id, 'rejected')} disabled={reviewingSubmission === item.submission.id}>{t('courses.reject')}</button>
-                              </div>
-                            </>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className={`status-badge ${item.hasSubmission ? 'pending_approval' : 'destructive'}`}>
-                          {item.hasSubmission ? t('homework.noReview') : t('homework.noSubmission')}
-                        </span>
-                      )}
-                    </article>
-                  );
-                })}
+                {filteredReviewItems.map((item) => (
+                  <article key={item.studentId} className={`stack-list-item homework-review-item ${item.reviewState}`}>
+                    <div className="homework-review-summary">
+                      <strong>{item.fullName || item.email || studentFallback(item.studentId)}</strong>
+                      <span>
+                        <span className={`status-badge ${item.reviewState}`}>{reviewStateLabel(item.reviewState)}</span>
+                        {item.isLate ? ` · ${t('homework.reviewLate')}` : ''}
+                      </span>
+                      {item.submission?.answerText ? <p>{`${item.submission.answerText.slice(0, 160)}${item.submission.answerText.length > 160 ? '...' : ''}`}</p> : null}
+                      {item.submission?.attachmentUrl && item.submission.id ? (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => void openHomeworkSubmissionAttachment(sessionId!, selectedHomeworkId!, item.submission!.id)}
+                        >
+                          {t('homework.openAttachment')}
+                        </button>
+                      ) : null}
+                    </div>
+                    {item.submission?.id ? (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setActiveReviewStudentId(item.studentId)}
+                      >
+                        {t('homework.review')}
+                      </button>
+                    ) : (
+                      <span className={`status-badge ${item.hasSubmission ? 'pending_approval' : 'destructive'}`}>
+                        {item.hasSubmission ? t('homework.noReview') : t('homework.noSubmission')}
+                      </span>
+                    )}
+                  </article>
+                ))}
                 {!filteredReviewItems.length ? <EmptyState title={t('homework.noStudentsInFilter')} detail={t('homework.noStudentsInFilterDetail')} /> : null}
               </div>
             </>
@@ -1438,6 +1340,145 @@ export function HomeworkPage() {
         </aside>
       </div>
       ) : null}
+
+      {activeReviewItem?.submission?.id ? (() => {
+        const submission = activeReviewItem.submission;
+        const draft = reviewDrafts[submission.id] ?? { score: '', reviewComment: '' };
+        const aiDraft = aiDrafts[submission.id];
+        return (
+          <Modal
+            labelledBy="homework-review-modal-title"
+            className="decision-modal homework-review-modal"
+            onClose={() => setActiveReviewStudentId(undefined)}
+          >
+            <div className="homework-review-modal-header">
+              <div>
+                <span>{selectedHomework?.title ?? t('homework.selectedHomework')}</span>
+                <h2 id="homework-review-modal-title">{activeReviewItem.fullName || activeReviewItem.email || studentFallback(activeReviewItem.studentId)}</h2>
+              </div>
+              <span className={`status-badge ${activeReviewItem.reviewState}`}>{reviewStateLabel(activeReviewItem.reviewState)}</span>
+            </div>
+            <div className="homework-review-modal-grid">
+              <section className="homework-submission-pane">
+                <div className="homework-submission-meta">
+                  <span>{t('homework.reviewSubmitted')}</span>
+                  {activeReviewItem.isLate ? <span className="status-badge destructive">{t('homework.reviewLate')}</span> : null}
+                </div>
+                <div className="homework-submission-answer">
+                  <p>{submission.answerText || t('homework.noSubmission')}</p>
+                </div>
+                {submission.attachmentUrl ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void openHomeworkSubmissionAttachment(sessionId!, selectedHomeworkId!, submission.id)}
+                  >
+                    {t('homework.openAttachment')}
+                  </button>
+                ) : null}
+              </section>
+              <aside className="homework-grading-pane">
+                <label>
+                  {t('homework.score')}
+                  <input
+                    value={draft.score}
+                    onChange={(event) => setReviewDrafts((current) => ({
+                      ...current,
+                      [submission.id]: {
+                        score: event.target.value,
+                        reviewComment: current[submission.id]?.reviewComment ?? '',
+                      },
+                    }))}
+                    inputMode="numeric"
+                  />
+                </label>
+                <label>
+                  {t('homework.reviewComment')}
+                  <textarea
+                    value={draft.reviewComment}
+                    onChange={(event) => setReviewDrafts((current) => ({
+                      ...current,
+                      [submission.id]: {
+                        score: current[submission.id]?.score ?? '',
+                        reviewComment: event.target.value,
+                      },
+                    }))}
+                    placeholder={t('homework.reviewCommentPlaceholder')}
+                  />
+                </label>
+                {aiFeedbackDraftEnabled ? (
+                  <div className="ai-feedback-panel">
+                    <div className="ai-feedback-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void requestAiFeedbackDraft(submission.id)}
+                        disabled={aiDraftingSubmission === submission.id || reviewingSubmission === submission.id}
+                      >
+                        <FiZap />
+                        {aiDraftingSubmission === submission.id ? t('ai.generating') : t('ai.suggestFeedback')}
+                      </button>
+                      {aiDraft ? (
+                        <>
+                          <button type="button" className="secondary-button" onClick={() => void acceptAiDraft(submission.id)}>
+                            {t('ai.useDraft')}
+                          </button>
+                          <button type="button" className="link-button danger" onClick={() => void rejectAiDraft(submission.id)}>
+                            {t('ai.cancelDraft')}
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                    {aiDraft ? (
+                      <div className="ai-feedback-preview">
+                        <strong>{t('ai.feedbackDraft')}</strong>
+                        <textarea
+                          value={aiDraft.output.feedback}
+                          onChange={(event) => setAiDrafts((current) => ({
+                            ...current,
+                            [submission.id]: {
+                              ...current[submission.id],
+                              output: {
+                                ...current[submission.id].output,
+                                feedback: event.target.value,
+                              },
+                            },
+                          }))}
+                          aria-label={t('ai.feedbackDraft')}
+                        />
+                        {aiDraft.output.suggestedScore !== undefined && aiDraft.output.suggestedScore !== null ? (
+                          <input
+                            value={String(aiDraft.output.suggestedScore)}
+                            onChange={(event) => setAiDrafts((current) => ({
+                              ...current,
+                              [submission.id]: {
+                                ...current[submission.id],
+                                output: {
+                                  ...current[submission.id].output,
+                                  suggestedScore: event.target.value.trim() ? Number(event.target.value) : null,
+                                },
+                              },
+                            }))}
+                            inputMode="numeric"
+                            aria-label={t('homework.score')}
+                          />
+                        ) : null}
+                        {aiDraft.output.nextStep ? <span>{aiDraft.output.nextStep}</span> : null}
+                      </div>
+                    ) : null}
+                    {aiDraftErrors[submission.id] ? <span className="field-error">{aiDraftErrors[submission.id]}</span> : null}
+                  </div>
+                ) : null}
+                <div className="homework-review-modal-actions">
+                  <button type="button" className="secondary-button" onClick={() => void submitReview(submission.id, 'approved')} disabled={reviewingSubmission === submission.id}>{t('courses.approve')}</button>
+                  <button type="button" className="secondary-button" onClick={() => void submitReview(submission.id, 'needs_revision')} disabled={reviewingSubmission === submission.id}>{t('sessions.revise')}</button>
+                  <button type="button" className="link-button danger" onClick={() => void submitReview(submission.id, 'rejected')} disabled={reviewingSubmission === submission.id}>{t('courses.reject')}</button>
+                </div>
+              </aside>
+            </div>
+          </Modal>
+        );
+      })() : null}
 
       {editHomeworkId ? (
         <FormModal labelledBy="edit-homework-title" onClose={closeEditModal} onSubmit={saveHomeworkEdit}>

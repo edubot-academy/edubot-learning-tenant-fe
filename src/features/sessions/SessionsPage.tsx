@@ -120,12 +120,6 @@ const dateTimeLocalValue = (value?: string | null) => {
   return Number.isNaN(date.getTime()) ? '' : dateInputValue(date);
 };
 
-const dateTimeLocalToIso = (value?: string | null) => {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-};
-
 const dateOnly = (value?: string | null) => {
   if (!value) return undefined;
   return value.slice(0, 10);
@@ -503,11 +497,6 @@ export function SessionsPage() {
     value === 'individual' ? t('groups.deliveryIndividual') : t('groups.deliveryGroup')
   );
   const materialFallback = (index: number) => t('sessions.materialFallback', { number: index + 1 });
-  const materialReleaseLabel = (value?: string | null) => {
-    if (!value) return '';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
-  };
   const openMaterialPreview = (material: NonNullable<CourseSession['materials']>[number], index: number) => {
     if (!material.url) return;
     const context = [selectedCourse?.title, selectedGroup?.name, selectedSession?.title].filter(Boolean).join(' · ');
@@ -1589,7 +1578,7 @@ export function SessionsPage() {
       const uploaded = await uploadSessionMaterial(sessionId, file);
       const currentMaterials = Array.isArray(selectedSession.materials) ? selectedSession.materials : [];
       await updateGroupSession(sessionId, {
-        materials: [...currentMaterials, { ...uploaded, isPublished: false }],
+        materials: [...currentMaterials, uploaded],
       });
       await reloadSessions(groupId);
       toast.success(t('sessions.materialUploaded'));
@@ -1732,32 +1721,6 @@ export function SessionsPage() {
     } finally {
       setUpdatingSession(false);
       setPendingRemoval(null);
-    }
-  };
-
-  const updateMaterialVisibility = async (
-    materialIndex: number,
-    patch: Partial<NonNullable<CourseSession['materials']>[number]>,
-  ) => {
-    if (!canManageSessionMaterials) return;
-    if (!sessionId || !groupId || !selectedSession) return;
-    const currentMaterials = Array.isArray(selectedSession.materials) ? selectedSession.materials : [];
-    const currentMaterial = currentMaterials[materialIndex];
-    if (!currentMaterial) return;
-
-    setUpdatingSession(true);
-    try {
-      await updateGroupSession(sessionId, {
-        materials: currentMaterials.map((material, index) => (
-          index === materialIndex ? { ...material, ...patch } : material
-        )),
-      });
-      await reloadSessions(groupId);
-      toast.success(t('sessions.materialVisibilityUpdated'));
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, t('sessions.sessionUpdateFailed')));
-    } finally {
-      setUpdatingSession(false);
     }
   };
 
@@ -2772,33 +2735,12 @@ export function SessionsPage() {
                         <div>
                           <strong>{material.title || materialFallback(index)}</strong>
                           <span className="session-status-pill">
-                            {material.isPublished === false ? t('sessions.materialDraft') : t('sessions.materialPublished')}
+                            {statusLabel(selectedSession.status)}
                           </span>
                           {material.url ? <button type="button" className="link-button" onClick={() => openMaterialPreview(material, index)}>{t('sessions.openFile')}</button> : null}
-                          {material.availableAt ? (
-                            <span className="muted-text">
-                              {t('sessions.materialAvailableAt', { date: materialReleaseLabel(material.availableAt) })}
-                            </span>
-                          ) : null}
                         </div>
                         {canManageSessionMaterials ? (
                           <div className="activity-actions">
-                            <label className="inline-checkbox">
-                              <input
-                                type="checkbox"
-                                checked={material.isPublished !== false}
-                                disabled={updatingSession}
-                                onChange={(event) => void updateMaterialVisibility(index, { isPublished: event.target.checked })}
-                              />
-                              {t('sessions.publishMaterial')}
-                            </label>
-                            <input
-                              type="datetime-local"
-                              value={dateTimeLocalValue(material.availableAt)}
-                              aria-label={t('sessions.materialReleaseDate')}
-                              disabled={updatingSession}
-                              onChange={(event) => void updateMaterialVisibility(index, { availableAt: dateTimeLocalToIso(event.target.value) })}
-                            />
                             <button type="button" className="link-button danger" onClick={() => setPendingRemoval({ type: 'material', materialIndex: index })} disabled={updatingSession}>
                               {t('groups.remove')}
                             </button>

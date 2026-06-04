@@ -735,7 +735,7 @@ describe('SessionsPage session creation', () => {
     expect(api.updateGroupSession).not.toHaveBeenCalledWith(901, expect.objectContaining({ materials: expect.any(Array) }));
   });
 
-  it('uploads new session materials as drafts until explicitly published', async () => {
+  it('uploads new session materials without a separate material release schedule', async () => {
     api.listGroupSessions.mockResolvedValue([{ ...createdSession, materials: [] }]);
     api.uploadSessionMaterial.mockResolvedValue({
       title: 'Deck.pdf',
@@ -765,7 +765,6 @@ describe('SessionsPage session creation', () => {
           title: 'Deck.pdf',
           url: 'https://files.example.test/deck.pdf',
           storageKey: 'session-materials/dev/session-901/deck.pdf',
-          isPublished: false,
         }),
       ],
     }));

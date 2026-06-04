@@ -222,6 +222,70 @@ describe('StudentDashboardPage loading', () => {
     expect(screen.getByRole('button', { name: 'Submit' })).toBeDisabled();
   });
 
+  it('hides materials from scheduled sessions and filters completed materials by lesson', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'UX Design' }]);
+    vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
+      items: [
+        {
+          id: 1,
+          title: 'Future lesson deck',
+          url: 'https://example.test/future.pdf',
+          status: 'scheduled',
+          courseId: 101,
+          courseTitle: 'UX Design',
+          groupId: 301,
+          groupName: 'Group A',
+          groupStatus: 'active',
+          sessionId: 901,
+          sessionTitle: 'Future lesson',
+          lessonTitle: 'Wireframes',
+        },
+        {
+          id: 2,
+          title: 'Wireframe worksheet',
+          url: 'https://example.test/wireframe.pdf',
+          status: 'completed',
+          courseId: 101,
+          courseTitle: 'UX Design',
+          groupId: 301,
+          groupName: 'Group A',
+          groupStatus: 'active',
+          sessionId: 902,
+          sessionTitle: 'Completed lesson',
+          lessonTitle: 'Wireframes',
+        },
+        {
+          id: 3,
+          title: 'Research checklist',
+          url: 'https://example.test/research.pdf',
+          status: 'completed',
+          courseId: 101,
+          courseTitle: 'UX Design',
+          groupId: 301,
+          groupName: 'Group A',
+          groupStatus: 'active',
+          sessionId: 903,
+          sessionTitle: 'Research lesson',
+          lessonTitle: 'Research',
+        },
+      ],
+      page: 1,
+      total: 3,
+      totalPages: 1,
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="materials" /></MemoryRouter>);
+
+    expect(await screen.findByText('Wireframe worksheet')).toBeInTheDocument();
+    expect(screen.queryByText('Future lesson deck')).not.toBeInTheDocument();
+    expect(screen.getByText('Research checklist')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Lesson'), { target: { value: 'Wireframes' } });
+
+    expect(screen.getByText('Wireframe worksheet')).toBeInTheDocument();
+    expect(screen.queryByText('Research checklist')).not.toBeInTheDocument();
+  });
+
   it('submits uploaded activity files separately from link submissions', async () => {
     vi.mocked(api.listStudentTasks).mockResolvedValue([
       {
@@ -300,13 +364,14 @@ describe('StudentDashboardPage loading', () => {
     expect(screen.getByTitle('Resource 1')).toHaveAttribute('src', 'https://example.test/resource-1');
     fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
     expect(screen.getByLabelText('Group')).toBeInTheDocument();
+    expect(screen.getByLabelText('Session')).toBeInTheDocument();
     expect(screen.getByLabelText('Lesson')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Recordings' }));
-    expect(await screen.findByText('Recorded session')).toBeInTheDocument();
+    expect((await screen.findAllByText('Recorded session')).length).toBeGreaterThan(0);
     expect(screen.queryByText('Resource 1')).not.toBeInTheDocument();
-    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: undefined, lessonId: undefined });
-    expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: undefined, lessonId: undefined });
+    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: undefined, sessionId: undefined, lessonId: undefined });
+    expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: undefined, sessionId: undefined, lessonId: undefined });
   });
 
   it('sends group and lesson filters when loading student materials', async () => {
@@ -332,14 +397,52 @@ describe('StudentDashboardPage loading', () => {
 
     expect(await screen.findByText('Lesson file')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Group'), { target: { value: '10' } });
-    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: undefined }));
-    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: undefined });
+    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, sessionId: undefined, lessonId: undefined }));
+    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, sessionId: undefined, lessonId: undefined });
 
     fireEvent.change(screen.getByLabelText('Lesson'), { target: { value: '501' } });
-    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: 501 }));
-    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, lessonId: 501 });
+    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, sessionId: undefined, lessonId: 501 }));
+    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, sessionId: undefined, lessonId: 501 });
+
+    fireEvent.change(screen.getByLabelText('Session'), { target: { value: '2' } });
+    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, sessionId: 2, lessonId: 501 }));
+    expect(api.getStudentRecordingsPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: 10, sessionId: 2, lessonId: 501 });
     fireEvent.click(screen.getByRole('button', { name: 'Recordings' }));
-    expect(await screen.findByText('Session 2')).toBeInTheDocument();
+    expect((await screen.findAllByText('Session 2')).length).toBeGreaterThan(0);
+  });
+
+  it('keeps active material filter controls visible when a selected session has no results', async () => {
+    vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
+    vi.mocked(api.getStudentResourcesPage).mockImplementation((params = {}) => Promise.resolve(
+      params.sessionId === 1
+        ? { items: [], page: 1, totalPages: 1, total: 0 }
+        : {
+            items: [
+              { id: 'resource-1', title: 'Session-only file', url: 'https://example.test/session-file', sessionId: 1, sessionTitle: 'Session 1', courseId: 101, courseTitle: 'Math' },
+            ],
+            page: 1,
+            totalPages: 1,
+            total: 1,
+          },
+    ));
+    vi.mocked(api.getStudentRecordingsPage).mockResolvedValue({
+      items: [],
+      page: 1,
+      totalPages: 1,
+      total: 0,
+    });
+
+    render(<MemoryRouter><StudentDashboardPage view="materials" /></MemoryRouter>);
+
+    expect(await screen.findByText('Session-only file')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Session'), { target: { value: '1' } });
+
+    await waitFor(() => expect(screen.queryByText('Session-only file')).not.toBeInTheDocument());
+    expect(screen.getByText('No materials match these filters')).toBeInTheDocument();
+    expect(screen.getByLabelText('Session')).toHaveValue('1');
+
+    fireEvent.change(screen.getByLabelText('Session'), { target: { value: 'all' } });
+    await waitFor(() => expect(api.getStudentResourcesPage).toHaveBeenLastCalledWith({ page: 1, limit: 50, courseId: undefined, groupId: undefined, sessionId: undefined, lessonId: undefined }));
   });
 
   it('keeps material filters visible when the selected type has no results', async () => {
@@ -376,7 +479,7 @@ describe('StudentDashboardPage loading', () => {
     vi.mocked(api.listStudentCourses).mockResolvedValue([{ id: 101, title: 'Math' }]);
     vi.mocked(api.getStudentResourcesPage).mockResolvedValue({
       items: [
-        { id: 'resource-1', title: 'Visible resource', url: 'https://example.test/visible', sessionId: 1, sessionTitle: 'Open session', status: 'scheduled', courseId: 101, courseTitle: 'Math' },
+        { id: 'resource-1', title: 'Visible resource', url: 'https://example.test/visible', sessionId: 1, sessionTitle: 'Completed session', status: 'completed', courseId: 101, courseTitle: 'Math' },
         { id: 'resource-2', title: 'Planned resource', url: 'https://example.test/planned', sessionId: 2, sessionTitle: 'Planned session', status: 'scheduled', groupStatus: 'planned', courseId: 101, courseTitle: 'Math' },
       ],
       page: 1,
@@ -438,7 +541,7 @@ describe('StudentDashboardPage loading', () => {
     expect(screen.getByRole('dialog', { name: 'Formula sheet' })).toBeInTheDocument();
     expect(screen.getByTitle('Formula sheet')).toHaveAttribute('src', 'https://example.test/formula.pdf');
     expect(api.listStudentTasks).toHaveBeenCalledWith({ limit: 50, courseId: 101 });
-    expect(api.getStudentResourcesPage).toHaveBeenCalledWith({ page: 1, limit: 50, courseId: 101, groupId: undefined, lessonId: undefined });
+    expect(api.getStudentResourcesPage).toHaveBeenCalledWith({ page: 1, limit: 50, courseId: 101, groupId: undefined, sessionId: undefined, lessonId: undefined });
   });
 
   it('defensively hides non-visible course sessions from course detail', async () => {

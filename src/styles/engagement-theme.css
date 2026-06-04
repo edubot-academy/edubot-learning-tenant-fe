@@ -4,7 +4,7 @@
  * Phase 1: CSS-only visual overlay for student/instructor learning surfaces.
  * This keeps the PR low-risk while we validate the QuestLMS-inspired direction.
  *
- * Scope guardrails live in ./engagement-scope-notes.css.
+ * Scope guardrails live in ./ENGAGEMENT_THEME_NOTES.md.
  *
  * Next phase TODO:
  * - Move from body:has(...) selectors to an explicit .engagement-theme wrapper.
@@ -16,3 +16,4 @@
 @import './engagement-polish.css';
 @import './engagement-tone.css';
 @import './engagement-questlms-alignment.css';
+@import './engagement-hardening.css';

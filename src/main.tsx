@@ -11,6 +11,7 @@ import './i18n/config';
 import './styles/app.css';
 import './styles/engagement.css';
 import './styles/engagement-polish.css';
+import './styles/engagement-tone.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

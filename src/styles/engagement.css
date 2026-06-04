@@ -1,0 +1,345 @@
+/*
+ * EduBot Engagement Theme
+ * QuestLMS-inspired styling for student and instructor/teaching surfaces.
+ * Keeps tenant operations clean while making learning/teaching pages playful and motivational.
+ */
+
+:root {
+  --engagement-bg: #f7f9fb;
+  --engagement-text: #1f2533;
+  --engagement-primary: #58cc02;
+  --engagement-primary-shadow: #46a302;
+  --engagement-primary-soft: rgba(88, 204, 2, 0.12);
+  --engagement-secondary: #46178f;
+  --engagement-secondary-shadow: #2f0f66;
+  --engagement-secondary-soft: rgba(70, 23, 143, 0.11);
+  --engagement-accent: #ffc800;
+  --engagement-accent-soft: rgba(255, 200, 0, 0.18);
+  --engagement-streak: #f97316;
+  --engagement-streak-soft: rgba(249, 115, 22, 0.13);
+  --engagement-line: rgba(31, 37, 51, 0.08);
+  --engagement-shadow: 0 5px 0 rgba(31, 37, 51, 0.11);
+  --engagement-shadow-strong: 0 6px 0 rgba(31, 37, 51, 0.16);
+}
+
+body:has(.student-workspace-grid),
+body:has(.student-progress-summary),
+body:has(.course-action-grid),
+body:has(.course-context-strip),
+body:has(.student-today-sessions-section) {
+  --app-bg: var(--engagement-bg);
+  --body-gradient: radial-gradient(circle at 18% 0%, rgba(88, 204, 2, 0.11), transparent 28rem), radial-gradient(circle at 88% 10%, rgba(70, 23, 143, 0.08), transparent 26rem), var(--engagement-bg);
+  --brand-primary: var(--engagement-primary);
+  --brand-primary-strong: var(--engagement-primary-shadow);
+  --brand-primary-soft: var(--engagement-primary-soft);
+  --brand-accent: var(--engagement-accent);
+  --surface: #ffffff;
+  --surface-muted: #f3f6fb;
+  --surface-hover: rgba(88, 204, 2, 0.08);
+  --line: var(--engagement-line);
+  --line-strong: rgba(31, 37, 51, 0.14);
+  --text: var(--engagement-text);
+  --radius: 16px;
+}
+
+body:has(.student-workspace-grid) .app-shell,
+body:has(.student-progress-summary) .app-shell,
+body:has(.course-action-grid) .app-shell,
+body:has(.course-context-strip) .app-shell,
+body:has(.student-today-sessions-section) .app-shell {
+  background: transparent;
+}
+
+body:has(.student-workspace-grid) .sidebar,
+body:has(.student-progress-summary) .sidebar,
+body:has(.course-action-grid) .sidebar,
+body:has(.course-context-strip) .sidebar,
+body:has(.student-today-sessions-section) .sidebar {
+  background: #ffffff;
+  border-right: 1px solid var(--engagement-line);
+  box-shadow: none;
+}
+
+body:has(.student-workspace-grid) .brand-mark,
+body:has(.student-progress-summary) .brand-mark,
+body:has(.course-action-grid) .brand-mark,
+body:has(.course-context-strip) .brand-mark,
+body:has(.student-today-sessions-section) .brand-mark {
+  background: var(--engagement-primary);
+  border-radius: 14px;
+  color: #ffffff;
+  box-shadow: var(--engagement-shadow);
+  font-weight: 950;
+}
+
+body:has(.student-workspace-grid) .brand-copy strong,
+body:has(.student-progress-summary) .brand-copy strong,
+body:has(.course-action-grid) .brand-copy strong,
+body:has(.course-context-strip) .brand-copy strong,
+body:has(.student-today-sessions-section) .brand-copy strong {
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a,
+body:has(.student-progress-summary) .sidebar-nav a,
+body:has(.course-action-grid) .sidebar-nav a,
+body:has(.course-context-strip) .sidebar-nav a,
+body:has(.student-today-sessions-section) .sidebar-nav a,
+body:has(.student-workspace-grid) .ghost-button,
+body:has(.student-progress-summary) .ghost-button,
+body:has(.course-action-grid) .ghost-button,
+body:has(.course-context-strip) .ghost-button,
+body:has(.student-today-sessions-section) .ghost-button {
+  border-radius: 18px;
+  font-weight: 900;
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a.active,
+body:has(.student-progress-summary) .sidebar-nav a.active,
+body:has(.course-action-grid) .sidebar-nav a.active,
+body:has(.course-context-strip) .sidebar-nav a.active,
+body:has(.student-today-sessions-section) .sidebar-nav a.active,
+body:has(.student-workspace-grid) .sidebar-nav a[aria-current='page'],
+body:has(.student-progress-summary) .sidebar-nav a[aria-current='page'],
+body:has(.course-action-grid) .sidebar-nav a[aria-current='page'],
+body:has(.course-context-strip) .sidebar-nav a[aria-current='page'],
+body:has(.student-today-sessions-section) .sidebar-nav a[aria-current='page'] {
+  background: var(--engagement-primary-soft);
+  color: var(--engagement-primary-shadow);
+  box-shadow: var(--engagement-shadow);
+}
+
+body:has(.student-workspace-grid) .sidebar-current-dot,
+body:has(.student-progress-summary) .sidebar-current-dot,
+body:has(.course-action-grid) .sidebar-current-dot,
+body:has(.course-context-strip) .sidebar-current-dot,
+body:has(.student-today-sessions-section) .sidebar-current-dot {
+  background: var(--engagement-primary);
+}
+
+body:has(.student-workspace-grid) .sidebar-workspace-card,
+body:has(.student-progress-summary) .sidebar-workspace-card,
+body:has(.course-action-grid) .sidebar-workspace-card,
+body:has(.course-context-strip) .sidebar-workspace-card,
+body:has(.student-today-sessions-section) .sidebar-workspace-card {
+  border: 2px solid rgba(255, 200, 0, 0.3);
+  background: var(--engagement-accent-soft);
+  border-radius: 28px;
+}
+
+body:has(.student-workspace-grid) .page-header,
+body:has(.student-progress-summary) .page-header,
+body:has(.course-action-grid) .page-header,
+body:has(.course-context-strip) .page-header,
+body:has(.student-today-sessions-section) .page-header {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body:has(.student-workspace-grid) .page-header h1,
+body:has(.student-progress-summary) .page-header h1,
+body:has(.course-action-grid) .page-header h1,
+body:has(.course-context-strip) .page-header h1,
+body:has(.student-today-sessions-section) .page-header h1 {
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 950;
+  letter-spacing: -0.05em;
+}
+
+body:has(.student-workspace-grid) .content-section,
+body:has(.student-progress-summary) .content-section,
+body:has(.student-today-sessions-section) .content-section,
+body:has(.course-action-grid) .content-section,
+body:has(.course-context-strip) .content-section,
+body:has(.student-workspace-grid) .student-course-card,
+body:has(.student-progress-summary) .student-progress-summary-item,
+body:has(.student-today-sessions-section) .student-today-session-card,
+body:has(.course-action-grid) .course-action-card,
+body:has(.course-context-strip) .course-context-strip,
+body:has(.course-context-strip) .course-workflow-checklist,
+body:has(.course-context-strip) .table-wrap {
+  border: 2px solid var(--engagement-line);
+  border-radius: 32px;
+  background: #ffffff;
+  box-shadow: var(--engagement-shadow);
+}
+
+body:has(.student-workspace-grid) .student-priority-card,
+body:has(.student-workspace-grid) .student-progress-next-step,
+body:has(.student-progress-summary) .student-progress-next-step,
+body:has(.student-today-sessions-section) .student-priority-card {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: 36px;
+  background: var(--engagement-secondary);
+  color: #ffffff;
+  box-shadow: 0 5px 0 var(--engagement-secondary-shadow);
+}
+
+body:has(.student-workspace-grid) .student-priority-card::after,
+body:has(.student-progress-summary) .student-progress-next-step::after,
+body:has(.student-today-sessions-section) .student-priority-card::after {
+  content: '';
+  position: absolute;
+  right: -48px;
+  bottom: -48px;
+  width: 180px;
+  height: 180px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+body:has(.student-workspace-grid) .student-priority-icon,
+body:has(.student-progress-summary) .student-priority-icon {
+  background: var(--engagement-accent);
+  color: var(--engagement-text);
+  box-shadow: var(--engagement-shadow);
+}
+
+body:has(.student-workspace-grid) .primary-link-button,
+body:has(.student-progress-summary) .primary-link-button,
+body:has(.course-action-grid) .primary-link-button,
+body:has(.course-context-strip) .primary-link-button,
+body:has(.student-today-sessions-section) .primary-link-button,
+body:has(.student-workspace-grid) button:not(.secondary-button):not(.ghost-button),
+body:has(.student-progress-summary) button:not(.secondary-button):not(.ghost-button),
+body:has(.course-action-grid) button:not(.secondary-button):not(.ghost-button),
+body:has(.course-context-strip) button:not(.secondary-button):not(.ghost-button),
+body:has(.student-today-sessions-section) button:not(.secondary-button):not(.ghost-button) {
+  border: 0;
+  border-radius: 18px;
+  background: var(--engagement-primary);
+  color: #ffffff;
+  box-shadow: 0 4px 0 var(--engagement-primary-shadow);
+  font-weight: 950;
+}
+
+body:has(.student-workspace-grid) .secondary-button,
+body:has(.student-progress-summary) .secondary-button,
+body:has(.course-action-grid) .secondary-button,
+body:has(.course-context-strip) .secondary-button,
+body:has(.student-today-sessions-section) .secondary-button,
+body:has(.student-workspace-grid) .secondary-link-button,
+body:has(.student-progress-summary) .secondary-link-button,
+body:has(.course-action-grid) .secondary-link-button,
+body:has(.course-context-strip) .secondary-link-button,
+body:has(.student-today-sessions-section) .secondary-link-button {
+  border: 2px solid var(--engagement-line);
+  border-radius: 18px;
+  background: #ffffff;
+  color: var(--engagement-text);
+  box-shadow: var(--engagement-shadow);
+  font-weight: 900;
+}
+
+body:has(.student-workspace-grid) button:active:not(:disabled),
+body:has(.student-progress-summary) button:active:not(:disabled),
+body:has(.course-action-grid) button:active:not(:disabled),
+body:has(.course-context-strip) button:active:not(:disabled),
+body:has(.student-today-sessions-section) button:active:not(:disabled),
+body:has(.student-workspace-grid) a.primary-link-button:active,
+body:has(.student-progress-summary) a.primary-link-button:active,
+body:has(.course-action-grid) a.primary-link-button:active,
+body:has(.course-context-strip) a.primary-link-button:active,
+body:has(.student-today-sessions-section) a.primary-link-button:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 rgba(31, 37, 51, 0.16);
+}
+
+body:has(.student-workspace-grid) .status-badge,
+body:has(.student-progress-summary) .status-badge,
+body:has(.course-action-grid) .status-badge,
+body:has(.course-context-strip) .status-badge,
+body:has(.student-today-sessions-section) .status-badge {
+  border-width: 2px;
+  border-radius: 999px;
+  font-weight: 950;
+}
+
+body:has(.student-workspace-grid) .status-badge.approved,
+body:has(.student-progress-summary) .status-badge.approved,
+body:has(.course-action-grid) .status-badge.approved,
+body:has(.course-context-strip) .status-badge.approved,
+body:has(.student-today-sessions-section) .status-badge.approved,
+body:has(.course-context-strip) .status-badge.readiness-ready {
+  border-color: rgba(88, 204, 2, 0.34);
+  background: var(--engagement-primary-soft);
+  color: var(--engagement-primary-shadow);
+}
+
+body:has(.student-workspace-grid) .status-badge.pending,
+body:has(.student-progress-summary) .status-badge.pending,
+body:has(.course-action-grid) .status-badge.pending,
+body:has(.course-context-strip) .status-badge.pending,
+body:has(.student-today-sessions-section) .status-badge.pending,
+body:has(.course-context-strip) .status-badge.readiness-pending {
+  border-color: rgba(255, 200, 0, 0.42);
+  background: var(--engagement-accent-soft);
+  color: #7a4b00;
+}
+
+body:has(.student-workspace-grid) .student-course-progress-track,
+body:has(.student-workspace-grid) .progress-cell,
+body:has(.student-progress-summary) .progress-cell,
+body:has(.course-action-grid) .progress-cell,
+body:has(.course-context-strip) .progress-cell {
+  background: rgba(31, 37, 51, 0.08);
+  border-radius: 999px;
+}
+
+body:has(.student-workspace-grid) .student-course-progress-track span,
+body:has(.student-workspace-grid) .progress-cell span,
+body:has(.student-progress-summary) .progress-cell span,
+body:has(.course-action-grid) .progress-cell span,
+body:has(.course-context-strip) .progress-cell span {
+  background: var(--engagement-primary);
+}
+
+body:has(.course-action-grid) .course-action-card,
+body:has(.course-context-strip) .course-action-card {
+  min-height: 120px;
+  justify-content: center;
+  gap: 12px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+body:has(.course-action-grid) .course-action-card:hover,
+body:has(.course-context-strip) .course-action-card:hover,
+body:has(.student-workspace-grid) .student-course-card:hover,
+body:has(.student-today-sessions-section) .student-today-session-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(88, 204, 2, 0.4);
+}
+
+body:has(.course-action-grid) .course-action-card svg,
+body:has(.course-context-strip) .course-action-card svg,
+body:has(.student-workspace-grid) .student-panel-heading svg,
+body:has(.student-today-sessions-section) .student-panel-heading svg {
+  color: var(--engagement-primary);
+}
+
+@media (max-width: 900px) {
+  body:has(.student-workspace-grid) .mobile-tabbar,
+  body:has(.student-progress-summary) .mobile-tabbar,
+  body:has(.course-action-grid) .mobile-tabbar,
+  body:has(.course-context-strip) .mobile-tabbar,
+  body:has(.student-today-sessions-section) .mobile-tabbar {
+    border-top: 2px solid var(--engagement-line);
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+  }
+
+  body:has(.student-workspace-grid) .mobile-tabbar a,
+  body:has(.student-progress-summary) .mobile-tabbar a,
+  body:has(.course-action-grid) .mobile-tabbar a,
+  body:has(.course-context-strip) .mobile-tabbar a,
+  body:has(.student-today-sessions-section) .mobile-tabbar a {
+    font-weight: 900;
+  }
+}

@@ -1,0 +1,361 @@
+/*
+ * QuestLMS alignment layer
+ *
+ * Purpose: improve the current student/instructor engagement surfaces after visual comparison
+ * with the QuestLMS reference. This remains CSS-only for PR #2.
+ *
+ * Next architecture step: move these selectors behind an explicit .engagement-theme wrapper
+ * and replace element-level selectors with reusable dashboard components.
+ */
+
+/* Shared learning-surface page rhythm */
+body:has(.student-workspace-grid) .main-content,
+body:has(.student-progress-summary) .main-content,
+body:has(.course-action-grid) .main-content,
+body:has(.course-context-strip) .main-content,
+body:has(.student-today-sessions-section) .main-content {
+  padding-top: clamp(28px, 4vw, 54px);
+}
+
+body:has(.student-workspace-grid) .page-header,
+body:has(.student-progress-summary) .page-header,
+body:has(.course-action-grid) .page-header,
+body:has(.course-context-strip) .page-header,
+body:has(.student-today-sessions-section) .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+body:has(.student-workspace-grid) .page-header h1,
+body:has(.student-progress-summary) .page-header h1,
+body:has(.course-action-grid) .page-header h1,
+body:has(.course-context-strip) .page-header h1,
+body:has(.student-today-sessions-section) .page-header h1 {
+  max-width: 780px;
+  color: var(--engagement-text);
+  font-size: clamp(2.45rem, 4.2vw, 3.8rem);
+  line-height: 0.98;
+}
+
+body:has(.student-workspace-grid) .page-header p,
+body:has(.student-progress-summary) .page-header p,
+body:has(.course-action-grid) .page-header p,
+body:has(.course-context-strip) .page-header p,
+body:has(.student-today-sessions-section) .page-header p {
+  max-width: 720px;
+  color: rgba(31, 37, 51, 0.56);
+  font-size: clamp(1rem, 1.5vw, 1.22rem);
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+/* Sidebar: closer to QuestLMS contrast without making inactive items look disabled */
+body:has(.student-workspace-grid) .sidebar,
+body:has(.student-progress-summary) .sidebar,
+body:has(.course-action-grid) .sidebar,
+body:has(.course-context-strip) .sidebar,
+body:has(.student-today-sessions-section) .sidebar {
+  border-right-color: rgba(31, 37, 51, 0.08);
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a,
+body:has(.student-progress-summary) .sidebar-nav a,
+body:has(.course-action-grid) .sidebar-nav a,
+body:has(.course-context-strip) .sidebar-nav a,
+body:has(.student-today-sessions-section) .sidebar-nav a {
+  color: rgba(31, 37, 51, 0.5);
+  font-size: 1.02rem;
+  min-height: 52px;
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a svg,
+body:has(.student-progress-summary) .sidebar-nav a svg,
+body:has(.course-action-grid) .sidebar-nav a svg,
+body:has(.course-context-strip) .sidebar-nav a svg,
+body:has(.student-today-sessions-section) .sidebar-nav a svg {
+  opacity: 0.88;
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a.active,
+body:has(.student-progress-summary) .sidebar-nav a.active,
+body:has(.course-action-grid) .sidebar-nav a.active,
+body:has(.course-context-strip) .sidebar-nav a.active,
+body:has(.student-today-sessions-section) .sidebar-nav a.active,
+body:has(.student-workspace-grid) .sidebar-nav a[aria-current='page'],
+body:has(.student-progress-summary) .sidebar-nav a[aria-current='page'],
+body:has(.course-action-grid) .sidebar-nav a[aria-current='page'],
+body:has(.course-context-strip) .sidebar-nav a[aria-current='page'],
+body:has(.student-today-sessions-section) .sidebar-nav a[aria-current='page'] {
+  color: var(--engagement-primary-shadow);
+  background: rgba(88, 204, 2, 0.12);
+  box-shadow: 0 4px 0 rgba(31, 37, 51, 0.08);
+}
+
+body:has(.student-workspace-grid) .sidebar-footer a,
+body:has(.student-workspace-grid) .sidebar-footer button,
+body:has(.student-progress-summary) .sidebar-footer a,
+body:has(.student-progress-summary) .sidebar-footer button,
+body:has(.course-action-grid) .sidebar-footer a,
+body:has(.course-action-grid) .sidebar-footer button,
+body:has(.course-context-strip) .sidebar-footer a,
+body:has(.course-context-strip) .sidebar-footer button,
+body:has(.student-today-sessions-section) .sidebar-footer a,
+body:has(.student-today-sessions-section) .sidebar-footer button {
+  color: rgba(31, 37, 51, 0.44);
+}
+
+/* Hero area: balance hero card + side cards similar to QuestLMS */
+body:has(.student-workspace-grid) .student-home-hero,
+body:has(.student-today-sessions-section) .student-home-hero,
+body:has(.course-action-grid) .course-dashboard-hero,
+body:has(.course-context-strip) .course-dashboard-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.85fr) minmax(300px, 0.85fr);
+  align-items: stretch;
+  gap: clamp(20px, 2.3vw, 34px);
+}
+
+body:has(.student-workspace-grid) .student-priority-card,
+body:has(.student-today-sessions-section) .student-priority-card,
+body:has(.student-progress-summary) .student-progress-next-step {
+  min-height: clamp(250px, 28vw, 330px);
+  border-radius: 40px;
+  box-shadow: 0 8px 0 var(--engagement-secondary-shadow);
+  isolation: isolate;
+}
+
+body:has(.student-workspace-grid) .student-priority-card::before,
+body:has(.student-today-sessions-section) .student-priority-card::before,
+body:has(.student-progress-summary) .student-progress-next-step::before {
+  right: 13%;
+  top: 18%;
+  width: 72px;
+  height: 72px;
+  border-radius: 26px;
+}
+
+body:has(.student-workspace-grid) .student-priority-card::after,
+body:has(.student-today-sessions-section) .student-priority-card::after,
+body:has(.student-progress-summary) .student-progress-next-step::after {
+  right: -58px;
+  bottom: -58px;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04) 62%, transparent 68%);
+  filter: blur(7px);
+}
+
+body:has(.student-workspace-grid) .student-priority-card h2,
+body:has(.student-workspace-grid) .student-priority-card strong,
+body:has(.student-workspace-grid) .student-priority-card .student-priority-title,
+body:has(.student-today-sessions-section) .student-priority-card h2,
+body:has(.student-today-sessions-section) .student-priority-card strong,
+body:has(.student-progress-summary) .student-progress-next-step h2,
+body:has(.student-progress-summary) .student-progress-next-step strong {
+  font-size: clamp(2.8rem, 5.4vw, 5.1rem);
+  line-height: 0.9;
+  letter-spacing: -0.065em;
+}
+
+body:has(.student-workspace-grid) .student-priority-card .primary-link-button,
+body:has(.student-workspace-grid) .student-priority-card button:not(.secondary-button):not(.ghost-button):not(.icon-button),
+body:has(.student-today-sessions-section) .student-priority-card .primary-link-button,
+body:has(.student-today-sessions-section) .student-priority-card button:not(.secondary-button):not(.ghost-button):not(.icon-button),
+body:has(.student-progress-summary) .student-progress-next-step .primary-link-button,
+body:has(.student-progress-summary) .student-progress-next-step button:not(.secondary-button):not(.ghost-button):not(.icon-button) {
+  min-height: 62px;
+  border-radius: 28px;
+  padding-inline: clamp(28px, 3vw, 48px);
+  font-size: 1.08rem;
+  letter-spacing: -0.01em;
+}
+
+/* Right-side dashboard cards */
+body:has(.student-workspace-grid) .student-home-side,
+body:has(.student-today-sessions-section) .student-home-side {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+body:has(.student-workspace-grid) .student-home-side > *,
+body:has(.student-today-sessions-section) .student-home-side > *,
+body:has(.course-action-grid) .course-action-card,
+body:has(.course-context-strip) .course-action-card {
+  border: 2px solid rgba(31, 37, 51, 0.08);
+  border-radius: 28px;
+  background: #ffffff;
+  box-shadow: 0 5px 0 rgba(31, 37, 51, 0.11);
+}
+
+body:has(.student-workspace-grid) .student-home-side > *:hover,
+body:has(.student-today-sessions-section) .student-home-side > *:hover,
+body:has(.course-action-grid) .course-action-card:hover,
+body:has(.course-context-strip) .course-action-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 0 rgba(31, 37, 51, 0.1);
+}
+
+body:has(.student-workspace-grid) .student-home-side svg,
+body:has(.student-today-sessions-section) .student-home-side svg {
+  width: 24px;
+  height: 24px;
+  color: var(--engagement-primary-shadow);
+}
+
+body:has(.student-workspace-grid) .student-home-side h2,
+body:has(.student-workspace-grid) .student-home-side h3,
+body:has(.student-workspace-grid) .student-home-side strong,
+body:has(.student-today-sessions-section) .student-home-side h2,
+body:has(.student-today-sessions-section) .student-home-side h3,
+body:has(.student-today-sessions-section) .student-home-side strong {
+  color: var(--engagement-text);
+  font-weight: 950;
+  letter-spacing: -0.035em;
+}
+
+/* Stat cards: more playful, compact, and less CRM-like */
+body:has(.student-workspace-grid) .student-summary-strip,
+body:has(.student-today-sessions-section) .student-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(135px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+body:has(.student-workspace-grid) .student-summary-item,
+body:has(.student-today-sessions-section) .student-summary-item,
+body:has(.student-workspace-grid) .stat-card,
+body:has(.student-today-sessions-section) .stat-card,
+body:has(.course-action-grid) .stat-card,
+body:has(.course-context-strip) .stat-card {
+  min-height: 104px;
+  border-radius: 18px;
+  box-shadow: 0 4px 0 rgba(31, 37, 51, 0.09);
+}
+
+body:has(.student-workspace-grid) .student-summary-item strong,
+body:has(.student-today-sessions-section) .student-summary-item strong,
+body:has(.student-workspace-grid) .stat-card strong,
+body:has(.student-today-sessions-section) .stat-card strong {
+  font-size: clamp(1.65rem, 2.4vw, 2.05rem);
+  line-height: 1;
+}
+
+body:has(.student-workspace-grid) .student-summary-item span,
+body:has(.student-workspace-grid) .student-summary-item small,
+body:has(.student-today-sessions-section) .student-summary-item span,
+body:has(.student-today-sessions-section) .student-summary-item small {
+  color: rgba(31, 37, 51, 0.58);
+  font-weight: 850;
+}
+
+/* Task/challenge section */
+body:has(.student-workspace-grid) .student-task-section,
+body:has(.student-today-sessions-section) .student-task-section,
+body:has(.student-workspace-grid) .content-section,
+body:has(.student-today-sessions-section) .content-section {
+  border-radius: 34px;
+  box-shadow: 0 5px 0 rgba(31, 37, 51, 0.08);
+}
+
+body:has(.student-workspace-grid) .student-task-list article,
+body:has(.student-today-sessions-section) .student-task-list article {
+  min-height: 86px;
+  border-radius: 18px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+body:has(.student-workspace-grid) .student-task-list article:hover,
+body:has(.student-today-sessions-section) .student-task-list article:hover {
+  transform: translateY(-1px);
+  border-color: rgba(88, 204, 2, 0.24);
+}
+
+body:has(.student-workspace-grid) .student-task-list article:first-child,
+body:has(.student-today-sessions-section) .student-task-list article:first-child {
+  border-left: 12px solid var(--engagement-primary);
+  background: linear-gradient(90deg, rgba(88, 204, 2, 0.1), rgba(249, 115, 22, 0.045) 38%, #ffffff 100%);
+  box-shadow: 0 4px 0 rgba(31, 37, 51, 0.08);
+}
+
+body:has(.student-workspace-grid) .student-task-list article button,
+body:has(.student-today-sessions-section) .student-task-list article button,
+body:has(.student-workspace-grid) .student-task-list article .primary-link-button,
+body:has(.student-today-sessions-section) .student-task-list article .primary-link-button {
+  min-height: 52px;
+  border-radius: 22px;
+  padding-inline: 24px;
+  background: #ffffff;
+  color: var(--engagement-secondary);
+  border: 2px solid rgba(31, 37, 51, 0.08);
+  box-shadow: 0 4px 0 rgba(31, 37, 51, 0.11);
+  font-weight: 950;
+}
+
+/* Course/instructor action cards */
+body:has(.course-action-grid) .course-action-grid,
+body:has(.course-context-strip) .course-action-grid {
+  gap: 20px;
+}
+
+body:has(.course-action-grid) .course-action-card,
+body:has(.course-context-strip) .course-action-card {
+  min-height: 150px;
+  border-radius: 28px;
+}
+
+body:has(.course-action-grid) .course-action-card svg,
+body:has(.course-context-strip) .course-action-card svg {
+  width: 34px;
+  height: 34px;
+}
+
+/* Responsive fixes */
+@media (max-width: 1180px) {
+  body:has(.student-workspace-grid) .student-home-hero,
+  body:has(.student-today-sessions-section) .student-home-hero,
+  body:has(.course-action-grid) .course-dashboard-hero,
+  body:has(.course-context-strip) .course-dashboard-hero {
+    grid-template-columns: 1fr;
+  }
+
+  body:has(.student-workspace-grid) .student-home-side,
+  body:has(.student-today-sessions-section) .student-home-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  body:has(.student-workspace-grid) .page-header,
+  body:has(.student-progress-summary) .page-header,
+  body:has(.course-action-grid) .page-header,
+  body:has(.course-context-strip) .page-header,
+  body:has(.student-today-sessions-section) .page-header {
+    display: block;
+  }
+
+  body:has(.student-workspace-grid) .student-summary-strip,
+  body:has(.student-today-sessions-section) .student-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  body:has(.student-workspace-grid) .student-home-side,
+  body:has(.student-today-sessions-section) .student-home-side,
+  body:has(.student-workspace-grid) .student-summary-strip,
+  body:has(.student-today-sessions-section) .student-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  body:has(.student-workspace-grid) .student-priority-card,
+  body:has(.student-today-sessions-section) .student-priority-card,
+  body:has(.student-progress-summary) .student-progress-next-step {
+    min-height: 230px;
+    border-radius: 28px;
+  }
+}

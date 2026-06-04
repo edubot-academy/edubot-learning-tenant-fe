@@ -1,0 +1,15 @@
+/*
+ * EduBot Engagement Theme entrypoint
+ *
+ * Phase 1: CSS-only visual overlay for student/instructor learning surfaces.
+ * This keeps the PR low-risk while we validate the QuestLMS-inspired direction.
+ *
+ * Next phase TODO:
+ * - Move from body:has(...) selectors to an explicit .engagement-theme wrapper.
+ * - Introduce TenantDashboardShell variants for student/instructor surfaces.
+ * - Replace broad button selectors with reusable Button variants.
+ */
+
+@import './engagement.css';
+@import './engagement-polish.css';
+@import './engagement-tone.css';

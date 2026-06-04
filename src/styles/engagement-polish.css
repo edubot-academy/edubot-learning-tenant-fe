@@ -1,0 +1,178 @@
+/* Additional QuestLMS-style polish after first visual review. */
+
+body:has(.student-workspace-grid) .brand-copy strong,
+body:has(.student-progress-summary) .brand-copy strong,
+body:has(.course-action-grid) .brand-copy strong,
+body:has(.course-context-strip) .brand-copy strong,
+body:has(.student-today-sessions-section) .brand-copy strong {
+  color: var(--engagement-text);
+}
+
+body:has(.student-workspace-grid) .brand-copy span,
+body:has(.student-progress-summary) .brand-copy span,
+body:has(.course-action-grid) .brand-copy span,
+body:has(.course-context-strip) .brand-copy span,
+body:has(.student-today-sessions-section) .brand-copy span {
+  color: rgba(31, 37, 51, 0.45);
+  font-weight: 800;
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a,
+body:has(.student-progress-summary) .sidebar-nav a,
+body:has(.course-action-grid) .sidebar-nav a,
+body:has(.course-context-strip) .sidebar-nav a,
+body:has(.student-today-sessions-section) .sidebar-nav a {
+  color: rgba(31, 37, 51, 0.42);
+  min-height: 48px;
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a:hover,
+body:has(.student-progress-summary) .sidebar-nav a:hover,
+body:has(.course-action-grid) .sidebar-nav a:hover,
+body:has(.course-context-strip) .sidebar-nav a:hover,
+body:has(.student-today-sessions-section) .sidebar-nav a:hover {
+  color: var(--engagement-text);
+  background: rgba(31, 37, 51, 0.045);
+}
+
+body:has(.student-workspace-grid) .sidebar-workspace-card strong,
+body:has(.student-progress-summary) .sidebar-workspace-card strong,
+body:has(.course-action-grid) .sidebar-workspace-card strong,
+body:has(.course-context-strip) .sidebar-workspace-card strong,
+body:has(.student-today-sessions-section) .sidebar-workspace-card strong {
+  color: var(--engagement-text);
+  font-weight: 950;
+}
+
+body:has(.student-workspace-grid) .sidebar-section-label,
+body:has(.student-progress-summary) .sidebar-section-label,
+body:has(.course-action-grid) .sidebar-section-label,
+body:has(.course-context-strip) .sidebar-section-label,
+body:has(.student-today-sessions-section) .sidebar-section-label {
+  color: rgba(31, 37, 51, 0.42);
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+body:has(.student-workspace-grid) .page-header .eyebrow,
+body:has(.student-progress-summary) .page-header .eyebrow,
+body:has(.course-action-grid) .page-header .eyebrow,
+body:has(.course-context-strip) .page-header .eyebrow,
+body:has(.student-today-sessions-section) .page-header .eyebrow {
+  color: var(--engagement-primary-shadow);
+  font-weight: 950;
+  letter-spacing: 0.09em;
+}
+
+body:has(.student-workspace-grid) .student-priority-card h2,
+body:has(.student-workspace-grid) .student-priority-card strong,
+body:has(.student-workspace-grid) .student-priority-card .student-priority-title,
+body:has(.student-today-sessions-section) .student-priority-card h2,
+body:has(.student-today-sessions-section) .student-priority-card strong,
+body:has(.student-progress-summary) .student-progress-next-step h2,
+body:has(.student-progress-summary) .student-progress-next-step strong {
+  color: #ffffff !important;
+}
+
+body:has(.student-workspace-grid) .student-priority-card p,
+body:has(.student-workspace-grid) .student-priority-card small,
+body:has(.student-workspace-grid) .student-priority-card span:not(.status-badge),
+body:has(.student-today-sessions-section) .student-priority-card p,
+body:has(.student-today-sessions-section) .student-priority-card small,
+body:has(.student-today-sessions-section) .student-priority-card span:not(.status-badge),
+body:has(.student-progress-summary) .student-progress-next-step p,
+body:has(.student-progress-summary) .student-progress-next-step small,
+body:has(.student-progress-summary) .student-progress-next-step span:not(.status-badge) {
+  color: rgba(255, 255, 255, 0.72) !important;
+  font-weight: 800;
+}
+
+body:has(.student-workspace-grid) .student-priority-card .primary-link-button,
+body:has(.student-workspace-grid) .student-priority-card button:not(.secondary-button):not(.ghost-button),
+body:has(.student-today-sessions-section) .student-priority-card .primary-link-button,
+body:has(.student-today-sessions-section) .student-priority-card button:not(.secondary-button):not(.ghost-button),
+body:has(.student-progress-summary) .student-progress-next-step .primary-link-button,
+body:has(.student-progress-summary) .student-progress-next-step button:not(.secondary-button):not(.ghost-button) {
+  background: var(--engagement-primary);
+  color: #ffffff !important;
+  box-shadow: 0 5px 0 var(--engagement-primary-shadow);
+  border-radius: 22px;
+  padding-inline: 24px;
+}
+
+body:has(.student-workspace-grid) .student-priority-icon,
+body:has(.student-today-sessions-section) .student-priority-icon,
+body:has(.student-progress-summary) .student-priority-icon {
+  border-radius: 16px;
+  min-width: 56px;
+  min-height: 56px;
+}
+
+body:has(.student-workspace-grid) .student-dashboard-stats,
+body:has(.student-today-sessions-section) .student-dashboard-stats,
+body:has(.student-workspace-grid) .student-stat-grid,
+body:has(.student-today-sessions-section) .student-stat-grid {
+  gap: 12px;
+}
+
+body:has(.student-workspace-grid) .stat-card,
+body:has(.student-today-sessions-section) .stat-card,
+body:has(.course-action-grid) .stat-card,
+body:has(.course-context-strip) .stat-card {
+  border: 2px solid var(--engagement-line);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 3px 0 rgba(31, 37, 51, 0.08);
+}
+
+body:has(.student-workspace-grid) .student-task-section,
+body:has(.student-today-sessions-section) .student-task-section {
+  border-radius: 36px;
+  padding: clamp(18px, 2vw, 28px);
+}
+
+body:has(.student-workspace-grid) .student-task-list article,
+body:has(.student-today-sessions-section) .student-task-list article,
+body:has(.student-workspace-grid) .stack-list-item,
+body:has(.student-today-sessions-section) .stack-list-item {
+  border: 2px solid rgba(31, 37, 51, 0.08);
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+body:has(.student-workspace-grid) .student-task-list article:first-child,
+body:has(.student-today-sessions-section) .student-task-list article:first-child {
+  border-left: 5px solid var(--engagement-primary);
+  background: rgba(249, 115, 22, 0.055);
+}
+
+body:has(.student-workspace-grid) .student-task-list article strong,
+body:has(.student-today-sessions-section) .student-task-list article strong,
+body:has(.student-workspace-grid) .stack-list-item strong,
+body:has(.student-today-sessions-section) .stack-list-item strong {
+  color: var(--engagement-text);
+  font-weight: 950;
+}
+
+body:has(.student-workspace-grid) .section-heading-row h2,
+body:has(.student-today-sessions-section) .section-heading-row h2,
+body:has(.course-action-grid) .section-heading-row h2,
+body:has(.course-context-strip) .section-heading-row h2 {
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
+
+body:has(.student-workspace-grid) .shell-notification-control button,
+body:has(.student-progress-summary) .shell-notification-control button,
+body:has(.student-today-sessions-section) .shell-notification-control button {
+  border-radius: 18px;
+  box-shadow: var(--engagement-shadow);
+}
+
+body:has(.student-workspace-grid) .mobile-tabbar a[aria-current='page'],
+body:has(.student-progress-summary) .mobile-tabbar a[aria-current='page'],
+body:has(.student-today-sessions-section) .mobile-tabbar a[aria-current='page'],
+body:has(.course-action-grid) .mobile-tabbar a[aria-current='page'],
+body:has(.course-context-strip) .mobile-tabbar a[aria-current='page'] {
+  color: var(--engagement-primary-shadow);
+}

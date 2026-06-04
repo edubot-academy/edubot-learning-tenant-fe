@@ -4,6 +4,8 @@
  * Phase 1: CSS-only visual overlay for student/instructor learning surfaces.
  * This keeps the PR low-risk while we validate the QuestLMS-inspired direction.
  *
+ * Scope guardrails live in ./engagement-scope-notes.css.
+ *
  * Next phase TODO:
  * - Move from body:has(...) selectors to an explicit .engagement-theme wrapper.
  * - Introduce TenantDashboardShell variants for student/instructor surfaces.

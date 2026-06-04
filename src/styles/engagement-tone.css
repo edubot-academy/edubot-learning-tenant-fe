@@ -1,0 +1,68 @@
+/* Tone layer: keep QuestLMS feel but reduce overuse of green. */
+
+body:has(.student-workspace-grid) .brand-mark,
+body:has(.student-progress-summary) .brand-mark,
+body:has(.course-action-grid) .brand-mark,
+body:has(.course-context-strip) .brand-mark,
+body:has(.student-today-sessions-section) .brand-mark {
+  background: var(--engagement-secondary) !important;
+  color: #ffffff !important;
+  box-shadow: 0 5px 0 var(--engagement-secondary-shadow) !important;
+}
+
+body:has(.student-workspace-grid) .shell-language-button,
+body:has(.student-progress-summary) .shell-language-button,
+body:has(.course-action-grid) .shell-language-button,
+body:has(.course-context-strip) .shell-language-button,
+body:has(.student-today-sessions-section) .shell-language-button {
+  background: #ffffff !important;
+  color: var(--engagement-secondary) !important;
+  border: 2px solid rgba(70, 23, 143, 0.18) !important;
+  box-shadow: var(--engagement-shadow) !important;
+}
+
+body:has(.student-workspace-grid) .student-priority-card .primary-link-button,
+body:has(.student-workspace-grid) .student-priority-card button:not(.secondary-button):not(.ghost-button),
+body:has(.student-today-sessions-section) .student-priority-card .primary-link-button,
+body:has(.student-today-sessions-section) .student-priority-card button:not(.secondary-button):not(.ghost-button),
+body:has(.student-progress-summary) .student-progress-next-step .primary-link-button,
+body:has(.student-progress-summary) .student-progress-next-step button:not(.secondary-button):not(.ghost-button) {
+  background: #ffffff !important;
+  color: var(--engagement-secondary) !important;
+  border: 0 !important;
+  box-shadow: 0 6px 0 rgba(31, 37, 51, 0.14) !important;
+}
+
+body:has(.student-workspace-grid) .student-task-start-button,
+body:has(.student-today-sessions-section) .student-task-start-button {
+  background: #ffffff !important;
+  color: var(--engagement-secondary) !important;
+  border: 2px solid var(--engagement-line) !important;
+  box-shadow: var(--engagement-shadow) !important;
+}
+
+body:has(.student-workspace-grid) .student-task-start-button:hover,
+body:has(.student-today-sessions-section) .student-task-start-button:hover {
+  color: var(--engagement-primary-shadow) !important;
+  border-color: rgba(88, 204, 2, 0.32) !important;
+}
+
+body:has(.student-workspace-grid) .primary-link-button:not(.student-priority-card .primary-link-button),
+body:has(.student-today-sessions-section) .primary-link-button:not(.student-priority-card .primary-link-button) {
+  background: #ffffff !important;
+  color: var(--engagement-secondary) !important;
+  border: 2px solid var(--engagement-line) !important;
+  box-shadow: var(--engagement-shadow) !important;
+}
+
+body:has(.student-workspace-grid) .student-summary-item svg,
+body:has(.student-today-sessions-section) .student-summary-item svg,
+body:has(.course-action-grid) .course-action-card svg,
+body:has(.course-context-strip) .course-action-card svg {
+  color: var(--engagement-primary-shadow);
+}
+
+body:has(.student-workspace-grid) .student-task-list article:first-child,
+body:has(.student-today-sessions-section) .student-task-list article:first-child {
+  border-left-color: var(--engagement-primary);
+}

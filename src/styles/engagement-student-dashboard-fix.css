@@ -1,0 +1,130 @@
+/* Student dashboard layout stabilization.
+ * Keeps the QuestLMS/Kahoot style but prevents the hero stats from escaping the
+ * main column and squeezing the right-side cards.
+ */
+
+.student-learning-dashboard .student-home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: clamp(22px, 2.6vw, 34px);
+  align-items: start;
+}
+
+.student-learning-dashboard .student-home-main {
+  display: grid;
+  grid-column: 1;
+  gap: 18px;
+  min-width: 0;
+}
+
+.student-learning-dashboard .student-priority-card {
+  grid-column: auto;
+  grid-row: auto;
+  min-width: 0;
+  min-height: clamp(280px, 28vw, 380px);
+}
+
+.student-learning-dashboard .student-home-side {
+  grid-column: 2;
+  grid-row: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 22px;
+  min-width: 0;
+}
+
+.student-learning-dashboard .student-home-side > article,
+.student-learning-dashboard .student-home-side .student-home-progress-card {
+  grid-column: auto;
+  min-width: 0;
+  min-height: 176px;
+  padding: 26px;
+  overflow: hidden;
+}
+
+.student-learning-dashboard .student-home-side strong,
+.student-learning-dashboard .student-home-side span,
+.student-learning-dashboard .student-home-side p,
+.student-learning-dashboard .student-home-side small {
+  overflow-wrap: anywhere;
+}
+
+.student-learning-dashboard .student-summary-strip {
+  grid-column: auto;
+  grid-row: auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(112px, 1fr));
+  gap: 14px;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.student-learning-dashboard .student-summary-item {
+  min-width: 0;
+  min-height: 126px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-content: center;
+  gap: 8px 12px;
+  padding: 18px 16px;
+}
+
+.student-learning-dashboard .student-summary-item svg {
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+}
+
+.student-learning-dashboard .student-summary-item span {
+  min-width: 0;
+  font-size: 0.82rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.student-learning-dashboard .student-summary-item strong {
+  min-width: 0;
+  font-size: clamp(1.9rem, 2.8vw, 2.8rem);
+  line-height: 0.95;
+}
+
+.student-learning-dashboard .student-task-section,
+.student-learning-dashboard .student-updates-section,
+.student-learning-dashboard .content-section {
+  min-width: 0;
+}
+
+@media (max-width: 1320px) {
+  .student-learning-dashboard .student-home-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  }
+
+  .student-learning-dashboard .student-summary-strip {
+    grid-template-columns: repeat(3, minmax(132px, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .student-learning-dashboard .student-home-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .student-learning-dashboard .student-home-side {
+    grid-column: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .student-learning-dashboard .student-home-side .student-home-progress-card {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .student-learning-dashboard .student-priority-card {
+    min-height: auto;
+  }
+
+  .student-learning-dashboard .student-summary-strip,
+  .student-learning-dashboard .student-home-side {
+    grid-template-columns: 1fr;
+  }
+}

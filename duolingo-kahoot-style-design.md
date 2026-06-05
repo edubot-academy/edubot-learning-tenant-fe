@@ -173,15 +173,16 @@ Attendance queue only if attendance enabled.
 Certificates widget only if certificates enabled.
 Live quiz hero only if live quiz/session feature exists.
 Phase 5: Student Dashboard Alignment
-18. Use same visual language for student
+⏳ 18. Use same visual language for student
 - Same card shapes, chunky shadows, icon tiles.
 - Student-specific widgets:
-- today’s next task
-- upcoming session
-- progress stats
-- courses
-- tasks
+- ✅ today’s next task / priority hero already uses engagement surface
+- ✅ upcoming session cards aligned with engagement styling
+- ✅ progress stat cards aligned with engagement styling
+- ✅ courses/tasks/updates cards aligned with engagement styling
 - achievements later.
+✅ Added engagement-student-learning-widgets.css using direct .student-learning-dashboard scoping.
+✅ Imported student learning widget styles in engagement-theme.css.
 
 Avoid instructor-only concepts on student
 No admin queue.

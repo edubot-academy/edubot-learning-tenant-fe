@@ -1,0 +1,11 @@
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card,
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-section-label,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-section-label {
+  display: none;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-block,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-block {
+  margin-bottom: 28px;
+}

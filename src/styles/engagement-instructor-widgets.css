@@ -71,7 +71,8 @@
 
 .instructor-learning-at-risk,
 .instructor-learning-activity-feed,
-.instructor-learning-quick-actions {
+.instructor-learning-quick-actions,
+.instructor-learning-blocked-panel {
   display: grid;
   gap: 18px;
 }
@@ -110,6 +111,30 @@
 .instructor-learning-quick-action.disabled:hover {
   border-color: var(--learning-line);
   transform: none;
+}
+
+.instructor-learning-blocked-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instructor-learning-blocked-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 2px dashed var(--learning-line);
+  border-radius: 18px;
+  color: var(--learning-muted);
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.instructor-learning-blocked-list svg {
+  color: var(--learning-accent);
 }
 
 @media (max-width: 760px) {

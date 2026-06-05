@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FiActivity, FiAlertTriangle, FiAward, FiBookOpen, FiCalendar, FiCheckSquare, FiUsers } from 'react-icons/fi';
 import type { InstructorDashboard, Tenant, TenantOverview } from '../../types/domain';
@@ -23,6 +23,7 @@ import {
 import { InstructorActivityFeed } from './InstructorActivityFeed';
 import { InstructorAtRiskStudents } from './InstructorAtRiskStudents';
 import { InstructorQuickActions } from './InstructorQuickActions';
+import { InstructorTopBar } from './InstructorTopBar';
 import { mapInstructorActivityFeedItems, mapInstructorAtRiskStudents } from './instructorLearningMappers';
 import { mapInstructorQuickActions } from './instructorQuickActionMappers';
 
@@ -51,14 +52,19 @@ function localDateKey(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function translationWithFallback(t: ReturnType<typeof useTranslation>['t'], key: string, fallback: string) {
+  const translated = t(key);
+  return translated === key ? fallback : translated;
+}
+
 function CompactEmptyNote({
   icon,
   title,
   detail,
 }: {
-  icon: React.ReactNode;
-  title: React.ReactNode;
-  detail?: React.ReactNode;
+  icon: ReactNode;
+  title: ReactNode;
+  detail?: ReactNode;
 }) {
   return (
     <article className="instructor-learning-compact-empty">
@@ -316,6 +322,8 @@ export function InstructorLearningOverview({
   const showAtRisk = atRiskStudents.length > 0;
   const showActivity = activityItems.length > 0;
   const showUpcoming = upcomingSessionCount > 0;
+  const topbarTitle = translationWithFallback(t, 'overview.instructorGreetingTitle', 'Кутман күн, инструктор! 👋');
+  const topbarDetail = translationWithFallback(t, 'overview.instructorGreetingDetail', 'Бүгүн окуучулар менен иштөөгө даярсызбы?');
   const compactEmptyNotes = [
     !showAtRisk ? {
       key: 'at-risk',
@@ -335,10 +343,20 @@ export function InstructorLearningOverview({
       title: t('student.upcomingSessions'),
       detail: t('student.sessionsEmptyTitle'),
     } : null,
-  ].filter(Boolean) as Array<{ key: string; icon: React.ReactNode; title: React.ReactNode; detail?: React.ReactNode }>;
+  ].filter(Boolean) as Array<{ key: string; icon: ReactNode; title: ReactNode; detail?: ReactNode }>;
 
   return (
     <div className="instructor-learning-overview">
+      <InstructorTopBar
+        title={topbarTitle}
+        detail={topbarDetail}
+        tenantName={activeTenant.name}
+        todaySessionsLabel={t('overview.todaySessions')}
+        todaySessionsValue={instructorDashboard ? instructorTodaySessions.length : overview.sessions.today}
+        reviewLabel={t('overview.needsReview')}
+        reviewValue={homeworkNeedsReviewCount}
+      />
+
       <InstructorInsightsRow items={insights} />
       <InstructorAttentionQueue
         title={t('overview.needsAttention')}
@@ -346,7 +364,8 @@ export function InstructorLearningOverview({
         emptyLabel={t('overview.noActiveBlockers')}
         items={attentionItems}
       />
-      <section className="instructor-learning-primary-grid">
+
+      <section className="instructor-learning-hero-actions-grid">
         <InstructorLaunchPanel
           eyebrow={launchExternal ? t('overview.nextLiveLink') : t('overview.primaryActions')}
           title={launchTitle}
@@ -356,21 +375,21 @@ export function InstructorLearningOverview({
           external={launchExternal}
           disabled={!launchExternal && !visibleSessions.length}
         />
+        <InstructorQuickActions
+          title={t('overview.primaryActions')}
+          detail={topbarDetail}
+          emptyLabel={t('overview.noActiveBlockers')}
+          items={quickActions}
+        />
+      </section>
+
+      <section className={showAtRisk ? 'instructor-learning-today-side-grid' : 'instructor-learning-today-side-grid is-single'}>
         <InstructorTodaySessions
           title={t('overview.todaySessions')}
           detail={t('overview.scheduledToday', { count: instructorDashboard ? instructorTodaySessions.length : overview.sessions.today })}
           emptyLabel={t('overview.noSessionsToday')}
           allLabel={t('overview.viewAll')}
           sessions={visibleSessions}
-        />
-      </section>
-
-      <section className={showAtRisk ? 'instructor-learning-workload-grid' : 'instructor-learning-workload-grid is-single'}>
-        <InstructorQuickActions
-          title={t('overview.primaryActions')}
-          detail={t('overview.openOperationsDetail')}
-          emptyLabel={t('overview.noActiveBlockers')}
-          items={quickActions}
         />
         {showAtRisk ? (
           <InstructorAtRiskStudents

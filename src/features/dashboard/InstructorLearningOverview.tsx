@@ -322,7 +322,10 @@ export function InstructorLearningOverview({
   const showAtRisk = atRiskStudents.length > 0;
   const showActivity = activityItems.length > 0;
   const showUpcoming = upcomingSessionCount > 0;
-  const topbarTitle = translationWithFallback(t, 'overview.instructorGreetingTitle', 'Кутман күн, инструктор! 👋');
+  const instructorName = instructorDashboard?.instructor.fullName ?? null;
+  const instructorEmail = instructorDashboard?.instructor.email ?? null;
+  const instructorDisplayName = instructorName || instructorEmail || translationWithFallback(t, 'overview.instructorFallbackName', 'инструктор');
+  const topbarTitle = translationWithFallback(t, 'overview.instructorGreetingTitle', `Кутман күн, ${instructorDisplayName}! 👋`);
   const topbarDetail = translationWithFallback(t, 'overview.instructorGreetingDetail', 'Бүгүн окуучулар менен иштөөгө даярсызбы?');
   const compactEmptyNotes = [
     !showAtRisk ? {
@@ -351,6 +354,9 @@ export function InstructorLearningOverview({
         title={topbarTitle}
         detail={topbarDetail}
         tenantName={activeTenant.name}
+        instructorName={instructorName}
+        instructorEmail={instructorEmail}
+        profileLabel={t('overview.instructorOverview')}
         todaySessionsLabel={t('overview.todaySessions')}
         todaySessionsValue={instructorDashboard ? instructorTodaySessions.length : overview.sessions.today}
         reviewLabel={t('overview.needsReview')}

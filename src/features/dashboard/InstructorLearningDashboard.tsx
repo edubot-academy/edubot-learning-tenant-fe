@@ -159,7 +159,7 @@ export function InstructorLaunchPanel({
   );
 
   return (
-    <section className="instructor-learning-launch">
+    <section className={cx('instructor-learning-launch', disabled && !code && 'is-empty')}>
       <div className="instructor-learning-launch-copy">
         <span className="instructor-learning-live-chip">{eyebrow}</span>
         <h2>{title}</h2>

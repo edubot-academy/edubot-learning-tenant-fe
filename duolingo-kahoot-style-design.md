@@ -82,7 +82,7 @@ Tenant data source:
 overview.sessions.upcoming
 instructor upcoming sessions
 Group by date.
-⏳ Port ActivityFeed concept
+✅ Port ActivityFeed concept
 
 Source: ActivityFeed.tsx
 Tenant data source:
@@ -90,7 +90,7 @@ overview.activity
 Use existing activity labels/i18n.
 ✅ Added prop-driven InstructorActivityFeed component shell.
 Next: wire overview.activity into OverviewPage instructor branch after route/visual QA.
-Port AtRiskStudents concept
+⏳ Port AtRiskStudents concept
 
 Source: AtRiskStudents.tsx
 Tenant requirement:
@@ -100,6 +100,8 @@ missed assignments
 missed sessions
 low progress
 broken attendance/streak signal if available.
+✅ Added prop-driven InstructorAtRiskStudents component shell using real instructor attention-student shape.
+Next: wire instructorDashboard.attentionStudents into OverviewPage after confirming route targets.
 Phase 3: Hero + Engagement
 ✅ 12. Adapt LaunchQuizHero
 - Source: LaunchQuizHero.tsx

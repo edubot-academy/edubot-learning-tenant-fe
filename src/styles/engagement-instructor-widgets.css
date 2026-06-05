@@ -70,13 +70,55 @@
 }
 
 .instructor-learning-at-risk,
-.instructor-learning-activity-feed {
+.instructor-learning-activity-feed,
+.instructor-learning-quick-actions {
   display: grid;
   gap: 18px;
+}
+
+.instructor-learning-quick-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.instructor-learning-quick-action {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 2px solid var(--learning-line);
+  border-radius: 22px;
+  color: var(--learning-ink);
+  padding: 13px;
+  text-decoration: none;
+  transition:
+    border-color var(--transition-ui),
+    transform var(--transition-ui);
+}
+
+.instructor-learning-quick-action:hover {
+  border-color: rgba(241, 126, 34, 0.38);
+  transform: translateY(-1px);
+}
+
+.instructor-learning-quick-action.disabled {
+  background: rgba(23, 25, 39, 0.03);
+  color: var(--learning-muted);
+}
+
+.instructor-learning-quick-action.disabled:hover {
+  border-color: var(--learning-line);
+  transform: none;
 }
 
 @media (max-width: 760px) {
   .instructor-learning-reason-list {
     overflow: hidden;
+  }
+
+  .instructor-learning-quick-action-grid,
+  .instructor-learning-quick-action {
+    grid-template-columns: 1fr;
   }
 }

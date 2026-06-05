@@ -112,7 +112,7 @@ Phase 3: Hero + Engagement
 - generated/join PIN if live quiz feature exists
 - If no live quiz backend exists yet, show “Start live session” or “Open session”.
 
-Adapt QuickActions
+⏳ Adapt QuickActions
 
 Source: QuickActions.tsx
 Tenant actions:
@@ -121,6 +121,8 @@ post announcement
 set weekly challenge
 review grading
 Must respect permissions and feature flags.
+✅ Added prop-driven InstructorQuickActions component shell with disabled/permission states.
+Next: add mapper from tenant permissions/feature flags and render in instructor branch.
 Adapt leaderboard/milestone later
 
 Source:

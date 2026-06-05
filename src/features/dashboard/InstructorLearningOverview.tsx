@@ -51,6 +51,26 @@ function localDateKey(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function CompactEmptyNote({
+  icon,
+  title,
+  detail,
+}: {
+  icon: React.ReactNode;
+  title: React.ReactNode;
+  detail?: React.ReactNode;
+}) {
+  return (
+    <article className="instructor-learning-compact-empty">
+      <span className="instructor-learning-icon tone-muted" aria-hidden="true">{icon}</span>
+      <span>
+        <strong>{title}</strong>
+        {detail ? <small>{detail}</small> : null}
+      </span>
+    </article>
+  );
+}
+
 export function InstructorLearningOverview({
   activeTenant,
   overview,
@@ -292,6 +312,30 @@ export function InstructorLearningOverview({
   });
   const activityItems = mapInstructorActivityFeedItems(t, overview);
   const atRiskStudents = mapInstructorAtRiskStudents(t, instructorDashboard);
+  const upcomingSessionCount = upcomingGroups.reduce((count, group) => count + group.sessions.length, 0);
+  const showAtRisk = atRiskStudents.length > 0;
+  const showActivity = activityItems.length > 0;
+  const showUpcoming = upcomingSessionCount > 0;
+  const compactEmptyNotes = [
+    !showAtRisk ? {
+      key: 'at-risk',
+      icon: <FiCheckSquare />,
+      title: t('overview.noActiveBlockers'),
+      detail: t('overview.liveOfflineSignals'),
+    } : null,
+    !showActivity ? {
+      key: 'activity',
+      icon: <FiActivity />,
+      title: t('overview.recentActivity'),
+      detail: t('overview.noActiveBlockers'),
+    } : null,
+    !showUpcoming ? {
+      key: 'upcoming',
+      icon: <FiCalendar />,
+      title: t('student.upcomingSessions'),
+      detail: t('student.sessionsEmptyTitle'),
+    } : null,
+  ].filter(Boolean) as Array<{ key: string; icon: React.ReactNode; title: React.ReactNode; detail?: React.ReactNode }>;
 
   return (
     <div className="instructor-learning-overview">
@@ -321,21 +365,23 @@ export function InstructorLearningOverview({
         />
       </section>
 
-      <section className="instructor-learning-workload-grid">
+      <section className={showAtRisk ? 'instructor-learning-workload-grid' : 'instructor-learning-workload-grid is-single'}>
         <InstructorQuickActions
           title={t('overview.primaryActions')}
           detail={t('overview.openOperationsDetail')}
           emptyLabel={t('overview.noActiveBlockers')}
           items={quickActions}
         />
-        <InstructorAtRiskStudents
-          title={t('overview.needsAttention')}
-          detail={t('overview.liveOfflineSignals')}
-          allLabel={t('overview.viewAll')}
-          allTo="/groups"
-          emptyLabel={t('overview.noActiveBlockers')}
-          items={atRiskStudents}
-        />
+        {showAtRisk ? (
+          <InstructorAtRiskStudents
+            title={t('overview.needsAttention')}
+            detail={t('overview.liveOfflineSignals')}
+            allLabel={t('overview.viewAll')}
+            allTo="/groups"
+            emptyLabel={t('overview.noActiveBlockers')}
+            items={atRiskStudents}
+          />
+        ) : null}
       </section>
 
       {(homeworkEnabled || (certificatesEnabled && canManageCertificates)) ? (
@@ -361,22 +407,34 @@ export function InstructorLearningOverview({
         </section>
       ) : null}
 
-      <InstructorActivityFeed
-        title={t('overview.recentActivity')}
-        detail={t('overview.liveOfflineSignals')}
-        allLabel={t('overview.viewAll')}
-        allTo="/sessions"
-        emptyLabel={t('overview.noActiveBlockers')}
-        items={activityItems}
-      />
+      {showActivity ? (
+        <InstructorActivityFeed
+          title={t('overview.recentActivity')}
+          detail={t('overview.liveOfflineSignals')}
+          allLabel={t('overview.viewAll')}
+          allTo="/sessions"
+          emptyLabel={t('overview.noActiveBlockers')}
+          items={activityItems}
+        />
+      ) : null}
 
-      <InstructorUpcomingSessionsPanel
-        title={t('student.upcomingSessions')}
-        detail={t('overview.upcomingSessionsCount', { count: instructorDashboard ? instructorUpcomingSessions.length : overview.sessions.upcoming.length })}
-        emptyLabel={t('student.sessionsEmptyTitle')}
-        allLabel={t('overview.viewAll')}
-        groups={upcomingGroups}
-      />
+      {showUpcoming ? (
+        <InstructorUpcomingSessionsPanel
+          title={t('student.upcomingSessions')}
+          detail={t('overview.upcomingSessionsCount', { count: instructorDashboard ? instructorUpcomingSessions.length : overview.sessions.upcoming.length })}
+          emptyLabel={t('student.sessionsEmptyTitle')}
+          allLabel={t('overview.viewAll')}
+          groups={upcomingGroups}
+        />
+      ) : null}
+
+      {compactEmptyNotes.length ? (
+        <section className="instructor-learning-compact-empty-grid" aria-label={t('overview.noActiveBlockers')}>
+          {compactEmptyNotes.map((note) => (
+            <CompactEmptyNote key={note.key} icon={note.icon} title={note.title} detail={note.detail} />
+          ))}
+        </section>
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,7 @@
   "overview": {
     "instructorFallbackName": "инструктор",
     "instructorProfileLabel": "Окутуучу",
-    "instructorGreetingTitle": "Кутман күн, {{name}}! 👋",
+    "instructorGreetingTitle": "Кутман күн, инструктор! 👋",
     "instructorGreetingDetail": "Бүгүн окуучулар менен иштөөгө даярсызбы?",
     "quickActions": {
       "createCourseLesson": "Курс/сабак түзүү",

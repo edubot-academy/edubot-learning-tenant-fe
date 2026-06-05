@@ -1,0 +1,452 @@
+/*
+ * EduBot Kahoot-inspired dashboard style layer
+ *
+ * Purpose:
+ * - Bring energetic Kahoot-like look/feel to student learning surfaces.
+ * - Keep instructor/course management more professional but less flat.
+ * - Use EduBot brand colors only: dark blue, teal/green, orange/yellow.
+ * - Avoid route/API/business-logic changes.
+ */
+
+@layer components {
+  :root {
+    --kahoot-bg: #f3f7fb;
+    --kahoot-ink: #14213d;
+    --kahoot-blue: var(--brand-dark, #122144);
+    --kahoot-teal: var(--brand-teal, #0ea78b);
+    --kahoot-teal-dark: var(--brand-teal-dark, #1e605e);
+    --kahoot-orange: var(--brand-primary, #f17e22);
+    --kahoot-orange-dark: var(--brand-primary-strong, #d85f0f);
+    --kahoot-yellow: var(--brand-accent, #f4b23d);
+    --kahoot-line: rgba(18, 33, 68, 0.1);
+    --kahoot-card-shadow: 0 6px 0 rgba(18, 33, 68, 0.12);
+    --kahoot-card-shadow-strong: 0 8px 0 rgba(18, 33, 68, 0.16), 0 24px 48px rgba(18, 33, 68, 0.1);
+    --kahoot-button-shadow: 0 5px 0 rgba(184, 76, 11, 0.88);
+  }
+
+  body:has(.student-focus-grid),
+  body:has(.student-summary-strip),
+  body:has(.student-today-sessions-section),
+  body:has(.student-progress-summary) {
+    --app-bg: var(--kahoot-bg);
+    --body-gradient:
+      radial-gradient(circle at 12% 0%, rgba(14, 167, 139, 0.16), transparent 26rem),
+      radial-gradient(circle at 92% 8%, rgba(241, 126, 34, 0.14), transparent 24rem),
+      linear-gradient(180deg, rgba(255, 248, 241, 0.85), rgba(243, 247, 251, 0) 360px),
+      var(--kahoot-bg);
+  }
+
+  body:has(.student-focus-grid) .main-panel,
+  body:has(.student-summary-strip) .main-panel,
+  body:has(.student-today-sessions-section) .main-panel,
+  body:has(.student-progress-summary) .main-panel {
+    padding: clamp(18px, 3vw, 34px);
+  }
+
+  body:has(.student-focus-grid) .page-header,
+  body:has(.student-summary-strip) .page-header,
+  body:has(.student-today-sessions-section) .page-header,
+  body:has(.student-progress-summary) .page-header {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body:has(.student-focus-grid) .page-header h1,
+  body:has(.student-summary-strip) .page-header h1,
+  body:has(.student-today-sessions-section) .page-header h1,
+  body:has(.student-progress-summary) .page-header h1 {
+    max-width: 920px;
+    color: var(--kahoot-blue);
+    font-size: clamp(2rem, 4.2vw, 4.4rem);
+    font-weight: 950;
+    line-height: 0.96;
+    letter-spacing: -0.055em;
+  }
+
+  body:has(.student-focus-grid) .page-header p,
+  body:has(.student-summary-strip) .page-header p,
+  body:has(.student-today-sessions-section) .page-header p,
+  body:has(.student-progress-summary) .page-header p {
+    max-width: 720px;
+    color: color-mix(in srgb, var(--kahoot-blue) 66%, #64748b);
+    font-weight: 800;
+  }
+
+  .student-summary-strip {
+    gap: 14px;
+  }
+
+  .student-summary-item {
+    min-height: 104px;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 8px 12px;
+    border: 2px solid var(--kahoot-line);
+    border-radius: 24px;
+    background: #ffffff;
+    box-shadow: var(--kahoot-card-shadow);
+    padding: 16px;
+    transition:
+      transform var(--transition-ui),
+      box-shadow var(--transition-ui),
+      border-color var(--transition-ui);
+  }
+
+  .student-summary-item:hover {
+    border-color: rgba(14, 167, 139, 0.22);
+    box-shadow: var(--kahoot-card-shadow-strong);
+    transform: translateY(-2px);
+  }
+
+  .student-summary-item svg {
+    width: 42px;
+    height: 42px;
+    padding: 10px;
+    border-radius: 16px;
+    background: rgba(14, 167, 139, 0.12);
+    color: var(--kahoot-teal-dark);
+  }
+
+  .student-summary-item span {
+    color: rgba(20, 33, 61, 0.62);
+    font-size: 12px;
+    font-weight: 950;
+  }
+
+  .student-summary-item strong {
+    color: var(--kahoot-blue);
+    font-size: clamp(1.7rem, 2.8vw, 2.35rem);
+    font-weight: 950;
+  }
+
+  .student-focus-grid {
+    gap: clamp(14px, 2vw, 22px);
+  }
+
+  .student-focus-card,
+  .student-update-row,
+  .student-today-session-card,
+  .student-help-card,
+  .student-attendance-summary,
+  .student-support-form,
+  .student-support-history,
+  .student-notification-item,
+  .student-reminder-item,
+  .content-section:has(.student-summary-strip),
+  .content-section:has(.student-update-list) {
+    border: 2px solid var(--kahoot-line);
+    border-radius: 26px;
+    background: #ffffff;
+    box-shadow: var(--kahoot-card-shadow);
+  }
+
+  .student-focus-card,
+  .student-update-row,
+  .student-today-session-card,
+  .student-help-card,
+  .student-notification-item,
+  .student-reminder-item {
+    transition:
+      transform var(--transition-ui),
+      box-shadow var(--transition-ui),
+      border-color var(--transition-ui),
+      background var(--transition-ui);
+  }
+
+  .student-focus-card:hover,
+  .student-update-row:hover,
+  .student-today-session-card:hover,
+  .student-help-card:hover,
+  .student-notification-item:hover,
+  .student-reminder-item:hover {
+    border-color: rgba(14, 167, 139, 0.22);
+    box-shadow: var(--kahoot-card-shadow-strong);
+    transform: translateY(-2px);
+  }
+
+  .student-focus-card.primary {
+    position: relative;
+    overflow: hidden;
+    min-height: clamp(210px, 25vw, 310px);
+    border: 0;
+    border-radius: 36px;
+    background:
+      radial-gradient(circle at 85% 72%, rgba(14, 167, 139, 0.28), transparent 28%),
+      radial-gradient(circle at 76% 18%, rgba(241, 126, 34, 0.22), transparent 24%),
+      linear-gradient(135deg, #122144, #172a4f);
+    color: #ffffff;
+    box-shadow: 0 8px 0 #0b1733, 0 28px 64px rgba(18, 33, 68, 0.2);
+    padding: clamp(24px, 4vw, 42px);
+  }
+
+  .student-focus-card.primary::after {
+    content: "";
+    position: absolute;
+    right: -54px;
+    bottom: -70px;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    filter: blur(6px);
+    pointer-events: none;
+  }
+
+  .student-focus-card.primary .student-focus-icon {
+    width: 58px;
+    height: 58px;
+    border-radius: 20px;
+    background: var(--kahoot-yellow);
+    color: var(--kahoot-blue);
+    box-shadow: 0 5px 0 rgba(244, 178, 61, 0.38);
+  }
+
+  .student-focus-card.primary h2 {
+    color: #ffffff;
+    font-size: clamp(2rem, 4vw, 4rem);
+    font-weight: 950;
+    line-height: 0.96;
+    letter-spacing: -0.055em;
+  }
+
+  .student-focus-card.primary p {
+    max-width: 660px;
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 1rem;
+    font-weight: 800;
+  }
+
+  .student-focus-card.primary .primary-link-button,
+  .student-focus-card.primary button:not(.secondary-button):not(.ghost-button) {
+    min-height: 56px;
+    border: 0;
+    border-radius: 999px;
+    background: #ffffff;
+    color: var(--kahoot-blue);
+    padding-inline: 28px;
+    box-shadow: 0 6px 0 rgba(11, 23, 51, 0.35);
+    font-weight: 950;
+  }
+
+  .student-focus-card:not(.primary) {
+    border-radius: 26px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92)),
+      #ffffff;
+    box-shadow: var(--kahoot-card-shadow);
+  }
+
+  .student-focus-icon,
+  .student-update-type {
+    border-radius: 16px;
+    background: rgba(14, 167, 139, 0.12);
+    color: var(--kahoot-teal-dark);
+  }
+
+  .student-focus-card:not(.primary):nth-child(3n + 2) .student-focus-icon,
+  .student-summary-item:nth-child(3n + 2) svg {
+    background: rgba(241, 126, 34, 0.14);
+    color: var(--kahoot-orange-dark);
+  }
+
+  .student-focus-card:not(.primary):nth-child(3n + 3) .student-focus-icon,
+  .student-summary-item:nth-child(3n + 3) svg {
+    background: rgba(244, 178, 61, 0.18);
+    color: #9a5b00;
+  }
+
+  .student-focus-card h2,
+  .student-detail-header h2,
+  .student-help-card strong,
+  .student-update-row strong,
+  .student-support-form-heading strong {
+    color: var(--kahoot-blue);
+    font-weight: 950;
+    letter-spacing: -0.025em;
+  }
+
+  .student-update-row.unread,
+  .student-notification-item.unread {
+    border-color: rgba(241, 126, 34, 0.36);
+    background:
+      linear-gradient(90deg, rgba(241, 126, 34, 0.1), rgba(14, 167, 139, 0.07)),
+      #ffffff;
+  }
+
+  .student-focus-progress,
+  .progress-cell,
+  .student-course-progress-track {
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(18, 33, 68, 0.1);
+  }
+
+  .student-focus-progress span,
+  .progress-cell span,
+  .student-course-progress-track span {
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--kahoot-teal), var(--kahoot-yellow));
+  }
+
+  body:has(.student-focus-grid) .primary-link-button,
+  body:has(.student-summary-strip) .primary-link-button,
+  body:has(.student-today-sessions-section) .primary-link-button,
+  body:has(.student-progress-summary) .primary-link-button,
+  body:has(.student-focus-grid) button:not(.secondary-button):not(.ghost-button):not(.table-row-button),
+  body:has(.student-summary-strip) button:not(.secondary-button):not(.ghost-button):not(.table-row-button),
+  body:has(.student-today-sessions-section) button:not(.secondary-button):not(.ghost-button):not(.table-row-button),
+  body:has(.student-progress-summary) button:not(.secondary-button):not(.ghost-button):not(.table-row-button) {
+    min-height: 46px;
+    border: 0;
+    border-radius: 18px;
+    background: var(--kahoot-orange);
+    color: #ffffff;
+    box-shadow: var(--kahoot-button-shadow);
+    font-weight: 950;
+  }
+
+  body:has(.student-focus-grid) .primary-link-button:hover,
+  body:has(.student-summary-strip) .primary-link-button:hover,
+  body:has(.student-today-sessions-section) .primary-link-button:hover,
+  body:has(.student-progress-summary) .primary-link-button:hover,
+  body:has(.student-focus-grid) button:hover:not(:disabled):not(.secondary-button):not(.ghost-button):not(.table-row-button),
+  body:has(.student-summary-strip) button:hover:not(:disabled):not(.secondary-button):not(.ghost-button):not(.table-row-button),
+  body:has(.student-today-sessions-section) button:hover:not(:disabled):not(.secondary-button):not(.ghost-button):not(.table-row-button),
+  body:has(.student-progress-summary) button:hover:not(:disabled):not(.secondary-button):not(.ghost-button):not(.table-row-button) {
+    background: var(--kahoot-orange-dark);
+    box-shadow: 0 7px 0 rgba(184, 76, 11, 0.95), 0 18px 32px rgba(241, 126, 34, 0.16);
+    transform: translateY(-1px);
+  }
+
+  body:has(.student-focus-grid) .primary-link-button:active,
+  body:has(.student-summary-strip) .primary-link-button:active,
+  body:has(.student-today-sessions-section) .primary-link-button:active,
+  body:has(.student-progress-summary) .primary-link-button:active,
+  body:has(.student-focus-grid) button:active:not(:disabled),
+  body:has(.student-summary-strip) button:active:not(:disabled),
+  body:has(.student-today-sessions-section) button:active:not(:disabled),
+  body:has(.student-progress-summary) button:active:not(:disabled) {
+    transform: translateY(3px);
+    box-shadow: 0 2px 0 rgba(184, 76, 11, 0.9);
+  }
+
+  body:has(.student-focus-grid) .secondary-button,
+  body:has(.student-summary-strip) .secondary-button,
+  body:has(.student-today-sessions-section) .secondary-button,
+  body:has(.student-progress-summary) .secondary-button,
+  body:has(.student-focus-grid) .secondary-link-button,
+  body:has(.student-summary-strip) .secondary-link-button,
+  body:has(.student-today-sessions-section) .secondary-link-button,
+  body:has(.student-progress-summary) .secondary-link-button {
+    min-height: 44px;
+    border: 2px solid var(--kahoot-line);
+    border-radius: 18px;
+    background: #ffffff;
+    color: var(--kahoot-blue);
+    box-shadow: 0 4px 0 rgba(18, 33, 68, 0.1);
+    font-weight: 950;
+  }
+
+  /* Instructor/course surfaces: energetic but more professional than student dashboard. */
+  body:has(.course-action-grid) .content-section,
+  body:has(.course-context-strip) .content-section,
+  body:has(.course-action-grid) .course-action-card,
+  body:has(.course-context-strip) .course-action-card,
+  body:has(.course-context-strip) .course-context-strip,
+  body:has(.course-context-strip) .course-workflow-checklist,
+  body:has(.course-context-strip) .table-wrap {
+    border: 2px solid var(--kahoot-line);
+    border-radius: 24px;
+    background: #ffffff;
+    box-shadow: 0 5px 0 rgba(18, 33, 68, 0.09);
+  }
+
+  body:has(.course-action-grid) .course-action-card,
+  body:has(.course-context-strip) .course-action-card {
+    transition:
+      transform var(--transition-ui),
+      box-shadow var(--transition-ui),
+      border-color var(--transition-ui);
+  }
+
+  body:has(.course-action-grid) .course-action-card:hover,
+  body:has(.course-context-strip) .course-action-card:hover {
+    border-color: rgba(14, 167, 139, 0.22);
+    box-shadow: 0 7px 0 rgba(18, 33, 68, 0.12), 0 20px 42px rgba(18, 33, 68, 0.08);
+    transform: translateY(-2px);
+  }
+
+  body:has(.course-action-grid) .page-header h1,
+  body:has(.course-context-strip) .page-header h1 {
+    color: var(--kahoot-blue);
+    font-weight: 950;
+    letter-spacing: -0.04em;
+  }
+
+  body:has(.course-action-grid) .status-badge,
+  body:has(.course-context-strip) .status-badge,
+  body:has(.student-focus-grid) .status-badge,
+  body:has(.student-summary-strip) .status-badge {
+    border-width: 2px;
+    border-radius: 999px;
+    font-weight: 950;
+  }
+
+  @media (max-width: 980px) {
+    .student-focus-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .student-focus-card.primary {
+      grid-column: auto;
+      grid-template-columns: 52px minmax(0, 1fr);
+    }
+
+    .student-focus-card.primary .student-focus-actions {
+      grid-column: 2;
+      justify-self: start;
+    }
+  }
+
+  @media (max-width: 760px) {
+    body:has(.student-focus-grid) .page-header h1,
+    body:has(.student-summary-strip) .page-header h1,
+    body:has(.student-today-sessions-section) .page-header h1,
+    body:has(.student-progress-summary) .page-header h1 {
+      font-size: clamp(2rem, 10vw, 3.25rem);
+      line-height: 1;
+    }
+
+    .student-summary-strip,
+    .student-update-list {
+      grid-template-columns: 1fr;
+    }
+
+    .student-focus-card.primary,
+    .student-focus-card {
+      grid-template-columns: 1fr;
+    }
+
+    .student-focus-card > .secondary-button,
+    .student-focus-card > .status-badge,
+    .student-focus-actions,
+    .student-focus-progress,
+    .student-focus-card.primary .student-focus-actions {
+      grid-column: auto;
+      justify-self: start;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .student-summary-item,
+    .student-focus-card,
+    .student-update-row,
+    .student-today-session-card,
+    .student-help-card,
+    .student-notification-item,
+    .student-reminder-item,
+    .course-action-card {
+      transition: none !important;
+    }
+  }
+}

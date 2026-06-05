@@ -35,6 +35,28 @@ function initialsFromName(value: ReactNode) {
   return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 }
 
+function ReasonList({
+  reasons,
+  studentId,
+  linksEnabled,
+}: {
+  reasons: InstructorAtRiskReason[];
+  studentId: string | number;
+  linksEnabled: boolean;
+}) {
+  return (
+    <span className="instructor-learning-reason-list">
+      {reasons.slice(0, 3).map((reason, index) => {
+        const key = `${studentId}-reason-${index}`;
+        if (linksEnabled && reason.to) {
+          return <Link to={reason.to} key={key}>{reason.label}</Link>;
+        }
+        return <em key={key}>{reason.label}</em>;
+      })}
+    </span>
+  );
+}
+
 export function InstructorAtRiskStudents({
   title,
   detail,
@@ -59,6 +81,7 @@ export function InstructorAtRiskStudents({
       {items.length ? (
         <ul className="instructor-learning-homework-list">
           {items.map((student) => {
+            const reasonLinksEnabled = !student.to;
             const content = (
               <>
                 <span className={cx('instructor-learning-homework-avatar', `tone-${student.severityTone ?? 'danger'}`)} aria-hidden="true">
@@ -68,13 +91,7 @@ export function InstructorAtRiskStudents({
                   <b>{student.name}</b>
                   {student.detail ? <small>{student.detail}</small> : null}
                   {student.reasons?.length ? (
-                    <span className="instructor-learning-reason-list">
-                      {student.reasons.slice(0, 3).map((reason, index) => reason.to ? (
-                        <Link to={reason.to} key={`${student.id}-reason-${index}`}>{reason.label}</Link>
-                      ) : (
-                        <em key={`${student.id}-reason-${index}`}>{reason.label}</em>
-                      ))}
-                    </span>
+                    <ReasonList reasons={student.reasons} studentId={student.id} linksEnabled={reasonLinksEnabled} />
                   ) : null}
                 </span>
                 {student.severityLabel ? (

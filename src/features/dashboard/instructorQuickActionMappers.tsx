@@ -46,9 +46,9 @@ export function mapInstructorQuickActions(
   return [
     {
       key: 'create-lesson-activity',
-      label: t('overview.quickActions.createLessonActivity', { defaultValue: 'Create lesson/activity' }),
-      detail: t('overview.quickActions.createLessonActivityDetail', { defaultValue: 'Prepare content for your next class.' }),
-      disabledReason: t('overview.quickActions.noContentPermission', { defaultValue: 'You do not have permission to manage course content yet.' }),
+      label: t('overview.createManageCourses'),
+      detail: t('overview.createManageCoursesDetail'),
+      disabledReason: t('overview.courseNoAccessDetail'),
       to: '/courses',
       icon: <FiPlusCircle />,
       tone: 'primary',
@@ -56,11 +56,11 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'post-announcement',
-      label: t('overview.quickActions.postAnnouncement', { defaultValue: 'Post announcement' }),
-      detail: t('overview.quickActions.postAnnouncementDetail', { defaultValue: 'Share updates with assigned students.' }),
+      label: t('overview.openSessions'),
+      detail: t('overview.assistantSessionsDetail'),
       disabledReason: announcementsEnabled
-        ? t('overview.quickActions.noAnnouncementPermission', { defaultValue: 'Announcement permissions are not enabled for this role.' })
-        : t('overview.quickActions.announcementsDisabled', { defaultValue: 'Announcements are not enabled for this workspace.' }),
+        ? t('overview.assistantSupportDisabled')
+        : t('errors.featureDisabledDetail'),
       to: '/sessions',
       icon: <FiBell />,
       tone: 'secondary',
@@ -68,11 +68,11 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'set-weekly-challenge',
-      label: t('overview.quickActions.setWeeklyChallenge', { defaultValue: 'Set weekly challenge' }),
-      detail: t('overview.quickActions.setWeeklyChallengeDetail', { defaultValue: 'Create a small goal to keep students engaged.' }),
+      label: t('overview.homeworkReview'),
+      detail: t('overview.homeworkReviewDetail'),
       disabledReason: challengesEnabled
-        ? t('overview.quickActions.noChallengePermission', { defaultValue: 'Challenge permissions are not enabled for this role.' })
-        : t('overview.quickActions.challengesDisabled', { defaultValue: 'Weekly challenges are not enabled yet.' }),
+        ? t('overview.homeworkQueueEmptyDetail')
+        : t('errors.featureDisabledDetail'),
       to: '/homework',
       icon: <FiTarget />,
       tone: 'accent',
@@ -80,12 +80,12 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'review-grading',
-      label: t('overview.quickActions.reviewGrading', { defaultValue: 'Review grading' }),
+      label: t('overview.needsReview'),
       detail: homeworkNeedsReviewCount > 0
         ? t('overview.submissionsNeedReview', { count: homeworkNeedsReviewCount })
-        : t('overview.quickActions.reviewGradingDetail', { defaultValue: 'Check submitted homework and activities.' }),
+        : t('overview.homeworkReviewDetail'),
       disabledReason: homeworkEnabled
-        ? t('overview.quickActions.noGradingPermission', { defaultValue: 'Grading permission is not enabled for this role.' })
+        ? t('overview.homeworkQueueEmptyDetail')
         : t('overview.homeworkDisabled'),
       to: '/homework',
       icon: homeworkNeedsReviewCount > 0 ? <FiCheckSquare /> : <FiBookOpen />,

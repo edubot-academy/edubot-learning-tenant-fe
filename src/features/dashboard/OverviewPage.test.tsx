@@ -378,10 +378,9 @@ describe('OverviewPage', () => {
     renderPage();
 
     expect(await screen.findByText('Instructor overview')).toBeInTheDocument();
-    expect(await screen.findByText('Quick actions')).toBeInTheDocument();
-    expect(screen.getByText('Students needing attention')).toBeInTheDocument();
+    expect(await screen.findByText('Кутман күн, инструктор! 👋')).toBeInTheDocument();
     expect(screen.getAllByText('Aida Student').length).toBeGreaterThan(0);
-    expect(screen.getByText('Leaderboard needs data model')).toBeInTheDocument();
+    expect(screen.queryByText('Leaderboard needs data model')).not.toBeInTheDocument();
     expect(screen.getAllByText('Build a card layout').length).toBeGreaterThan(0);
     expect(api.getInstructorDashboard).toHaveBeenCalledWith(42);
     expect(screen.queryByText('Assistant overview')).not.toBeInTheDocument();

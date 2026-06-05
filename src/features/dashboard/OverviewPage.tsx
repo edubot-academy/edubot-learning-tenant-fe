@@ -511,16 +511,18 @@ export function OverviewPage() {
       tone={canManageMembers ? 'neutral' : 'instructor'}
       className={canManageMembers ? undefined : 'instructor-learning-dashboard'}
     >
-      <PageHeader
-        title={activeTenant.name}
-        eyebrow={heading}
-        actions={(
-          <>
-            {canManageMembers ? <Link className="secondary-link-button" to="/members"><FiUsers /> {t('overview.members')}</Link> : null}
-            <Link className="secondary-link-button" to="/settings"><FiSettings /> {t('overview.settings')}</Link>
-          </>
-        )}
-      />
+      {!showInstructorLearningDashboard ? (
+        <PageHeader
+          title={activeTenant.name}
+          eyebrow={heading}
+          actions={(
+            <>
+              {canManageMembers ? <Link className="secondary-link-button" to="/members"><FiUsers /> {t('overview.members')}</Link> : null}
+              <Link className="secondary-link-button" to="/settings"><FiSettings /> {t('overview.settings')}</Link>
+            </>
+          )}
+        />
+      ) : null}
 
       {canManageMembers ? (
         <section className="overview-admin-command-center" aria-label={t('overview.tenantOverview')}>

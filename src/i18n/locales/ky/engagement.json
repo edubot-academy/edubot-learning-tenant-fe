@@ -1,0 +1,14 @@
+{
+  "overview": {
+    "instructorFallbackName": "инструктор",
+    "instructorProfileLabel": "Окутуучу",
+    "instructorGreetingTitle": "Кутман күн, {{name}}! 👋",
+    "instructorGreetingDetail": "Бүгүн окуучулар менен иштөөгө даярсызбы?",
+    "quickActions": {
+      "createCourseLesson": "Курс/сабак түзүү",
+      "postAnnouncement": "Жарыя кылуу",
+      "weeklyChallenge": "Апталык тапшырма",
+      "reviewGrading": "Текшерүү"
+    }
+  }
+}

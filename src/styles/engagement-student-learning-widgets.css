@@ -74,3 +74,43 @@
   border-color: rgba(241, 126, 34, 0.28);
   background: linear-gradient(135deg, rgba(255, 246, 231, 0.92), #fff);
 }
+
+.student-learning-dashboard .student-task-title-row,
+.student-learning-dashboard .student-task-meta,
+.student-learning-dashboard .student-today-session-card,
+.student-learning-dashboard .student-update-row,
+.student-learning-dashboard .student-course-card {
+  min-width: 0;
+}
+
+.student-learning-dashboard .student-task-title-row strong,
+.student-learning-dashboard .student-today-session-card strong,
+.student-learning-dashboard .student-update-row strong,
+.student-learning-dashboard .student-course-card strong {
+  overflow-wrap: anywhere;
+}
+
+.student-learning-dashboard .student-task-meta {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+@media (max-width: 760px) {
+  .student-learning-dashboard .student-today-session-card,
+  .student-learning-dashboard .student-task-card,
+  .student-learning-dashboard .student-update-row {
+    grid-template-columns: 1fr;
+  }
+
+  .student-learning-dashboard .student-task-action,
+  .student-learning-dashboard .student-today-session-actions {
+    width: 100%;
+  }
+
+  .student-learning-dashboard .student-task-start-button,
+  .student-learning-dashboard .student-today-session-actions .primary-link-button,
+  .student-learning-dashboard .student-today-session-actions .secondary-link-button {
+    width: 100%;
+    justify-content: center;
+  }
+}

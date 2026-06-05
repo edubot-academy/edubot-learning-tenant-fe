@@ -325,6 +325,7 @@ export function InstructorLearningOverview({
   const instructorName = instructorDashboard?.instructor.fullName ?? null;
   const instructorEmail = instructorDashboard?.instructor.email ?? null;
   const instructorDisplayName = instructorName || instructorEmail || translationWithFallback(t, 'overview.instructorFallbackName', 'инструктор');
+  const instructorProfileLabel = translationWithFallback(t, 'overview.instructorProfileLabel', 'Окутуучу');
   const topbarTitle = translationWithFallback(t, 'overview.instructorGreetingTitle', `Кутман күн, ${instructorDisplayName}! 👋`);
   const topbarDetail = translationWithFallback(t, 'overview.instructorGreetingDetail', 'Бүгүн окуучулар менен иштөөгө даярсызбы?');
   const compactEmptyNotes = [
@@ -356,7 +357,7 @@ export function InstructorLearningOverview({
         tenantName={activeTenant.name}
         instructorName={instructorName}
         instructorEmail={instructorEmail}
-        profileLabel={t('overview.instructorOverview')}
+        profileLabel={instructorProfileLabel}
         todaySessionsLabel={t('overview.todaySessions')}
         todaySessionsValue={instructorDashboard ? instructorTodaySessions.length : overview.sessions.today}
         reviewLabel={t('overview.needsReview')}

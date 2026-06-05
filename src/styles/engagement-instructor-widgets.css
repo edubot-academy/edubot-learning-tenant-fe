@@ -1,0 +1,82 @@
+.instructor-learning-homework-avatar.tone-primary,
+.instructor-learning-homework-avatar.tone-secondary,
+.instructor-learning-homework-avatar.tone-accent,
+.instructor-learning-homework-avatar.tone-success,
+.instructor-learning-homework-avatar.tone-danger,
+.instructor-learning-homework-avatar.tone-muted {
+  font-weight: 950;
+}
+
+.instructor-learning-homework-avatar.tone-primary {
+  background: var(--learning-primary-soft);
+  color: var(--learning-primary-strong);
+}
+
+.instructor-learning-homework-avatar.tone-secondary {
+  background: rgba(18, 33, 68, 0.1);
+  color: var(--learning-secondary);
+}
+
+.instructor-learning-homework-avatar.tone-accent {
+  background: var(--learning-accent-soft);
+  color: #9a5b00;
+}
+
+.instructor-learning-homework-avatar.tone-success {
+  background: var(--learning-success-soft);
+  color: var(--brand-teal-dark);
+}
+
+.instructor-learning-homework-avatar.tone-danger {
+  background: rgba(185, 28, 28, 0.1);
+  color: var(--danger);
+}
+
+.instructor-learning-homework-avatar.tone-muted {
+  background: #eef3f8;
+  color: rgba(23, 25, 39, 0.62);
+}
+
+.instructor-learning-homework-avatar svg {
+  width: 18px;
+  height: 18px;
+}
+
+.instructor-learning-reason-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.instructor-learning-reason-list a,
+.instructor-learning-reason-list em {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  background: rgba(18, 33, 68, 0.07);
+  color: var(--learning-muted);
+  padding: 0 9px;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.instructor-learning-reason-list a:hover {
+  color: var(--learning-primary-strong);
+}
+
+.instructor-learning-at-risk,
+.instructor-learning-activity-feed {
+  display: grid;
+  gap: 18px;
+}
+
+@media (max-width: 760px) {
+  .instructor-learning-reason-list {
+    overflow: hidden;
+  }
+}

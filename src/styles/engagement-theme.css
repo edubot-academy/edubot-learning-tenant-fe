@@ -1,31 +1,16 @@
 /*
  * EduBot Engagement Theme entrypoint
  *
- * Phase 1: CSS-only visual overlay for student/instructor learning surfaces.
- * This keeps the PR low-risk while we validate the QuestLMS-inspired direction.
+ * Scoped explicit engagement theme for student/instructor learning surfaces.
+ * Broad compatibility overlays that depend on body:has(...) remain in their own
+ * files, but they are no longer imported globally from the app entrypoint.
  *
+ * Apply via TenantDashboardShell variant="engagement" and tone="student" or "instructor".
  * Scope guardrails live in ./ENGAGEMENT_THEME_NOTES.md.
- *
- * Next phase TODO:
- * - Move from body:has(...) selectors to an explicit .engagement-theme wrapper.
- * - Introduce TenantDashboardShell variants for student/instructor surfaces.
- * - Replace broad button selectors with reusable Button variants.
  */
 
-@import './engagement.css';
-@import './engagement-brand.css';
+@import './engagement-tokens.css';
 @import './engagement-wrapper.css';
-@import './engagement-polish.css';
-@import './engagement-tone.css';
-@import './engagement-questlms-alignment.css';
-@import './engagement-learning-shell.css';
-@import './engagement-student-header.css';
-@import './engagement-student-hero.css';
-@import './engagement-student-stats.css';
-@import './engagement-student-sidecards.css';
-@import './engagement-student-task-sidebar.css';
-@import './engagement-student-learning-widgets.css';
-@import './engagement-hardening.css';
 @import './engagement-learning-dashboard.css';
 @import './engagement-instructor-widgets.css';
 @import './engagement-instructor-overview-polish.css';

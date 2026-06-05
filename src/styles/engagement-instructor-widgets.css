@@ -44,10 +44,10 @@
 
 .instructor-learning-topbar {
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 24px;
-  margin-bottom: 2px;
+  gap: 28px;
+  margin-bottom: 8px;
 }
 
 .instructor-learning-topbar-copy {
@@ -56,19 +56,18 @@
 
 .instructor-learning-topbar-copy h1 {
   margin: 12px 0 4px;
-  max-width: 820px;
+  max-width: 760px;
   color: var(--learning-page-title);
-  font-size: clamp(2rem, 3vw, 3rem);
+  font-size: clamp(2.25rem, 3.4vw, 3.35rem);
   font-weight: 950;
   letter-spacing: -0.06em;
-  line-height: 1;
-  text-wrap: balance;
+  line-height: 0.98;
 }
 
 .instructor-learning-topbar-copy p {
   margin: 0;
   color: var(--learning-page-muted);
-  font-size: 0.98rem;
+  font-size: 1rem;
   font-weight: 750;
 }
 
@@ -76,94 +75,51 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 14px;
   min-width: 0;
 }
 
 .instructor-learning-topbar-metrics {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.instructor-learning-topbar-metrics article {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  align-items: center;
-  column-gap: 9px;
-  min-width: 132px;
-  border: 2px solid var(--learning-line);
-  border-radius: 22px;
-  background: var(--learning-card);
-  box-shadow: var(--learning-shadow);
-  padding: 10px 12px;
-}
-
-.instructor-learning-topbar-metrics svg {
-  grid-row: span 2;
-  width: 30px;
-  height: 30px;
-  border-radius: 12px;
-  background: var(--learning-primary-soft);
-  color: var(--learning-primary-strong);
-  padding: 7px;
-}
-
-.instructor-learning-topbar-metrics span {
-  color: var(--learning-subtle);
-  font-size: 0.58rem;
-  font-weight: 950;
-  letter-spacing: 0.08em;
-  line-height: 1.1;
-  text-transform: uppercase;
-}
-
-.instructor-learning-topbar-metrics strong {
-  color: var(--learning-ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 1.32rem;
-  font-weight: 950;
-  line-height: 1;
+  display: none;
 }
 
 .instructor-learning-profile-card {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 46px minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
-  min-height: 54px;
-  width: 210px;
+  gap: 10px;
+  min-height: 62px;
+  width: 260px;
   min-width: 0;
   border: 2px solid var(--learning-line);
   border-radius: 999px;
   background: var(--learning-card);
   box-shadow: var(--learning-shadow);
-  padding: 6px 14px 6px 6px;
+  padding: 7px 18px 7px 7px;
 }
 
 .instructor-learning-profile-avatar {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   place-items: center;
   border-radius: 999px;
   background: linear-gradient(135deg, #fff4e8, #d9f7f1);
   color: var(--learning-secondary);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 950;
   letter-spacing: -0.02em;
 }
 
 .instructor-learning-profile-copy {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
 .instructor-learning-profile-copy small {
   color: var(--learning-primary-strong);
-  font-size: 0.58rem;
+  font-size: 0.62rem;
   font-weight: 950;
   letter-spacing: 0.08em;
   line-height: 1;
@@ -173,7 +129,7 @@
 .instructor-learning-profile-copy strong {
   overflow: hidden;
   color: var(--learning-ink);
-  font-size: 0.9rem;
+  font-size: 0.98rem;
   font-weight: 950;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -185,15 +141,15 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-width: 54px;
-  min-height: 54px;
+  min-width: 62px;
+  min-height: 62px;
   border: 2px solid var(--learning-line);
   border-radius: 999px;
   background: var(--learning-card);
   box-shadow: var(--learning-shadow);
   color: var(--learning-ink);
-  padding: 0 16px;
-  font-size: 0.84rem;
+  padding: 0 18px;
+  font-size: 0.86rem;
   font-weight: 950;
   line-height: 1;
   text-decoration: none;
@@ -406,7 +362,7 @@
   color: var(--learning-accent);
 }
 
-@media (max-width: 1520px) {
+@media (max-width: 1320px) {
   .instructor-learning-topbar {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
@@ -422,28 +378,8 @@
   }
 
   .instructor-learning-settings-link {
-    width: 54px;
+    width: 62px;
     padding: 0;
-  }
-}
-
-@media (max-width: 1180px) {
-  .instructor-learning-topbar-right {
-    align-items: stretch;
-    flex-wrap: wrap;
-  }
-
-  .instructor-learning-topbar-metrics {
-    flex: 1 1 360px;
-    width: 100%;
-  }
-
-  .instructor-learning-topbar-metrics article {
-    flex: 1;
-  }
-
-  .instructor-learning-profile-card {
-    flex: 1 1 220px;
   }
 }
 
@@ -467,11 +403,11 @@
   }
 
   .instructor-learning-topbar-copy h1 {
-    font-size: 2.2rem;
+    font-size: 2.25rem;
   }
 
-  .instructor-learning-topbar-right,
-  .instructor-learning-topbar-metrics {
+  .instructor-learning-topbar-right {
+    align-items: stretch;
     flex-direction: column;
   }
 

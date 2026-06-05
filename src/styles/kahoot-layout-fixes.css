@@ -1,0 +1,154 @@
+/*
+ * Layout stabilization for the Kahoot-inspired student dashboard.
+ * Fixes hero/right-card collision, oversized title overflow, and cramped stat labels.
+ */
+
+body:has(.student-home-hero) .student-home-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+  align-items: start;
+  gap: 24px;
+  max-width: 100%;
+}
+
+body:has(.student-home-hero) .student-home-main,
+body:has(.student-home-hero) .student-home-side,
+body:has(.student-home-hero) .student-priority-card,
+body:has(.student-home-hero) .student-priority-copy {
+  min-width: 0;
+}
+
+body:has(.student-home-hero) .student-home-side {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+}
+
+body:has(.student-home-hero) .student-priority-card {
+  z-index: 1;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  min-height: clamp(220px, 22vw, 285px);
+  max-width: 100%;
+  padding: clamp(28px, 3.2vw, 42px);
+}
+
+body:has(.student-home-hero) .student-priority-card::before {
+  top: 22px;
+  right: 24px;
+  z-index: 2;
+}
+
+body:has(.student-home-hero) .student-priority-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: 22px;
+}
+
+body:has(.student-home-hero) .student-priority-copy h2 {
+  max-width: 100%;
+  font-size: clamp(2.35rem, 3.8vw, 4.15rem);
+  line-height: 0.94;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+body:has(.student-home-hero) .student-priority-copy p {
+  max-width: 560px;
+}
+
+body:has(.student-home-hero) .student-priority-actions {
+  align-self: center;
+  justify-self: end;
+}
+
+body:has(.student-home-hero) .student-priority-actions .primary-link-button,
+body:has(.student-home-hero) .student-priority-actions button:not(.secondary-button):not(.ghost-button) {
+  min-height: 56px;
+  min-width: 138px;
+  padding-inline: 26px;
+  white-space: nowrap;
+}
+
+body:has(.student-home-hero) .student-summary-strip {
+  grid-template-columns: repeat(5, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+body:has(.student-home-hero) .student-summary-item {
+  grid-template-columns: 42px minmax(0, 1fr);
+  min-height: 104px;
+  border-radius: 24px;
+  padding: 15px;
+}
+
+body:has(.student-home-hero) .student-summary-item svg {
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+  border-radius: 16px;
+}
+
+body:has(.student-home-hero) .student-summary-item span {
+  font-size: 0.72rem;
+  line-height: 1.08;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+body:has(.student-home-hero) .student-summary-item strong {
+  font-size: clamp(1.8rem, 2.5vw, 2.35rem);
+}
+
+body:has(.student-home-hero) .student-compact-card {
+  min-height: 118px;
+  border-radius: 24px;
+  padding: 17px 19px;
+}
+
+body:has(.student-home-hero) .student-compact-card > strong {
+  font-size: 1.25rem;
+}
+
+@media (max-width: 1320px) {
+  body:has(.student-home-hero) .student-home-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body:has(.student-home-hero) .student-home-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  body:has(.student-home-hero) .student-priority-card {
+    grid-template-columns: 62px minmax(0, 1fr);
+  }
+
+  body:has(.student-home-hero) .student-priority-actions {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  body:has(.student-home-hero) .student-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  body:has(.student-home-hero) .student-home-side,
+  body:has(.student-home-hero) .student-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  body:has(.student-home-hero) .student-priority-card {
+    grid-template-columns: 1fr;
+    border-radius: 32px;
+  }
+
+  body:has(.student-home-hero) .student-priority-actions {
+    grid-column: auto;
+  }
+
+  body:has(.student-home-hero) .student-priority-copy h2 {
+    font-size: clamp(2.2rem, 12vw, 3.3rem);
+  }
+}

@@ -15,6 +15,12 @@ function optionalFeatureEnabled(activeTenant: Tenant | null | undefined, key: st
   return flags[key] !== false;
 }
 
+function quickActionText(t: TFunction, key: string, fallback: string) {
+  const translationKey = `overview.quickActions.${key}`;
+  const translated = t(translationKey);
+  return translated === translationKey ? fallback : translated;
+}
+
 export function mapInstructorQuickActions(
   t: TFunction,
   {
@@ -46,7 +52,7 @@ export function mapInstructorQuickActions(
   return [
     {
       key: 'create-lesson-activity',
-      label: t('overview.createManageCourses'),
+      label: quickActionText(t, 'createCourseLesson', 'Курс/сабак түзүү'),
       detail: t('overview.createManageCoursesDetail'),
       disabledReason: t('overview.courseNoAccessDetail'),
       to: '/courses',
@@ -56,7 +62,7 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'post-announcement',
-      label: t('overview.openSessions'),
+      label: quickActionText(t, 'postAnnouncement', 'Жарыя кылуу'),
       detail: t('overview.assistantSessionsDetail'),
       disabledReason: announcementsEnabled
         ? t('overview.assistantSupportDisabled')
@@ -68,7 +74,7 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'set-weekly-challenge',
-      label: t('overview.homeworkReview'),
+      label: quickActionText(t, 'weeklyChallenge', 'Апталык тапшырма'),
       detail: t('overview.homeworkReviewDetail'),
       disabledReason: challengesEnabled
         ? t('overview.homeworkQueueEmptyDetail')
@@ -80,7 +86,7 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'review-grading',
-      label: t('overview.needsReview'),
+      label: quickActionText(t, 'reviewGrading', 'Текшерүү'),
       detail: homeworkNeedsReviewCount > 0
         ? t('overview.submissionsNeedReview', { count: homeworkNeedsReviewCount })
         : t('overview.homeworkReviewDetail'),

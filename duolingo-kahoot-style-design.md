@@ -90,8 +90,8 @@ overview.activity
 Use existing activity labels/i18n.
 ✅ Added prop-driven InstructorActivityFeed component shell.
 ✅ Added mapInstructorActivityFeedItems helper for real overview.activity data.
-Next: render widget in OverviewPage instructor branch after safe file patch.
-⏳ Port AtRiskStudents concept
+✅ Rendered through InstructorLearningOverview in OverviewPage.
+✅ Port AtRiskStudents concept
 
 Source: AtRiskStudents.tsx
 Tenant requirement:
@@ -103,7 +103,7 @@ low progress
 broken attendance/streak signal if available.
 ✅ Added prop-driven InstructorAtRiskStudents component shell using real instructor attention-student shape.
 ✅ Added mapInstructorAtRiskStudents helper for real instructorDashboard.attentionStudents data.
-Next: render widget in OverviewPage instructor branch after safe file patch.
+✅ Rendered through InstructorLearningOverview in OverviewPage.
 Phase 3: Hero + Engagement
 ✅ 12. Adapt LaunchQuizHero
 - Source: LaunchQuizHero.tsx
@@ -112,7 +112,7 @@ Phase 3: Hero + Engagement
 - generated/join PIN if live quiz feature exists
 - If no live quiz backend exists yet, show “Start live session” or “Open session”.
 
-⏳ Adapt QuickActions
+✅ Adapt QuickActions
 
 Source: QuickActions.tsx
 Tenant actions:
@@ -123,7 +123,7 @@ review grading
 Must respect permissions and feature flags.
 ✅ Added prop-driven InstructorQuickActions component shell with disabled/permission states.
 ✅ Added mapInstructorQuickActions helper from tenant permissions and feature flags.
-Next: render QuickActions in OverviewPage instructor branch after safe file patch.
+✅ Rendered through InstructorLearningOverview in OverviewPage.
 ✅ Document leaderboard/milestone blocker contract
 
 Source:
@@ -134,7 +134,7 @@ Need real XP/leaderboard/badge data model.
 ✅ Added InstructorEngagementBlockedPanel for honest placeholder/requirements UI without fake XP data.
 Next: define backend data contract for XP, badges, leaderboard, milestones.
 Phase 4: Role-Aware Assembly
-⏳ 15. Refactor tenant instructor overview composition
+✅ 15. Refactor tenant instructor overview composition
 - File: src/features/dashboard/OverviewPage.tsx
 - Do not show all widgets to everyone.
 - Instructor view:
@@ -150,7 +150,7 @@ Phase 4: Role-Aware Assembly
 - ✅ at-risk students component + mapper
 - ✅ engagement blocker panel for missing XP/leaderboard model
 - ✅ extracted InstructorLearningOverview composition shell
-- Next: replace inline instructor branch in OverviewPage with <InstructorLearningOverview /> after local typecheck/visual QA.
+- ✅ replaced inline instructor branch in OverviewPage with <InstructorLearningOverview />.
 - Admin view:
 - should stay operations/EduPro-style, not QuestLMS-heavy.
 

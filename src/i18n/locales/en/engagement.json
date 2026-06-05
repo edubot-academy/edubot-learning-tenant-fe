@@ -2,7 +2,7 @@
   "overview": {
     "instructorFallbackName": "instructor",
     "instructorProfileLabel": "Instructor",
-    "instructorGreetingTitle": "Good day, {{name}}! 👋",
+    "instructorGreetingTitle": "Good day, instructor! 👋",
     "instructorGreetingDetail": "Ready to work with your students today?",
     "quickActions": {
       "createCourseLesson": "Create course/lesson",

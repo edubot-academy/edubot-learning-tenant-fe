@@ -1,0 +1,70 @@
+/*
+ * EduBot brand color layer for the engagement theme.
+ *
+ * Keeps the QuestLMS-inspired interaction language, but replaces the borrowed
+ * green/purple-heavy palette with EduBot orange, dark blue, and teal tokens.
+ */
+
+:root {
+  --engagement-bg: #f4f7fb;
+  --engagement-text: var(--text, #162033);
+  --engagement-primary: var(--brand-teal, #0ea78b);
+  --engagement-primary-shadow: var(--brand-teal-dark, #1e605e);
+  --engagement-primary-soft: rgba(14, 167, 139, 0.12);
+  --engagement-secondary: var(--brand-dark, #122144);
+  --engagement-secondary-shadow: #0b1733;
+  --engagement-secondary-soft: rgba(18, 33, 68, 0.1);
+  --engagement-accent: var(--brand-primary, #f17e22);
+  --engagement-accent-soft: rgba(241, 126, 34, 0.14);
+  --engagement-reward: var(--brand-accent, #f4b23d);
+  --engagement-reward-soft: rgba(244, 178, 61, 0.16);
+  --engagement-streak: var(--brand-primary, #f17e22);
+  --engagement-streak-soft: rgba(241, 126, 34, 0.13);
+  --engagement-line: rgba(22, 32, 51, 0.08);
+  --engagement-shadow: 0 5px 0 rgba(18, 33, 68, 0.11);
+  --engagement-shadow-strong: 0 6px 0 rgba(18, 33, 68, 0.16);
+}
+
+body:has(.student-workspace-grid),
+body:has(.student-progress-summary),
+body:has(.course-action-grid),
+body:has(.course-context-strip),
+body:has(.student-today-sessions-section),
+.engagement-theme {
+  --app-bg: var(--engagement-bg);
+  --body-gradient: radial-gradient(circle at 18% 0%, rgba(14, 167, 139, 0.11), transparent 28rem), radial-gradient(circle at 88% 10%, rgba(241, 126, 34, 0.1), transparent 26rem), linear-gradient(180deg, rgba(255, 248, 241, 0.82), rgba(244, 247, 251, 0) 360px), var(--engagement-bg);
+  --brand-primary: var(--engagement-primary);
+  --brand-primary-strong: var(--engagement-primary-shadow);
+  --brand-primary-soft: var(--engagement-primary-soft);
+  --brand-accent: var(--engagement-accent);
+  --surface-hover: rgba(14, 167, 139, 0.08);
+}
+
+body:has(.student-workspace-grid) .sidebar-workspace-card,
+body:has(.student-progress-summary) .sidebar-workspace-card,
+body:has(.course-action-grid) .sidebar-workspace-card,
+body:has(.course-context-strip) .sidebar-workspace-card,
+body:has(.student-today-sessions-section) .sidebar-workspace-card,
+.engagement-theme .sidebar-workspace-card {
+  border-color: rgba(241, 126, 34, 0.26);
+  background: var(--engagement-accent-soft);
+}
+
+body:has(.student-workspace-grid) .student-priority-card::before,
+body:has(.student-today-sessions-section) .student-priority-card::before,
+body:has(.student-progress-summary) .student-progress-next-step::before,
+.engagement-theme .dashboard-card--hero::before,
+.engagement-theme .student-priority-card::before,
+.engagement-theme .student-progress-next-step::before {
+  background: var(--engagement-accent);
+}
+
+body:has(.student-workspace-grid) .student-priority-icon,
+body:has(.student-progress-summary) .student-priority-icon {
+  background: var(--engagement-accent);
+}
+
+body:has(.student-workspace-grid) .student-task-list article:first-child,
+body:has(.student-today-sessions-section) .student-task-list article:first-child {
+  background: linear-gradient(90deg, rgba(14, 167, 139, 0.1), rgba(241, 126, 34, 0.055) 38%, #ffffff 100%);
+}

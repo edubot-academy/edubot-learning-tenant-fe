@@ -124,13 +124,15 @@ Must respect permissions and feature flags.
 ✅ Added prop-driven InstructorQuickActions component shell with disabled/permission states.
 ✅ Added mapInstructorQuickActions helper from tenant permissions and feature flags.
 Next: render QuickActions in OverviewPage instructor branch after safe file patch.
-Adapt leaderboard/milestone later
+✅ Document leaderboard/milestone blocker contract
 
 Source:
 Leaderboard.tsx
 MilestoneCard.tsx
 Blocker:
 Need real XP/leaderboard/badge data model.
+✅ Added InstructorEngagementBlockedPanel for honest placeholder/requirements UI without fake XP data.
+Next: define backend data contract for XP, badges, leaderboard, milestones.
 Phase 4: Role-Aware Assembly
 ⏳ 15. Refactor tenant instructor overview composition
 - File: src/features/dashboard/OverviewPage.tsx

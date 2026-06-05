@@ -1,0 +1,90 @@
+/* Explicit .engagement-theme bridge for new dashboard shells/components.
+ * Existing body:has(...) selectors remain as compatibility for current pages.
+ */
+
+.engagement-theme {
+  --app-bg: var(--engagement-bg);
+  --body-gradient: radial-gradient(circle at 18% 0%, rgba(88, 204, 2, 0.11), transparent 28rem), radial-gradient(circle at 88% 10%, rgba(70, 23, 143, 0.08), transparent 26rem), var(--engagement-bg);
+  --brand-primary: var(--engagement-primary);
+  --brand-primary-strong: var(--engagement-primary-shadow);
+  --brand-primary-soft: var(--engagement-primary-soft);
+  --brand-accent: var(--engagement-accent);
+  --surface: #ffffff;
+  --surface-muted: #f3f6fb;
+  --surface-hover: rgba(88, 204, 2, 0.08);
+  --line: var(--engagement-line);
+  --line-strong: rgba(31, 37, 51, 0.14);
+  --text: var(--engagement-text);
+  --radius: 16px;
+}
+
+.tenant-dashboard-shell.engagement-theme,
+.engagement-theme.app-shell,
+.engagement-theme .app-shell {
+  background: transparent;
+}
+
+.engagement-theme .dashboard-card,
+.engagement-theme .content-section {
+  border: 2px solid var(--engagement-line);
+  border-radius: 32px;
+  background: #ffffff;
+  box-shadow: var(--engagement-shadow);
+}
+
+.engagement-theme .dashboard-card--hero {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: 40px;
+  background: var(--engagement-secondary);
+  color: #ffffff;
+  box-shadow: 0 8px 0 var(--engagement-secondary-shadow);
+  isolation: isolate;
+}
+
+.engagement-theme .dashboard-card--hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.engagement-theme .dashboard-card--stat {
+  min-height: 104px;
+  border-radius: 18px;
+  box-shadow: 0 4px 0 rgba(31, 37, 51, 0.09);
+}
+
+.engagement-theme .dashboard-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+}
+
+.engagement-theme .dashboard-stat-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  background: var(--engagement-primary-soft);
+  color: var(--engagement-primary-shadow);
+}
+
+.engagement-theme .dashboard-stat-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.engagement-theme .dashboard-stat-copy strong {
+  color: var(--engagement-text);
+  font-size: clamp(1.65rem, 2.4vw, 2.05rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.engagement-theme .dashboard-stat-copy span,
+.engagement-theme .dashboard-stat-copy small {
+  color: rgba(31, 37, 51, 0.58);
+  font-weight: 800;
+}

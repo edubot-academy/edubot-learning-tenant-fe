@@ -166,6 +166,88 @@
   white-space: normal;
 }
 
+/* Light mode should visually track instructor-s-hub / QuestLMS: soft page, white cards, navy text. */
+html:not([data-theme='dark']) .instructor-learning-dashboard,
+html[data-theme='light'] .instructor-learning-dashboard {
+  --learning-page-bg: #f5f7fb;
+  --learning-bg: #f5f7fb;
+  --learning-card: #ffffff;
+  --learning-ink: #162033;
+  --learning-muted: rgba(22, 32, 51, 0.58);
+  --learning-subtle: rgba(22, 32, 51, 0.46);
+  --learning-line: rgba(22, 32, 51, 0.1);
+  --learning-line-strong: rgba(22, 32, 51, 0.16);
+  --learning-shadow: 0 4px 0 rgba(22, 32, 51, 0.1);
+  --learning-shadow-strong: 0 6px 0 rgba(22, 32, 51, 0.13);
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard),
+html[data-theme='light'] body:has(.instructor-learning-dashboard),
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .app-shell,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .app-shell,
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .main-panel,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .main-panel {
+  background: #f5f7fb;
+  color: #162033;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar {
+  background: #ffffff;
+  border-right-color: rgba(22, 32, 51, 0.1);
+  color: #162033;
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-card,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-card,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-stat,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-stat,
+html:not([data-theme='dark']) .instructor-learning-dashboard .content-section,
+html[data-theme='light'] .instructor-learning-dashboard .content-section {
+  background: #ffffff;
+  border: 2px solid rgba(22, 32, 51, 0.1);
+  color: #162033;
+  box-shadow: 0 4px 0 rgba(22, 32, 51, 0.1);
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-stat-label,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-stat-label,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-section-heading p,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-section-heading p,
+html:not([data-theme='dark']) .instructor-learning-dashboard small,
+html[data-theme='light'] .instructor-learning-dashboard small {
+  color: rgba(22, 32, 51, 0.52);
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-launch,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-launch {
+  background: #122144;
+  color: #ffffff;
+  box-shadow: 0 5px 0 #08152f;
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-launch p,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-launch p {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-homework-row,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-homework-row,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-queue-item,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-queue-item,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-session-row,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-session-row {
+  background: #ffffff;
+  border-color: rgba(22, 32, 51, 0.1);
+  color: #162033;
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .overview-course-table-wrap thead,
+html[data-theme='light'] .instructor-learning-dashboard .overview-course-table-wrap thead {
+  background: #f2f5f9;
+  color: rgba(22, 32, 51, 0.58);
+}
+
 @media (max-width: 1180px) {
   .instructor-learning-dashboard .instructor-learning-primary-grid,
   .instructor-learning-dashboard .instructor-learning-compact-empty-grid {

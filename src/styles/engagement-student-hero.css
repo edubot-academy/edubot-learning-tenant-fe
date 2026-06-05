@@ -1,33 +1,33 @@
 /* Student dashboard hero composition. */
 
 body:has(.student-home-hero) .student-home-hero {
-  grid-template-columns: minmax(0, 1.72fr) minmax(340px, 0.82fr);
-  gap: clamp(22px, 2.8vw, 42px);
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.72fr);
+  gap: clamp(18px, 2.4vw, 32px);
   align-items: start;
 }
 
 body:has(.student-home-hero) .student-home-main {
-  gap: 18px;
+  gap: 16px;
 }
 
 body:has(.student-home-hero) .student-priority-card {
-  grid-template-columns: 74px minmax(0, 1fr) minmax(150px, auto);
-  min-height: clamp(280px, 30vw, 360px);
-  padding: clamp(30px, 4vw, 54px);
-  border-radius: 42px;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(140px, auto);
+  min-height: clamp(250px, 27vw, 320px);
+  padding: clamp(28px, 3.5vw, 46px);
+  border-radius: 40px;
 }
 
 body:has(.student-home-hero) .student-priority-icon {
-  width: 72px;
-  height: 72px;
-  min-width: 72px;
-  min-height: 72px;
-  border-radius: 22px;
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  min-height: 64px;
+  border-radius: 21px;
 }
 
 body:has(.student-home-hero) .student-priority-icon svg {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
 }
 
 body:has(.student-home-hero) .student-priority-copy {
@@ -38,20 +38,20 @@ body:has(.student-home-hero) .student-priority-copy {
 
 body:has(.student-home-hero) .student-priority-card .eyebrow {
   color: rgba(255, 255, 255, 0.74) !important;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 900;
 }
 
 body:has(.student-home-hero) .student-priority-card h2 {
-  max-width: 760px;
-  font-size: clamp(3.2rem, 6vw, 5.85rem) !important;
-  line-height: 0.88 !important;
+  max-width: 700px;
+  font-size: clamp(2.8rem, 5.2vw, 5.05rem) !important;
+  line-height: 0.9 !important;
   letter-spacing: -0.07em !important;
 }
 
 body:has(.student-home-hero) .student-priority-card p {
   color: rgba(255, 255, 255, 0.7) !important;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 800;
 }
 
@@ -61,13 +61,23 @@ body:has(.student-home-hero) .student-priority-actions {
 
 body:has(.student-home-hero) .student-priority-actions .primary-link-button,
 body:has(.student-home-hero) .student-priority-actions button {
-  min-height: 64px;
-  min-width: 170px;
+  min-height: 58px;
+  min-width: 150px;
   border-radius: 999px !important;
-  padding-inline: 34px;
+  padding-inline: 28px;
   background: #ffffff !important;
   color: var(--engagement-secondary) !important;
   box-shadow: 0 7px 0 rgba(18, 33, 68, 0.2) !important;
+}
+
+body:has(.student-home-hero) .student-side-card,
+body:has(.student-home-hero) .student-progress-card {
+  border-radius: 26px;
+}
+
+body:has(.student-home-hero) .student-side-card {
+  min-height: 220px;
+  padding: 22px;
 }
 
 @media (max-width: 1180px) {

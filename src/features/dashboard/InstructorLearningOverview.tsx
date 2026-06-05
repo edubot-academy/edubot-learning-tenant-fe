@@ -23,7 +23,6 @@ import {
 import { InstructorActivityFeed } from './InstructorActivityFeed';
 import { InstructorAtRiskStudents } from './InstructorAtRiskStudents';
 import { InstructorQuickActions } from './InstructorQuickActions';
-import { InstructorEngagementBlockedPanel } from './InstructorEngagementBlockedPanels';
 import { mapInstructorActivityFeedItems, mapInstructorAtRiskStudents } from './instructorLearningMappers';
 import { mapInstructorQuickActions } from './instructorQuickActionMappers';
 
@@ -131,7 +130,7 @@ export function InstructorLearningOverview({
     {
       to: '/sessions',
       icon: <FiActivity />,
-      label: t('overview.activity'),
+      label: t('overview.recentActivity'),
       detail: t('overview.activeItemCount', { count: activityNeedsReviewCount }),
       count: activityNeedsReviewCount,
       tone: activityNeedsReviewCount > 0 ? 'secondary' : 'success',
@@ -324,17 +323,17 @@ export function InstructorLearningOverview({
 
       <section className="instructor-learning-workload-grid">
         <InstructorQuickActions
-          title={t('overview.quickActions.title', { defaultValue: 'Quick actions' })}
-          detail={t('overview.quickActions.detail', { defaultValue: 'Start the next instructor task without opening admin tools.' })}
-          emptyLabel={t('overview.quickActions.empty', { defaultValue: 'No available quick actions.' })}
+          title={t('overview.primaryActions')}
+          detail={t('overview.openOperationsDetail')}
+          emptyLabel={t('overview.noActiveBlockers')}
           items={quickActions}
         />
         <InstructorAtRiskStudents
-          title={t('overview.atRiskStudents', { defaultValue: 'Students needing attention' })}
-          detail={t('overview.atRiskStudentsDetail', { defaultValue: 'Based on missed homework, attendance, progress, and support signals.' })}
+          title={t('overview.needsAttention')}
+          detail={t('overview.liveOfflineSignals')}
           allLabel={t('overview.viewAll')}
           allTo="/groups"
-          emptyLabel={t('overview.noAtRiskStudents', { defaultValue: 'No at-risk students right now.' })}
+          emptyLabel={t('overview.noActiveBlockers')}
           items={atRiskStudents}
         />
       </section>
@@ -355,32 +354,21 @@ export function InstructorLearningOverview({
             <InstructorCertificatesPanel
               title={t('navigation.certificates')}
               detail={t('overview.certificatesWorkload')}
-              actionLabel={t('overview.configure')}
+              actionLabel={t('overview.settings')}
               tiles={certificateTiles}
             />
           ) : null}
         </section>
       ) : null}
 
-      <section className="instructor-learning-workload-grid">
-        <InstructorActivityFeed
-          title={t('overview.recentActivity')}
-          detail={t('overview.activityRelevantToAssignedGroups', { defaultValue: 'Latest activity from assigned courses, groups, and sessions.' })}
-          allLabel={t('overview.viewAll')}
-          allTo="/sessions"
-          emptyLabel={t('overview.noRecentActivity', { defaultValue: 'No recent activity yet.' })}
-          items={activityItems}
-        />
-        <InstructorEngagementBlockedPanel
-          title={t('overview.engagementLeaderboardBlocked', { defaultValue: 'Leaderboard needs data model' })}
-          detail={t('overview.engagementLeaderboardBlockedDetail', { defaultValue: 'XP, badges, leaderboard, and milestones should stay hidden until backend data exists.' })}
-          requirements={[
-            t('overview.engagementRequirementXp', { defaultValue: 'Student XP source and point rules' }),
-            t('overview.engagementRequirementBadges', { defaultValue: 'Badge and milestone definitions' }),
-            t('overview.engagementRequirementLeaderboard', { defaultValue: 'Scoped leaderboard API by tenant/group/course' }),
-          ]}
-        />
-      </section>
+      <InstructorActivityFeed
+        title={t('overview.recentActivity')}
+        detail={t('overview.liveOfflineSignals')}
+        allLabel={t('overview.viewAll')}
+        allTo="/sessions"
+        emptyLabel={t('overview.noActiveBlockers')}
+        items={activityItems}
+      />
 
       <InstructorUpcomingSessionsPanel
         title={t('student.upcomingSessions')}

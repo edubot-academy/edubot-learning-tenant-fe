@@ -10,6 +10,8 @@
 
 .instructor-learning-dashboard .instructor-learning-insights,
 .instructor-learning-dashboard .instructor-learning-primary-grid,
+.instructor-learning-dashboard .instructor-learning-hero-actions-grid,
+.instructor-learning-dashboard .instructor-learning-today-side-grid,
 .instructor-learning-dashboard .instructor-learning-workload-grid {
   gap: 18px;
 }
@@ -50,27 +52,43 @@
   opacity: 1;
 }
 
+.instructor-learning-dashboard .instructor-learning-hero-actions-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: stretch;
+}
+
+.instructor-learning-dashboard .instructor-learning-today-side-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: start;
+}
+
+.instructor-learning-dashboard .instructor-learning-today-side-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .instructor-learning-dashboard .instructor-learning-launch {
-  min-height: 242px;
-  padding: clamp(24px, 2.8vw, 36px);
+  min-height: 282px;
+  padding: clamp(28px, 3vw, 40px);
 }
 
 .instructor-learning-dashboard .instructor-learning-launch.is-empty {
   align-content: center;
   gap: 16px;
-  min-height: 210px;
+  min-height: 260px;
 }
 
 .instructor-learning-dashboard .instructor-learning-launch h2 {
   max-width: 680px;
   margin-top: 18px;
-  font-size: clamp(2.35rem, 4.05vw, 4.05rem);
+  font-size: clamp(2.5rem, 4.4vw, 4.45rem);
   line-height: 0.96;
 }
 
 .instructor-learning-dashboard .instructor-learning-launch.is-empty h2 {
   max-width: 620px;
-  font-size: clamp(2.15rem, 3.65vw, 3.55rem);
+  font-size: clamp(2.25rem, 3.8vw, 3.8rem);
 }
 
 .instructor-learning-dashboard .instructor-learning-launch p {
@@ -250,6 +268,8 @@ html[data-theme='light'] .instructor-learning-dashboard .overview-course-table-w
 
 @media (max-width: 1180px) {
   .instructor-learning-dashboard .instructor-learning-primary-grid,
+  .instructor-learning-dashboard .instructor-learning-hero-actions-grid,
+  .instructor-learning-dashboard .instructor-learning-today-side-grid,
   .instructor-learning-dashboard .instructor-learning-compact-empty-grid {
     grid-template-columns: 1fr;
   }

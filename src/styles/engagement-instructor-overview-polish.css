@@ -1,0 +1,111 @@
+/* Instructor overview screenshot polish: low-data states, contrast, and lower table layout. */
+
+.instructor-learning-dashboard .instructor-learning-stat {
+  min-height: 138px;
+  padding: 20px 22px;
+}
+
+.instructor-learning-dashboard .instructor-learning-stat-label {
+  color: var(--learning-muted);
+  opacity: 1;
+}
+
+.instructor-learning-dashboard .instructor-learning-stat small,
+.instructor-learning-dashboard .instructor-learning-section-heading p,
+.instructor-learning-dashboard .instructor-learning-homework-copy small,
+.instructor-learning-dashboard .instructor-learning-session-copy small {
+  color: var(--learning-subtle);
+}
+
+.instructor-learning-dashboard .instructor-learning-stat.tone-secondary .instructor-learning-icon,
+.instructor-learning-dashboard .instructor-learning-icon.tone-secondary,
+.instructor-learning-dashboard .instructor-learning-queue-item.tone-secondary .instructor-learning-icon {
+  background: rgba(14, 167, 139, 0.13);
+  color: var(--learning-success);
+}
+
+.instructor-learning-dashboard .instructor-learning-launch {
+  min-height: 260px;
+  padding: clamp(26px, 3.2vw, 42px);
+}
+
+.instructor-learning-dashboard .instructor-learning-launch h2 {
+  max-width: 680px;
+  margin-top: 22px;
+  font-size: clamp(2.65rem, 4.7vw, 4.55rem);
+  line-height: 0.94;
+}
+
+.instructor-learning-dashboard .instructor-learning-launch p {
+  max-width: 620px;
+  margin-top: 14px;
+}
+
+.instructor-learning-dashboard .instructor-learning-launch-action {
+  min-height: 58px;
+  min-width: 170px;
+}
+
+.instructor-learning-dashboard .instructor-learning-launch-action.is-disabled {
+  opacity: 0.88;
+}
+
+.instructor-learning-dashboard .instructor-learning-primary-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+}
+
+.instructor-learning-dashboard .instructor-learning-empty {
+  min-height: 96px;
+  padding: 18px;
+  text-align: center;
+}
+
+.instructor-learning-dashboard .overview-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.instructor-learning-dashboard .overview-side-stack:empty {
+  display: none;
+}
+
+.instructor-learning-dashboard .overview-grid > .content-section {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: none;
+}
+
+.instructor-learning-dashboard .overview-course-table-wrap,
+.instructor-learning-dashboard .overview-course-table-wrap table {
+  width: 100%;
+}
+
+.instructor-learning-dashboard .overview-course-table-wrap th,
+.instructor-learning-dashboard .overview-course-table-wrap td {
+  white-space: nowrap;
+}
+
+.instructor-learning-dashboard .overview-course-table-wrap th:first-child,
+.instructor-learning-dashboard .overview-course-table-wrap td:first-child {
+  width: 42%;
+  white-space: normal;
+}
+
+@media (max-width: 1180px) {
+  .instructor-learning-dashboard .instructor-learning-primary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .instructor-learning-dashboard .instructor-learning-launch {
+    min-height: auto;
+  }
+
+  .instructor-learning-dashboard .instructor-learning-launch h2 {
+    font-size: 2.35rem;
+  }
+
+  .instructor-learning-dashboard .overview-course-table-wrap {
+    overflow-x: auto;
+  }
+}

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { FiArrowRight, FiAward, FiCalendar, FiCheckSquare, FiClock, FiExternalLink, FiZap } from 'react-icons/fi';
 import { cx } from '../../components/dashboard/dashboardUtils';
+import { getSafeLiveMeetingUrl } from '../../lib/liveMeetingUrl';
 
 export type InstructorLearningTone = 'primary' | 'secondary' | 'accent' | 'success' | 'danger' | 'muted';
 
@@ -73,6 +74,19 @@ export type InstructorSessionGroup = {
   label: ReactNode;
   sessions: InstructorSessionItem[];
 };
+
+function renderInstructorSessionRow(session: InstructorSessionItem, content: ReactNode) {
+  if (session.to && session.external) {
+    const safeHref = getSafeLiveMeetingUrl(session.to);
+    if (safeHref) {
+      return <a className="instructor-learning-session-row" href={safeHref} target="_blank" rel="noreferrer" key={session.id}>{content}</a>;
+    }
+  }
+  if (session.to && !session.external) {
+    return <Link className="instructor-learning-session-row" to={session.to} key={session.id}>{content}</Link>;
+  }
+  return <article className="instructor-learning-session-row" key={session.id}>{content}</article>;
+}
 
 export function InstructorInsightsRow({ items }: { items: InstructorInsightItem[] }) {
   return (
@@ -150,11 +164,12 @@ export function InstructorLaunchPanel({
   code,
   disabled,
 }: InstructorLaunchPanelProps) {
+  const safeExternalHref = external ? getSafeLiveMeetingUrl(to) : null;
   const action = (
-    <span className={cx('instructor-learning-launch-action', disabled && 'is-disabled')}>
+    <span className={cx('instructor-learning-launch-action', (disabled || (external && !safeExternalHref)) && 'is-disabled')}>
       <FiZap aria-hidden="true" />
       {actionLabel}
-      {external ? <FiExternalLink aria-hidden="true" /> : null}
+      {external && safeExternalHref ? <FiExternalLink aria-hidden="true" /> : null}
     </span>
   );
 
@@ -167,8 +182,8 @@ export function InstructorLaunchPanel({
       </div>
       <div className="instructor-learning-launch-controls">
         {code ? <span className="instructor-learning-code">{code}</span> : null}
-        {disabled ? action : external ? (
-          <a href={to} target="_blank" rel="noreferrer">{action}</a>
+        {disabled || (external && !safeExternalHref) ? action : external ? (
+          <a href={safeExternalHref} target="_blank" rel="noreferrer">{action}</a>
         ) : (
           <Link to={to}>{action}</Link>
         )}
@@ -224,13 +239,7 @@ export function InstructorTodaySessions({
                 {session.attendees ? <span className="instructor-learning-session-count">{session.attendees}</span> : null}
               </>
             );
-            if (session.to && session.external) {
-              return <a className="instructor-learning-session-row" href={session.to} target="_blank" rel="noreferrer" key={session.id}>{content}</a>;
-            }
-            if (session.to) {
-              return <Link className="instructor-learning-session-row" to={session.to} key={session.id}>{content}</Link>;
-            }
-            return <article className="instructor-learning-session-row" key={session.id}>{content}</article>;
+            return renderInstructorSessionRow(session, content);
           })}
         </div>
       ) : (
@@ -296,13 +305,7 @@ export function InstructorUpcomingSessionsPanel({
                       {session.attendees ? <span className="instructor-learning-session-count">{session.attendees}</span> : null}
                     </>
                   );
-                  if (session.to && session.external) {
-                    return <a className="instructor-learning-session-row" href={session.to} target="_blank" rel="noreferrer" key={session.id}>{content}</a>;
-                  }
-                  if (session.to) {
-                    return <Link className="instructor-learning-session-row" to={session.to} key={session.id}>{content}</Link>;
-                  }
-                  return <article className="instructor-learning-session-row" key={session.id}>{content}</article>;
+                  return renderInstructorSessionRow(session, content);
                 })}
               </div>
             </section>

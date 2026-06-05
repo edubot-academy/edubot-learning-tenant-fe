@@ -199,6 +199,7 @@ Add tests
 
 ✅ Existing assistant overview test kept.
 ✅ Added instructor overview rendering test for <InstructorLearningOverview /> path.
+✅ Added QuickActions mapper tests for permissions, feature flags, and safe routes.
 Dashboard renders based on permissions.
 Feature flags hide/show widgets.
 Empty states render correctly.

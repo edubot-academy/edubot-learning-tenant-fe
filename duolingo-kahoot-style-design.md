@@ -89,7 +89,8 @@ Tenant data source:
 overview.activity
 Use existing activity labels/i18n.
 ✅ Added prop-driven InstructorActivityFeed component shell.
-Next: wire overview.activity into OverviewPage instructor branch after route/visual QA.
+✅ Added mapInstructorActivityFeedItems helper for real overview.activity data.
+Next: render widget in OverviewPage instructor branch after safe file patch.
 ⏳ Port AtRiskStudents concept
 
 Source: AtRiskStudents.tsx
@@ -101,7 +102,8 @@ missed sessions
 low progress
 broken attendance/streak signal if available.
 ✅ Added prop-driven InstructorAtRiskStudents component shell using real instructor attention-student shape.
-Next: wire instructorDashboard.attentionStudents into OverviewPage after confirming route targets.
+✅ Added mapInstructorAtRiskStudents helper for real instructorDashboard.attentionStudents data.
+Next: render widget in OverviewPage instructor branch after safe file patch.
 Phase 3: Hero + Engagement
 ✅ 12. Adapt LaunchQuizHero
 - Source: LaunchQuizHero.tsx

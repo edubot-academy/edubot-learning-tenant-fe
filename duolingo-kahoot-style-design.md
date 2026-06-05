@@ -145,6 +145,12 @@ Phase 4: Role-Aware Assembly
 - ✅ homework queue
 - ✅ dark instructor canvas + white card shell from instructor-s-hub
 - ✅ upcoming sessions
+- ✅ quick actions component + mapper
+- ✅ activity feed component + mapper
+- ✅ at-risk students component + mapper
+- ✅ engagement blocker panel for missing XP/leaderboard model
+- ✅ extracted InstructorLearningOverview composition shell
+- Next: replace inline instructor branch in OverviewPage with <InstructorLearningOverview /> after local typecheck/visual QA.
 - Admin view:
 - should stay operations/EduPro-style, not QuestLMS-heavy.
 

@@ -72,7 +72,7 @@ export function mapInstructorAtRiskStudents(
         label: reason.label || reason.code,
         to: reason.route,
       })),
-      to: firstReasonRoute || (student.groupId ? `/groups/${student.groupId}` : '/groups'),
+      to: firstReasonRoute || '/groups',
     };
   });
 }

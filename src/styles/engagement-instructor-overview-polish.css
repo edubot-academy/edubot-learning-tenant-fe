@@ -211,9 +211,116 @@ html[data-theme='light'] body:has(.instructor-learning-dashboard) .main-panel {
 
 html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar,
 html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar {
+  width: 280px;
   background: #ffffff;
-  border-right-color: rgba(22, 32, 51, 0.1);
+  border-right-color: rgba(22, 32, 51, 0.08);
   color: #162033;
+  padding: 22px 18px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-block,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-block {
+  grid-template-columns: 52px minmax(0, 1fr) 48px;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-mark,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-copy strong,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-copy strong {
+  font-size: 1.18rem;
+  line-height: 1.05;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-copy span,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-copy span {
+  font-size: 0.78rem;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-block button,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-block button {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card {
+  min-height: auto;
+  margin: 18px 0 26px;
+  border: 2px solid rgba(241, 126, 34, 0.22);
+  border-radius: 24px;
+  background: #fff4ed;
+  padding: 14px 16px;
+  box-shadow: none;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card svg,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card svg {
+  width: 26px;
+  height: 26px;
+  color: #f17e22;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card span,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card span {
+  font-size: 0.72rem;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card strong,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card strong {
+  overflow: hidden;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-section-label,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-section-label {
+  margin: 0 0 12px 10px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav {
+  gap: 8px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav a,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav a {
+  min-height: 48px;
+  gap: 12px;
+  border-radius: 18px;
+  padding: 0 14px;
+  font-size: 0.98rem;
+  font-weight: 900;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav a svg,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav a svg {
+  width: 21px;
+  height: 21px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav a[aria-current='page'],
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav a[aria-current='page'] {
+  background: #fff2ea;
+  color: #c75d13;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-current-dot,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-current-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  background: #0ea78b;
 }
 
 html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-card,

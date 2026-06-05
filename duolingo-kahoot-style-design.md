@@ -196,6 +196,8 @@ Phase 6: Quality Gates
 
 Add tests
 
+✅ Existing assistant overview test kept.
+✅ Added instructor overview rendering test for <InstructorLearningOverview /> path.
 Dashboard renders based on permissions.
 Feature flags hide/show widgets.
 Empty states render correctly.

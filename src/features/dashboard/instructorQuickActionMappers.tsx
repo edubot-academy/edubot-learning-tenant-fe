@@ -10,6 +10,11 @@ export type InstructorQuickActionContext = {
   homeworkNeedsReviewCount?: number;
 };
 
+function optionalFeatureEnabled(activeTenant: Tenant | null | undefined, key: string) {
+  const flags = activeTenant?.featureFlags ?? {};
+  return flags[key] !== false;
+}
+
 export function mapInstructorQuickActions(
   t: TFunction,
   {
@@ -19,9 +24,9 @@ export function mapInstructorQuickActions(
   }: InstructorQuickActionContext,
 ): InstructorQuickActionItem[] {
   const homeworkEnabled = isTenantFeatureEnabled(activeTenant, 'homework.enabled');
-  const activitiesEnabled = isTenantFeatureEnabled(activeTenant, 'activities.enabled');
-  const announcementsEnabled = isTenantFeatureEnabled(activeTenant, 'announcements.enabled');
-  const challengesEnabled = isTenantFeatureEnabled(activeTenant, 'challenges.enabled');
+  const activitiesEnabled = optionalFeatureEnabled(activeTenant, 'activities.enabled');
+  const announcementsEnabled = optionalFeatureEnabled(activeTenant, 'announcements.enabled');
+  const challengesEnabled = optionalFeatureEnabled(activeTenant, 'challenges.enabled');
 
   const canCreateCourseContent = Boolean(
     permissions?.canCreateCourses ||

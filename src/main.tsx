@@ -10,6 +10,7 @@ import { App } from './app/App';
 import './i18n/config';
 import './styles/app.css';
 import './styles/kahoot-engagement.css';
+import './styles/kahoot-student-dashboard.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

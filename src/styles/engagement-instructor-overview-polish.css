@@ -1,7 +1,29 @@
-/* Instructor overview screenshot polish: low-data states, contrast, and lower table layout. */
+/* Instructor overview screenshot polish: low-data states, contrast, spacing, and lower table layout. */
+
+.instructor-learning-dashboard {
+  gap: 22px;
+}
+
+.instructor-learning-dashboard .instructor-learning-overview {
+  gap: 20px;
+}
+
+.instructor-learning-dashboard .instructor-learning-insights,
+.instructor-learning-dashboard .instructor-learning-primary-grid,
+.instructor-learning-dashboard .instructor-learning-workload-grid {
+  gap: 18px;
+}
+
+.instructor-learning-dashboard .instructor-learning-section-heading {
+  margin-bottom: 16px;
+}
+
+.instructor-learning-dashboard .instructor-learning-card {
+  padding: 22px;
+}
 
 .instructor-learning-dashboard .instructor-learning-stat {
-  min-height: 132px;
+  min-height: 128px;
   padding: 20px 22px;
 }
 
@@ -29,35 +51,35 @@
 }
 
 .instructor-learning-dashboard .instructor-learning-launch {
-  min-height: 250px;
-  padding: clamp(24px, 3vw, 38px);
+  min-height: 242px;
+  padding: clamp(24px, 2.8vw, 36px);
 }
 
 .instructor-learning-dashboard .instructor-learning-launch.is-empty {
   align-content: center;
-  gap: 18px;
-  min-height: 220px;
+  gap: 16px;
+  min-height: 210px;
 }
 
 .instructor-learning-dashboard .instructor-learning-launch h2 {
   max-width: 680px;
-  margin-top: 20px;
-  font-size: clamp(2.45rem, 4.2vw, 4.2rem);
+  margin-top: 18px;
+  font-size: clamp(2.35rem, 4.05vw, 4.05rem);
   line-height: 0.96;
 }
 
 .instructor-learning-dashboard .instructor-learning-launch.is-empty h2 {
   max-width: 620px;
-  font-size: clamp(2.25rem, 3.8vw, 3.75rem);
+  font-size: clamp(2.15rem, 3.65vw, 3.55rem);
 }
 
 .instructor-learning-dashboard .instructor-learning-launch p {
   max-width: 620px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .instructor-learning-dashboard .instructor-learning-launch-action {
-  min-height: 56px;
+  min-height: 54px;
   min-width: 166px;
 }
 
@@ -74,15 +96,15 @@
 }
 
 .instructor-learning-dashboard .instructor-learning-empty {
-  min-height: 82px;
-  padding: 16px;
+  min-height: 78px;
+  padding: 14px;
   text-align: center;
 }
 
 .instructor-learning-dashboard .instructor-learning-compact-empty-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .instructor-learning-dashboard .instructor-learning-compact-empty {
@@ -94,7 +116,7 @@
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.02);
   color: var(--learning-muted);
-  padding: 14px;
+  padding: 13px 14px;
 }
 
 .instructor-learning-dashboard .instructor-learning-compact-empty strong {
@@ -152,6 +174,11 @@
 }
 
 @media (max-width: 760px) {
+  .instructor-learning-dashboard,
+  .instructor-learning-dashboard .instructor-learning-overview {
+    gap: 16px;
+  }
+
   .instructor-learning-dashboard .instructor-learning-launch,
   .instructor-learning-dashboard .instructor-learning-launch.is-empty {
     min-height: auto;

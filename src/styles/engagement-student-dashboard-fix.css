@@ -53,7 +53,7 @@
   grid-column: auto;
   grid-row: auto;
   display: grid;
-  grid-template-columns: repeat(5, minmax(132px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 14px;
   margin-top: 0;
   min-width: 0;
@@ -67,9 +67,9 @@
     'icon value';
   align-items: center;
   min-width: 0;
-  min-height: 118px;
+  min-height: 112px;
   gap: 4px 12px;
-  padding: 18px 16px;
+  padding: 18px;
 }
 
 .student-learning-dashboard .student-summary-item svg {
@@ -85,19 +85,19 @@
   align-self: end;
   min-width: 0;
   color: var(--learning-muted);
-  font-size: 0.78rem;
+  font-size: 0.84rem;
   font-weight: 900;
-  line-height: 1.15;
+  line-height: 1.2;
   overflow-wrap: normal;
   word-break: normal;
-  hyphens: auto;
+  hyphens: none;
 }
 
 .student-learning-dashboard .student-summary-item strong {
   grid-area: value;
   align-self: start;
   min-width: 0;
-  font-size: clamp(1.85rem, 2.5vw, 2.55rem);
+  font-size: clamp(2rem, 2.6vw, 2.8rem);
   line-height: 0.95;
   white-space: nowrap;
 }
@@ -114,7 +114,7 @@
   }
 
   .student-learning-dashboard .student-summary-strip {
-    grid-template-columns: repeat(3, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 }
 

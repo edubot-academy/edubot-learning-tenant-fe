@@ -1,0 +1,76 @@
+/* Student learning widgets: align cards with the engagement theme. */
+
+.student-learning-dashboard .student-today-sessions-section,
+.student-learning-dashboard .student-task-section,
+.student-learning-dashboard .student-updates-section,
+.student-learning-dashboard .student-courses-section {
+  border-radius: 34px;
+  border: 1px solid rgba(18, 33, 68, 0.08);
+  box-shadow: 0 10px 0 rgba(18, 33, 68, 0.04);
+}
+
+.student-learning-dashboard .student-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.student-learning-dashboard .student-panel-heading > svg {
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(14, 167, 139, 0.1);
+  color: var(--engagement-primary-shadow) !important;
+}
+
+.student-learning-dashboard .student-today-session-card,
+.student-learning-dashboard .student-course-card,
+.student-learning-dashboard .student-progress-summary-item,
+.student-learning-dashboard .student-update-row,
+.student-learning-dashboard .student-task-card {
+  border: 2px solid rgba(18, 33, 68, 0.08);
+  border-radius: 24px;
+  box-shadow: 0 5px 0 rgba(18, 33, 68, 0.05);
+  transition: border-color var(--transition-ui), transform var(--transition-ui), box-shadow var(--transition-ui);
+}
+
+.student-learning-dashboard .student-today-session-card:hover,
+.student-learning-dashboard .student-course-card:hover,
+.student-learning-dashboard .student-update-row:hover {
+  border-color: rgba(14, 167, 139, 0.28);
+  box-shadow: 0 8px 0 rgba(18, 33, 68, 0.07);
+  transform: translateY(-2px);
+}
+
+.student-learning-dashboard .student-task-card.state-overdue,
+.student-learning-dashboard .student-task-card.state-needs_revision {
+  border-color: rgba(185, 28, 28, 0.22);
+}
+
+.student-learning-dashboard .student-task-card.state-open,
+.student-learning-dashboard .student-task-card.is-next-task {
+  border-color: rgba(241, 126, 34, 0.24);
+}
+
+.student-learning-dashboard .student-task-start-button,
+.student-learning-dashboard .student-today-session-actions .primary-link-button,
+.student-learning-dashboard .student-today-session-actions .secondary-link-button,
+.student-learning-dashboard .student-compact-actions .secondary-link-button {
+  border-radius: 999px !important;
+  font-weight: 950;
+}
+
+.student-learning-dashboard .student-progress-summary-item > svg {
+  width: 48px;
+  height: 48px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--learning-primary-soft);
+  color: var(--learning-primary-strong) !important;
+}
+
+.student-learning-dashboard .student-update-row.unread {
+  border-color: rgba(241, 126, 34, 0.28);
+  background: linear-gradient(135deg, rgba(255, 246, 231, 0.92), #fff);
+}

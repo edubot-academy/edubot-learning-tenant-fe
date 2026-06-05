@@ -82,12 +82,14 @@ Tenant data source:
 overview.sessions.upcoming
 instructor upcoming sessions
 Group by date.
-Port ActivityFeed concept
+⏳ Port ActivityFeed concept
 
 Source: ActivityFeed.tsx
 Tenant data source:
 overview.activity
 Use existing activity labels/i18n.
+✅ Added prop-driven InstructorActivityFeed component shell.
+Next: wire overview.activity into OverviewPage instructor branch after route/visual QA.
 Port AtRiskStudents concept
 
 Source: AtRiskStudents.tsx

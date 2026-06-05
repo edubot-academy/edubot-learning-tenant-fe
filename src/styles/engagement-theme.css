@@ -1,0 +1,19 @@
+/*
+ * EduBot Engagement Theme entrypoint
+ *
+ * Scoped explicit engagement theme for student/instructor learning surfaces.
+ * Broad compatibility overlays that depend on body:has(...) remain in their own
+ * files, but they are no longer imported globally from the app entrypoint.
+ *
+ * Apply via TenantDashboardShell variant="engagement" and tone="student" or "instructor".
+ * Scope guardrails live in ./ENGAGEMENT_THEME_NOTES.md.
+ */
+
+@import './engagement-tokens.css';
+@import './engagement-wrapper.css';
+@import './engagement-learning-dashboard.css';
+@import './engagement-student-dashboard-fix.css';
+@import './engagement-instructor-widgets.css';
+@import './engagement-instructor-overview-polish.css';
+@import './engagement-instructor-sidebar-cleanup.css';
+@import './engagement-learning-shell-explicit.css';

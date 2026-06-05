@@ -1,0 +1,97 @@
+/* Student dashboard hero composition. */
+
+body:has(.student-home-hero) .student-home-hero {
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.72fr);
+  gap: clamp(18px, 2.4vw, 32px);
+  align-items: start;
+}
+
+body:has(.student-home-hero) .student-home-main {
+  gap: 16px;
+}
+
+body:has(.student-home-hero) .student-priority-card {
+  grid-template-columns: 64px minmax(0, 1fr) minmax(140px, auto);
+  min-height: clamp(250px, 27vw, 320px);
+  padding: clamp(28px, 3.5vw, 46px);
+  border-radius: 40px;
+}
+
+body:has(.student-home-hero) .student-priority-icon {
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  min-height: 64px;
+  border-radius: 21px;
+}
+
+body:has(.student-home-hero) .student-priority-icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+body:has(.student-home-hero) .student-priority-copy {
+  display: grid;
+  gap: 10px;
+  align-self: center;
+}
+
+body:has(.student-home-hero) .student-priority-card .eyebrow {
+  color: rgba(255, 255, 255, 0.74) !important;
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+body:has(.student-home-hero) .student-priority-card h2 {
+  max-width: 700px;
+  font-size: clamp(2.8rem, 5.2vw, 5.05rem) !important;
+  line-height: 0.9 !important;
+  letter-spacing: -0.07em !important;
+}
+
+body:has(.student-home-hero) .student-priority-card p {
+  color: rgba(255, 255, 255, 0.7) !important;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+body:has(.student-home-hero) .student-priority-actions {
+  justify-self: end;
+}
+
+body:has(.student-home-hero) .student-priority-actions .primary-link-button,
+body:has(.student-home-hero) .student-priority-actions button {
+  min-height: 58px;
+  min-width: 150px;
+  border-radius: 999px !important;
+  padding-inline: 28px;
+  background: #ffffff !important;
+  color: var(--engagement-secondary) !important;
+  box-shadow: 0 7px 0 rgba(18, 33, 68, 0.2) !important;
+}
+
+body:has(.student-home-hero) .student-side-card,
+body:has(.student-home-hero) .student-progress-card {
+  border-radius: 26px;
+}
+
+body:has(.student-home-hero) .student-side-card {
+  min-height: 220px;
+  padding: 22px;
+}
+
+@media (max-width: 1180px) {
+  body:has(.student-home-hero) .student-home-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  body:has(.student-home-hero) .student-priority-card {
+    grid-template-columns: 1fr;
+  }
+
+  body:has(.student-home-hero) .student-priority-actions {
+    justify-self: start;
+  }
+}

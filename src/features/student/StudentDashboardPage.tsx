@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../components/DataState
 import { FormModal } from '../../components/Modal';
 import { MaterialPreviewModal, type MaterialPreview } from '../../components/MaterialPreviewModal';
 import { CountFilterRow } from '../../components/CountFilterRow';
+import { TenantDashboardShell } from '../../components/dashboard';
 import {
   createStudentSupportRequest,
   downloadCertificatePdf,
@@ -1521,7 +1522,7 @@ export function StudentDashboardPage({
   if (studentLoad.loading) return <LoadingState label={t('student.loading')} />;
 
   return (
-    <>
+    <TenantDashboardShell variant="engagement" tone="student" className="student-learning-dashboard">
       <PageHeader title={pageTitle} eyebrow={activeTenant?.name} actions={pageHeaderActions} />
 
       {studentLoad.failed ? (
@@ -2449,6 +2450,6 @@ export function StudentDashboardPage({
             </div>
         </FormModal>
       ) : null}
-    </>
+    </TenantDashboardShell>
   );
 }

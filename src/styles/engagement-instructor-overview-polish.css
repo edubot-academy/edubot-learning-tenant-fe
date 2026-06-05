@@ -1,0 +1,404 @@
+/* Instructor overview screenshot polish: low-data states, contrast, spacing, and lower table layout. */
+
+.instructor-learning-dashboard {
+  gap: 22px;
+}
+
+.instructor-learning-dashboard .instructor-learning-overview {
+  gap: 20px;
+}
+
+.instructor-learning-dashboard .instructor-learning-insights,
+.instructor-learning-dashboard .instructor-learning-primary-grid,
+.instructor-learning-dashboard .instructor-learning-hero-actions-grid,
+.instructor-learning-dashboard .instructor-learning-today-side-grid,
+.instructor-learning-dashboard .instructor-learning-workload-grid {
+  gap: 18px;
+}
+
+.instructor-learning-dashboard .instructor-learning-section-heading {
+  margin-bottom: 16px;
+}
+
+.instructor-learning-dashboard .instructor-learning-card {
+  padding: 22px;
+}
+
+.instructor-learning-dashboard .instructor-learning-stat {
+  min-height: 128px;
+  padding: 20px 22px;
+}
+
+.instructor-learning-dashboard .instructor-learning-stat-label {
+  color: var(--learning-subtle);
+  opacity: 1;
+}
+
+.instructor-learning-dashboard .instructor-learning-stat small,
+.instructor-learning-dashboard .instructor-learning-section-heading p,
+.instructor-learning-dashboard .instructor-learning-homework-copy small,
+.instructor-learning-dashboard .instructor-learning-session-copy small {
+  color: var(--learning-subtle);
+}
+
+.instructor-learning-dashboard .instructor-learning-stat.tone-secondary .instructor-learning-icon,
+.instructor-learning-dashboard .instructor-learning-icon.tone-secondary,
+.instructor-learning-dashboard .instructor-learning-queue-item.tone-secondary .instructor-learning-icon {
+  background: rgba(14, 167, 139, 0.13);
+  color: var(--learning-success);
+}
+
+.instructor-learning-dashboard .instructor-learning-stat .instructor-learning-icon {
+  opacity: 1;
+}
+
+.instructor-learning-dashboard .instructor-learning-hero-actions-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: stretch;
+}
+
+.instructor-learning-dashboard .instructor-learning-today-side-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: start;
+}
+
+.instructor-learning-dashboard .instructor-learning-today-side-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.instructor-learning-dashboard .instructor-learning-launch {
+  min-height: 282px;
+  padding: clamp(28px, 3vw, 40px);
+}
+
+.instructor-learning-dashboard .instructor-learning-launch.is-empty {
+  align-content: center;
+  gap: 16px;
+  min-height: 260px;
+}
+
+.instructor-learning-dashboard .instructor-learning-launch h2 {
+  max-width: 680px;
+  margin-top: 18px;
+  font-size: clamp(2.5rem, 4.4vw, 4.45rem);
+  line-height: 0.96;
+}
+
+.instructor-learning-dashboard .instructor-learning-launch.is-empty h2 {
+  max-width: 620px;
+  font-size: clamp(2.25rem, 3.8vw, 3.8rem);
+}
+
+.instructor-learning-dashboard .instructor-learning-launch p {
+  max-width: 620px;
+  margin-top: 10px;
+}
+
+.instructor-learning-dashboard .instructor-learning-launch-action {
+  min-height: 54px;
+  min-width: 166px;
+}
+
+.instructor-learning-dashboard .instructor-learning-launch-action.is-disabled {
+  opacity: 0.9;
+}
+
+.instructor-learning-dashboard .instructor-learning-primary-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+}
+
+.instructor-learning-dashboard .instructor-learning-workload-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.instructor-learning-dashboard .instructor-learning-empty {
+  min-height: 78px;
+  padding: 14px;
+  text-align: center;
+}
+
+.instructor-learning-dashboard .instructor-learning-compact-empty-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.instructor-learning-dashboard .instructor-learning-compact-empty {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 2px dashed var(--learning-line);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--learning-muted);
+  padding: 13px 14px;
+}
+
+.instructor-learning-dashboard .instructor-learning-compact-empty strong {
+  display: block;
+  color: var(--learning-ink);
+  font-size: 0.9rem;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.instructor-learning-dashboard .instructor-learning-compact-empty small {
+  display: block;
+  margin-top: 3px;
+  color: var(--learning-subtle);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.28;
+}
+
+.instructor-learning-dashboard .overview-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.instructor-learning-dashboard .overview-side-stack:empty {
+  display: none;
+}
+
+.instructor-learning-dashboard .overview-grid > .content-section {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: none;
+}
+
+.instructor-learning-dashboard .overview-course-table-wrap,
+.instructor-learning-dashboard .overview-course-table-wrap table {
+  width: 100%;
+}
+
+.instructor-learning-dashboard .overview-course-table-wrap th,
+.instructor-learning-dashboard .overview-course-table-wrap td {
+  white-space: nowrap;
+}
+
+.instructor-learning-dashboard .overview-course-table-wrap th:first-child,
+.instructor-learning-dashboard .overview-course-table-wrap td:first-child {
+  width: 42%;
+  white-space: normal;
+}
+
+/* Light mode should visually track instructor-s-hub / QuestLMS: soft page, white cards, navy text. */
+html:not([data-theme='dark']) .instructor-learning-dashboard,
+html[data-theme='light'] .instructor-learning-dashboard {
+  --learning-page-bg: #f5f7fb;
+  --learning-bg: #f5f7fb;
+  --learning-card: #ffffff;
+  --learning-ink: #162033;
+  --learning-muted: rgba(22, 32, 51, 0.58);
+  --learning-subtle: rgba(22, 32, 51, 0.46);
+  --learning-line: rgba(22, 32, 51, 0.1);
+  --learning-line-strong: rgba(22, 32, 51, 0.16);
+  --learning-shadow: 0 4px 0 rgba(22, 32, 51, 0.1);
+  --learning-shadow-strong: 0 6px 0 rgba(22, 32, 51, 0.13);
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard),
+html[data-theme='light'] body:has(.instructor-learning-dashboard),
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .app-shell,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .app-shell,
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .main-panel,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .main-panel {
+  background: #f5f7fb;
+  color: #162033;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar {
+  width: 280px;
+  background: #ffffff;
+  border-right-color: rgba(22, 32, 51, 0.08);
+  color: #162033;
+  padding: 22px 18px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-block,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-block {
+  grid-template-columns: 52px minmax(0, 1fr) 48px;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-mark,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-copy strong,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-copy strong {
+  font-size: 1.18rem;
+  line-height: 1.05;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-copy span,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-copy span {
+  font-size: 0.78rem;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .brand-block button,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .brand-block button {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card {
+  min-height: auto;
+  margin: 18px 0 26px;
+  border: 2px solid rgba(241, 126, 34, 0.22);
+  border-radius: 24px;
+  background: #fff4ed;
+  padding: 14px 16px;
+  box-shadow: none;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card svg,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card svg {
+  width: 26px;
+  height: 26px;
+  color: #f17e22;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card span,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card span {
+  font-size: 0.72rem;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-workspace-card strong,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-workspace-card strong {
+  overflow: hidden;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-section-label,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-section-label {
+  margin: 0 0 12px 10px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav {
+  gap: 8px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav a,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav a {
+  min-height: 48px;
+  gap: 12px;
+  border-radius: 18px;
+  padding: 0 14px;
+  font-size: 0.98rem;
+  font-weight: 900;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav a svg,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav a svg {
+  width: 21px;
+  height: 21px;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-nav a[aria-current='page'],
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-nav a[aria-current='page'] {
+  background: #fff2ea;
+  color: #c75d13;
+}
+
+html:not([data-theme='dark']) body:has(.instructor-learning-dashboard) .sidebar-current-dot,
+html[data-theme='light'] body:has(.instructor-learning-dashboard) .sidebar-current-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  background: #0ea78b;
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-card,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-card,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-stat,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-stat,
+html:not([data-theme='dark']) .instructor-learning-dashboard .content-section,
+html[data-theme='light'] .instructor-learning-dashboard .content-section {
+  background: #ffffff;
+  border: 2px solid rgba(22, 32, 51, 0.1);
+  color: #162033;
+  box-shadow: 0 4px 0 rgba(22, 32, 51, 0.1);
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-stat-label,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-stat-label,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-section-heading p,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-section-heading p,
+html:not([data-theme='dark']) .instructor-learning-dashboard small,
+html[data-theme='light'] .instructor-learning-dashboard small {
+  color: rgba(22, 32, 51, 0.52);
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-launch,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-launch {
+  background: #122144;
+  color: #ffffff;
+  box-shadow: 0 5px 0 #08152f;
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-launch p,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-launch p {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-homework-row,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-homework-row,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-queue-item,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-queue-item,
+html:not([data-theme='dark']) .instructor-learning-dashboard .instructor-learning-session-row,
+html[data-theme='light'] .instructor-learning-dashboard .instructor-learning-session-row {
+  background: #ffffff;
+  border-color: rgba(22, 32, 51, 0.1);
+  color: #162033;
+}
+
+html:not([data-theme='dark']) .instructor-learning-dashboard .overview-course-table-wrap thead,
+html[data-theme='light'] .instructor-learning-dashboard .overview-course-table-wrap thead {
+  background: #f2f5f9;
+  color: rgba(22, 32, 51, 0.58);
+}
+
+@media (max-width: 1180px) {
+  .instructor-learning-dashboard .instructor-learning-primary-grid,
+  .instructor-learning-dashboard .instructor-learning-hero-actions-grid,
+  .instructor-learning-dashboard .instructor-learning-today-side-grid,
+  .instructor-learning-dashboard .instructor-learning-compact-empty-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .instructor-learning-dashboard,
+  .instructor-learning-dashboard .instructor-learning-overview {
+    gap: 16px;
+  }
+
+  .instructor-learning-dashboard .instructor-learning-launch,
+  .instructor-learning-dashboard .instructor-learning-launch.is-empty {
+    min-height: auto;
+  }
+
+  .instructor-learning-dashboard .instructor-learning-launch h2,
+  .instructor-learning-dashboard .instructor-learning-launch.is-empty h2 {
+    font-size: 2.25rem;
+  }
+
+  .instructor-learning-dashboard .overview-course-table-wrap {
+    overflow-x: auto;
+  }
+}

@@ -1,0 +1,148 @@
+/* Shared QuestLMS-style shell for student + instructor learning dashboards. */
+
+body:has(.student-home-hero) .sidebar-workspace-card,
+body:has(.student-home-hero) .sidebar-section-label,
+body:has(.instructor-learning-dashboard) .sidebar-workspace-card,
+body:has(.instructor-learning-dashboard) .sidebar-section-label {
+  display: none;
+}
+
+body:has(.student-home-hero) .sidebar,
+body:has(.instructor-learning-dashboard) .sidebar {
+  width: 280px;
+  background: #ffffff;
+  border-right-color: rgba(22, 32, 51, 0.08);
+  color: #162033;
+  padding: 22px 18px;
+}
+
+body:has(.student-home-hero) .brand-block,
+body:has(.instructor-learning-dashboard) .brand-block {
+  grid-template-columns: 52px minmax(0, 1fr) 48px;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+body:has(.student-home-hero) .brand-mark,
+body:has(.instructor-learning-dashboard) .brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+}
+
+body:has(.student-home-hero) .brand-copy,
+body:has(.instructor-learning-dashboard) .brand-copy {
+  min-width: 0;
+}
+
+body:has(.student-home-hero) .brand-copy strong,
+body:has(.instructor-learning-dashboard) .brand-copy strong {
+  display: block;
+  overflow: hidden;
+  color: #162033;
+  font-size: 1.18rem;
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:has(.student-home-hero) .brand-copy span,
+body:has(.instructor-learning-dashboard) .brand-copy span {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: rgba(22, 32, 51, 0.48);
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:has(.student-home-hero) .brand-block button,
+body:has(.instructor-learning-dashboard) .brand-block button {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+}
+
+body:has(.student-home-hero) .sidebar-nav,
+body:has(.instructor-learning-dashboard) .sidebar-nav {
+  display: grid;
+  gap: 8px;
+}
+
+body:has(.student-home-hero) .sidebar-nav a,
+body:has(.instructor-learning-dashboard) .sidebar-nav a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  border-radius: 18px;
+  color: rgba(22, 32, 51, 0.48);
+  padding: 0 14px;
+  font-size: 0.98rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+body:has(.student-home-hero) .sidebar-nav a svg,
+body:has(.instructor-learning-dashboard) .sidebar-nav a svg {
+  width: 21px;
+  height: 21px;
+  flex-shrink: 0;
+  color: currentColor;
+  stroke-width: 2.2;
+}
+
+body:has(.student-home-hero) .sidebar-nav a span:not(.sidebar-current-dot):not(.sr-only):not(.nav-unread-badge),
+body:has(.instructor-learning-dashboard) .sidebar-nav a span:not(.sidebar-current-dot):not(.sr-only):not(.nav-unread-badge) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:has(.student-home-hero) .sidebar-nav a.active,
+body:has(.student-home-hero) .sidebar-nav a[aria-current='page'],
+body:has(.instructor-learning-dashboard) .sidebar-nav a.active,
+body:has(.instructor-learning-dashboard) .sidebar-nav a[aria-current='page'] {
+  background: #fff2ea;
+  color: #c75d13;
+  font-weight: 950;
+}
+
+body:has(.student-home-hero) .sidebar-current-dot,
+body:has(.instructor-learning-dashboard) .sidebar-current-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: #0ea78b;
+  box-shadow: none;
+}
+
+body:has(.student-home-hero) .sidebar-logout,
+body:has(.instructor-learning-dashboard) .sidebar-logout {
+  min-height: 44px;
+  border-radius: 16px;
+  color: rgba(22, 32, 51, 0.48) !important;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+body:has(.student-home-hero) .sidebar-logout:hover,
+body:has(.student-home-hero) .sidebar-nav a:hover,
+body:has(.instructor-learning-dashboard) .sidebar-logout:hover,
+body:has(.instructor-learning-dashboard) .sidebar-nav a:hover {
+  color: #162033 !important;
+}
+
+@media (max-width: 980px) {
+  body:has(.student-home-hero) .sidebar,
+  body:has(.instructor-learning-dashboard) .sidebar {
+    width: auto;
+  }
+}

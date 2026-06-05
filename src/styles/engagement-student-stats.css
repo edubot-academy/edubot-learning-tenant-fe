@@ -1,0 +1,49 @@
+/* Student dashboard stat cards. */
+
+body:has(.student-home-hero) .student-summary-strip {
+  grid-template-columns: repeat(5, minmax(128px, 1fr));
+  gap: 16px;
+  margin-top: 0;
+}
+
+body:has(.student-home-hero) .student-summary-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-areas: 'icon label' 'icon value';
+  align-items: center;
+  min-height: 112px;
+  padding: 18px;
+  border-radius: 22px;
+}
+
+body:has(.student-home-hero) .student-summary-item svg {
+  grid-area: icon;
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+  border-radius: 15px;
+  background: rgba(14, 167, 139, 0.1);
+  color: var(--engagement-primary-shadow) !important;
+}
+
+body:has(.student-home-hero) .student-summary-item span {
+  grid-area: label;
+  align-self: end;
+  color: rgba(22, 32, 51, 0.55);
+  font-size: 0.83rem;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+body:has(.student-home-hero) .student-summary-item strong {
+  grid-area: value;
+  align-self: start;
+  color: var(--engagement-text);
+  font-size: clamp(1.8rem, 2.6vw, 2.25rem) !important;
+}
+
+@media (max-width: 760px) {
+  body:has(.student-home-hero) .student-summary-strip {
+    grid-template-columns: 1fr;
+  }
+}

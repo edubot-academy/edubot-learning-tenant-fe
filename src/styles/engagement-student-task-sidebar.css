@@ -1,0 +1,52 @@
+/* Student task cards and sidebar polish. */
+
+body:has(.student-home-hero) .student-task-section {
+  margin-top: 18px;
+  padding: clamp(24px, 3vw, 36px);
+  border-radius: 36px;
+}
+
+body:has(.student-home-hero) .section-heading-row h2 {
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+}
+
+body:has(.student-home-hero) .student-task-card {
+  padding: 18px 20px 18px 24px;
+}
+
+body:has(.student-home-hero) .student-task-card:first-child,
+body:has(.student-home-hero) .student-task-card.is-next-task {
+  border-left-width: 14px !important;
+  box-shadow: 0 5px 0 rgba(18, 33, 68, 0.08);
+}
+
+body:has(.student-home-hero) .student-task-title-row strong {
+  font-size: 1.15rem;
+}
+
+body:has(.student-home-hero) .sidebar-workspace-card,
+body:has(.student-home-hero) .sidebar-section-label {
+  display: none;
+}
+
+body:has(.student-home-hero) .brand-block {
+  margin-bottom: 30px;
+}
+
+body:has(.student-home-hero) .sidebar-nav {
+  gap: 10px;
+}
+
+body:has(.student-home-hero) .sidebar-nav a {
+  min-height: 50px;
+}
+
+body:has(.student-home-hero) .sidebar-nav a:not(.active):not([aria-current='page']),
+body:has(.student-home-hero) .sidebar-logout {
+  color: rgba(22, 32, 51, 0.48) !important;
+}
+
+body:has(.student-home-hero) .sidebar-logout:hover,
+body:has(.student-home-hero) .sidebar-nav a:hover {
+  color: var(--engagement-text) !important;
+}

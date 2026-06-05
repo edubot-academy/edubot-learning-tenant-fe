@@ -1,0 +1,24 @@
+/*
+ * EduBot engagement design tokens.
+ * This file intentionally contains only variables, no page/global selectors.
+ */
+
+:root {
+  --engagement-bg: #f4f7fb;
+  --engagement-text: var(--text, #162033);
+  --engagement-primary: var(--brand-teal, #0ea78b);
+  --engagement-primary-shadow: var(--brand-teal-dark, #1e605e);
+  --engagement-primary-soft: rgba(14, 167, 139, 0.12);
+  --engagement-secondary: #172a4f;
+  --engagement-secondary-shadow: #0b1733;
+  --engagement-secondary-soft: rgba(18, 33, 68, 0.1);
+  --engagement-accent: var(--brand-primary, #f17e22);
+  --engagement-accent-soft: rgba(241, 126, 34, 0.14);
+  --engagement-reward: var(--brand-accent, #f4b23d);
+  --engagement-reward-soft: rgba(244, 178, 61, 0.16);
+  --engagement-streak: var(--brand-primary, #f17e22);
+  --engagement-streak-soft: rgba(241, 126, 34, 0.13);
+  --engagement-line: rgba(22, 32, 51, 0.08);
+  --engagement-shadow: 0 5px 0 rgba(18, 33, 68, 0.11);
+  --engagement-shadow-strong: 0 6px 0 rgba(18, 33, 68, 0.16);
+}

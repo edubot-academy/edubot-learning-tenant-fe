@@ -1,0 +1,36 @@
+/* Student dashboard header hierarchy. */
+
+body:has(.student-home-hero) .page-header {
+  margin-bottom: 24px;
+  padding-top: 10px;
+}
+
+body:has(.student-home-hero) .page-header .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--engagement-primary-shadow);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+body:has(.student-home-hero) .page-header h1 {
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+  font-size: clamp(2.55rem, 4.8vw, 4.15rem);
+  line-height: 0.92;
+}
+
+body:has(.student-home-hero) .page-header h1::after {
+  content: 'Бүгүн окууну улантып, тапшырмаларыңызды бүтүрүңүз.';
+  max-width: 620px;
+  color: rgba(22, 32, 51, 0.56);
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0;
+}

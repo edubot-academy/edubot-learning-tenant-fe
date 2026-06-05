@@ -1,0 +1,134 @@
+/*
+ * EduBot brand color layer for the engagement theme.
+ *
+ * Keeps the QuestLMS-inspired interaction language, but replaces the borrowed
+ * green/purple-heavy palette with EduBot orange, dark blue, and teal tokens.
+ */
+
+:root {
+  --engagement-bg: #f4f7fb;
+  --engagement-text: var(--text, #162033);
+  --engagement-primary: var(--brand-teal, #0ea78b);
+  --engagement-primary-shadow: var(--brand-teal-dark, #1e605e);
+  --engagement-primary-soft: rgba(14, 167, 139, 0.12);
+  --engagement-secondary: #172a4f;
+  --engagement-secondary-shadow: #0b1733;
+  --engagement-secondary-soft: rgba(18, 33, 68, 0.1);
+  --engagement-accent: var(--brand-primary, #f17e22);
+  --engagement-accent-soft: rgba(241, 126, 34, 0.14);
+  --engagement-reward: var(--brand-accent, #f4b23d);
+  --engagement-reward-soft: rgba(244, 178, 61, 0.16);
+  --engagement-streak: var(--brand-primary, #f17e22);
+  --engagement-streak-soft: rgba(241, 126, 34, 0.13);
+  --engagement-line: rgba(22, 32, 51, 0.08);
+  --engagement-shadow: 0 5px 0 rgba(18, 33, 68, 0.11);
+  --engagement-shadow-strong: 0 6px 0 rgba(18, 33, 68, 0.16);
+}
+
+body:has(.student-workspace-grid),
+body:has(.student-progress-summary),
+body:has(.course-action-grid),
+body:has(.course-context-strip),
+body:has(.student-today-sessions-section),
+.engagement-theme {
+  --app-bg: var(--engagement-bg);
+  --body-gradient: radial-gradient(circle at 18% 0%, rgba(14, 167, 139, 0.11), transparent 28rem), radial-gradient(circle at 88% 10%, rgba(241, 126, 34, 0.1), transparent 26rem), linear-gradient(180deg, rgba(255, 248, 241, 0.82), rgba(244, 247, 251, 0) 360px), var(--engagement-bg);
+  --brand-primary: var(--engagement-primary);
+  --brand-primary-strong: var(--engagement-primary-shadow);
+  --brand-primary-soft: var(--engagement-primary-soft);
+  --brand-accent: var(--engagement-accent);
+  --surface-hover: rgba(14, 167, 139, 0.08);
+}
+
+body:has(.student-workspace-grid) .brand-mark,
+body:has(.student-progress-summary) .brand-mark,
+body:has(.course-action-grid) .brand-mark,
+body:has(.course-context-strip) .brand-mark,
+body:has(.student-today-sessions-section) .brand-mark,
+.engagement-theme .brand-mark {
+  background: var(--engagement-secondary) !important;
+  box-shadow: 0 5px 0 rgba(18, 33, 68, 0.16), 0 12px 24px rgba(18, 33, 68, 0.1) !important;
+}
+
+body:has(.student-workspace-grid) .brand-mark img,
+body:has(.student-progress-summary) .brand-mark img,
+body:has(.course-action-grid) .brand-mark img,
+body:has(.course-context-strip) .brand-mark img,
+body:has(.student-today-sessions-section) .brand-mark img,
+.engagement-theme .brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+body:has(.student-workspace-grid) .shell-language-button,
+body:has(.student-progress-summary) .shell-language-button,
+body:has(.course-action-grid) .shell-language-button,
+body:has(.course-context-strip) .shell-language-button,
+body:has(.student-today-sessions-section) .shell-language-button,
+.engagement-theme .shell-language-button {
+  background: var(--engagement-primary) !important;
+  color: #ffffff !important;
+  border-color: rgba(14, 167, 139, 0.2) !important;
+  box-shadow: 0 5px 0 var(--engagement-primary-shadow), 0 12px 24px rgba(14, 167, 139, 0.12) !important;
+}
+
+body:has(.student-workspace-grid) .sidebar-nav a.active,
+body:has(.student-progress-summary) .sidebar-nav a.active,
+body:has(.course-action-grid) .sidebar-nav a.active,
+body:has(.course-context-strip) .sidebar-nav a.active,
+body:has(.student-today-sessions-section) .sidebar-nav a.active,
+body:has(.student-workspace-grid) .sidebar-nav a[aria-current='page'],
+body:has(.student-progress-summary) .sidebar-nav a[aria-current='page'],
+body:has(.course-action-grid) .sidebar-nav a[aria-current='page'],
+body:has(.course-context-strip) .sidebar-nav a[aria-current='page'],
+body:has(.student-today-sessions-section) .sidebar-nav a[aria-current='page'],
+.engagement-theme .sidebar-nav a.active,
+.engagement-theme .sidebar-nav a[aria-current='page'] {
+  background: rgba(14, 167, 139, 0.1);
+  color: var(--engagement-primary-shadow);
+  box-shadow: 0 4px 0 rgba(14, 167, 139, 0.12);
+}
+
+body:has(.student-workspace-grid) .sidebar-workspace-card,
+body:has(.student-progress-summary) .sidebar-workspace-card,
+body:has(.course-action-grid) .sidebar-workspace-card,
+body:has(.course-context-strip) .sidebar-workspace-card,
+body:has(.student-today-sessions-section) .sidebar-workspace-card,
+.engagement-theme .sidebar-workspace-card {
+  border-color: rgba(241, 126, 34, 0.26);
+  background: var(--engagement-accent-soft);
+}
+
+body:has(.student-workspace-grid) .student-priority-card,
+body:has(.student-workspace-grid) .student-progress-next-step,
+body:has(.student-progress-summary) .student-progress-next-step,
+body:has(.student-today-sessions-section) .student-priority-card,
+.engagement-theme .dashboard-card--hero,
+.engagement-theme .student-priority-card,
+.engagement-theme .student-progress-next-step {
+  background: radial-gradient(circle at 82% 74%, rgba(14, 167, 139, 0.22), transparent 30%), radial-gradient(circle at 73% 22%, rgba(241, 126, 34, 0.18), transparent 22%), linear-gradient(135deg, #122144, #172a4f) !important;
+  box-shadow: 0 8px 0 var(--engagement-secondary-shadow), 0 24px 60px rgba(18, 33, 68, 0.14) !important;
+}
+
+body:has(.student-workspace-grid) .student-priority-card::before,
+body:has(.student-today-sessions-section) .student-priority-card::before,
+body:has(.student-progress-summary) .student-progress-next-step::before,
+.engagement-theme .dashboard-card--hero::before,
+.engagement-theme .student-priority-card::before,
+.engagement-theme .student-progress-next-step::before {
+  background: var(--engagement-accent);
+}
+
+body:has(.student-workspace-grid) .student-priority-icon,
+body:has(.student-progress-summary) .student-priority-icon,
+.engagement-theme .student-priority-icon {
+  background: var(--engagement-accent);
+}
+
+body:has(.student-workspace-grid) .student-task-list article:first-child,
+body:has(.student-today-sessions-section) .student-task-list article:first-child,
+.engagement-theme .student-task-list article:first-child {
+  background: linear-gradient(90deg, rgba(14, 167, 139, 0.14), rgba(241, 126, 34, 0.08) 42%, #ffffff 100%);
+}

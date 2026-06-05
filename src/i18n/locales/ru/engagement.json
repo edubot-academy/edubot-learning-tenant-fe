@@ -1,0 +1,14 @@
+{
+  "overview": {
+    "instructorFallbackName": "преподаватель",
+    "instructorProfileLabel": "Преподаватель",
+    "instructorGreetingTitle": "Добрый день, преподаватель! 👋",
+    "instructorGreetingDetail": "Готовы сегодня поработать со студентами?",
+    "quickActions": {
+      "createCourseLesson": "Создать курс/урок",
+      "postAnnouncement": "Опубликовать объявление",
+      "weeklyChallenge": "Недельное задание",
+      "reviewGrading": "Проверить оценки"
+    }
+  }
+}

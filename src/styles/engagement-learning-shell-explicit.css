@@ -1,0 +1,83 @@
+/* Explicit shared shell overrides for every engagement learning surface. */
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-workspace-card,
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-section-label {
+  display: none !important;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar {
+  width: 280px;
+  background: #ffffff;
+  border-right-color: rgba(22, 32, 51, 0.08);
+  color: #162033;
+  padding: 22px 18px;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .brand-block {
+  grid-template-columns: 52px minmax(0, 1fr) 48px;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .brand-copy strong {
+  font-size: 1.18rem;
+  line-height: 1.05;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .brand-copy span {
+  font-size: 0.78rem;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .brand-block button {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-nav {
+  gap: 8px;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-nav a {
+  min-height: 48px;
+  gap: 12px;
+  border-radius: 18px;
+  color: rgba(22, 32, 51, 0.48);
+  padding: 0 14px;
+  font-size: 0.98rem;
+  font-weight: 900;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-nav a svg {
+  width: 21px;
+  height: 21px;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-nav a.active,
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-nav a[aria-current='page'] {
+  background: #fff2ea;
+  color: #c75d13;
+  font-weight: 950;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-current-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  background: #0ea78b;
+  box-shadow: none;
+}
+
+body:has(.tenant-dashboard-shell.engagement-theme) .sidebar-logout {
+  min-height: 44px;
+  border-radius: 16px;
+  color: rgba(22, 32, 51, 0.48) !important;
+  font-size: 0.9rem;
+  font-weight: 900;
+}

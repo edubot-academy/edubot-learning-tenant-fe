@@ -122,7 +122,8 @@ set weekly challenge
 review grading
 Must respect permissions and feature flags.
 ✅ Added prop-driven InstructorQuickActions component shell with disabled/permission states.
-Next: add mapper from tenant permissions/feature flags and render in instructor branch.
+✅ Added mapInstructorQuickActions helper from tenant permissions and feature flags.
+Next: render QuickActions in OverviewPage instructor branch after safe file patch.
 Adapt leaderboard/milestone later
 
 Source:

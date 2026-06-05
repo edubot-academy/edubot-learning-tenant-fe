@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { FiCalendar, FiCheckSquare, FiZap } from 'react-icons/fi';
+import { Link } from 'react-router-dom';
+import { FiCalendar, FiCheckSquare, FiSettings, FiZap } from 'react-icons/fi';
 
 export type InstructorTopBarProps = {
   title: ReactNode;
@@ -9,6 +10,7 @@ export type InstructorTopBarProps = {
   todaySessionsValue: ReactNode;
   reviewLabel: ReactNode;
   reviewValue: ReactNode;
+  settingsLabel: ReactNode;
 };
 
 export function InstructorTopBar({
@@ -19,6 +21,7 @@ export function InstructorTopBar({
   todaySessionsValue,
   reviewLabel,
   reviewValue,
+  settingsLabel,
 }: InstructorTopBarProps) {
   return (
     <header className="instructor-learning-topbar">
@@ -31,17 +34,23 @@ export function InstructorTopBar({
         <p>{detail}</p>
       </div>
 
-      <div className="instructor-learning-topbar-metrics" aria-label={String(title)}>
-        <article>
-          <FiCalendar aria-hidden="true" />
-          <span>{todaySessionsLabel}</span>
-          <strong>{todaySessionsValue}</strong>
-        </article>
-        <article>
-          <FiCheckSquare aria-hidden="true" />
-          <span>{reviewLabel}</span>
-          <strong>{reviewValue}</strong>
-        </article>
+      <div className="instructor-learning-topbar-right">
+        <div className="instructor-learning-topbar-metrics" aria-label={String(title)}>
+          <article>
+            <FiCalendar aria-hidden="true" />
+            <span>{todaySessionsLabel}</span>
+            <strong>{todaySessionsValue}</strong>
+          </article>
+          <article>
+            <FiCheckSquare aria-hidden="true" />
+            <span>{reviewLabel}</span>
+            <strong>{reviewValue}</strong>
+          </article>
+        </div>
+        <Link className="instructor-learning-settings-link" to="/settings">
+          <FiSettings aria-hidden="true" />
+          {settingsLabel}
+        </Link>
       </div>
     </header>
   );

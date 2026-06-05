@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/config';
 import i18n from '../../i18n/config';
+import type { AuthUser, Tenant } from '../../types/domain';
 import { OverviewPage } from './OverviewPage';
 
 const api = vi.hoisted(() => ({
@@ -17,7 +18,12 @@ const toast = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-const context = vi.hoisted(() => ({
+type TestContext = {
+  user: AuthUser;
+  activeTenant: Tenant;
+};
+
+const context = vi.hoisted((): TestContext => ({
   user: { id: 7, role: 'assistant', email: 'assistant@test.dev' },
   activeTenant: {
     id: 42,
@@ -232,6 +238,7 @@ const instructorDashboard = {
   queues: {
     unmarkedAttendance: 1,
     homeworkNeedsReview: 2,
+    missingHomework: 0,
     activityNeedsReview: 1,
     upcomingWithoutMaterials: 1,
   },
@@ -377,8 +384,8 @@ describe('OverviewPage', () => {
 
     renderPage();
 
-    expect(await screen.findByText('Instructor overview')).toBeInTheDocument();
-    expect(await screen.findByText('Кутман күн, инструктор! 👋')).toBeInTheDocument();
+    expect(await screen.findByText('Good day, instructor! 👋')).toBeInTheDocument();
+    expect(screen.getAllByText("Today's sessions").length).toBeGreaterThan(0);
     expect(screen.getAllByText('Aida Student').length).toBeGreaterThan(0);
     expect(screen.queryByText('Leaderboard needs data model')).not.toBeInTheDocument();
     expect(screen.getAllByText('Build a card layout').length).toBeGreaterThan(0);

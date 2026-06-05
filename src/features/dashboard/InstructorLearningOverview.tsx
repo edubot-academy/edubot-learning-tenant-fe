@@ -355,6 +355,7 @@ export function InstructorLearningOverview({
         todaySessionsValue={instructorDashboard ? instructorTodaySessions.length : overview.sessions.today}
         reviewLabel={t('overview.needsReview')}
         reviewValue={homeworkNeedsReviewCount}
+        settingsLabel={t('overview.settings')}
       />
 
       <InstructorInsightsRow items={insights} />

@@ -1,4 +1,4 @@
-import { FiBookOpen, FiCheckSquare, FiMegaphone, FiPlusCircle, FiTarget } from 'react-icons/fi';
+import { FiBell, FiBookOpen, FiCheckSquare, FiPlusCircle, FiTarget } from 'react-icons/fi';
 import type { TFunction } from 'i18next';
 import type { Tenant, TenantOverviewPermissions } from '../../types/domain';
 import { isTenantFeatureEnabled } from '../tenant/tenantFeatures';
@@ -49,7 +49,7 @@ export function mapInstructorQuickActions(
       label: t('overview.quickActions.createLessonActivity', { defaultValue: 'Create lesson/activity' }),
       detail: t('overview.quickActions.createLessonActivityDetail', { defaultValue: 'Prepare content for your next class.' }),
       disabledReason: t('overview.quickActions.noContentPermission', { defaultValue: 'You do not have permission to manage course content yet.' }),
-      to: activitiesEnabled ? '/activities' : '/courses',
+      to: '/courses',
       icon: <FiPlusCircle />,
       tone: 'primary',
       disabled: !canCreateCourseContent || !activitiesEnabled,
@@ -61,8 +61,8 @@ export function mapInstructorQuickActions(
       disabledReason: announcementsEnabled
         ? t('overview.quickActions.noAnnouncementPermission', { defaultValue: 'Announcement permissions are not enabled for this role.' })
         : t('overview.quickActions.announcementsDisabled', { defaultValue: 'Announcements are not enabled for this workspace.' }),
-      to: '/announcements',
-      icon: <FiMegaphone />,
+      to: '/sessions',
+      icon: <FiBell />,
       tone: 'secondary',
       disabled: !announcementsEnabled || !canManageActivities,
     },
@@ -73,7 +73,7 @@ export function mapInstructorQuickActions(
       disabledReason: challengesEnabled
         ? t('overview.quickActions.noChallengePermission', { defaultValue: 'Challenge permissions are not enabled for this role.' })
         : t('overview.quickActions.challengesDisabled', { defaultValue: 'Weekly challenges are not enabled yet.' }),
-      to: '/activities',
+      to: '/homework',
       icon: <FiTarget />,
       tone: 'accent',
       disabled: !challengesEnabled || !canManageActivities,

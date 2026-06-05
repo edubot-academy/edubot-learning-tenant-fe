@@ -18,4 +18,9 @@
 @import './engagement-polish.css';
 @import './engagement-tone.css';
 @import './engagement-questlms-alignment.css';
+@import './engagement-student-header.css';
+@import './engagement-student-hero.css';
+@import './engagement-student-stats.css';
+@import './engagement-student-sidecards.css';
+@import './engagement-student-task-sidebar.css';
 @import './engagement-hardening.css';

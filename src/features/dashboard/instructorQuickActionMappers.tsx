@@ -15,10 +15,8 @@ function optionalFeatureEnabled(activeTenant: Tenant | null | undefined, key: st
   return flags[key] !== false;
 }
 
-function quickActionText(t: TFunction, key: string, fallback: string) {
-  const translationKey = `overview.quickActions.${key}`;
-  const translated = t(translationKey);
-  return translated === translationKey ? fallback : translated;
+function quickActionText(t: TFunction, key: string) {
+  return t(`overview.quickActions.${key}`);
 }
 
 export function mapInstructorQuickActions(
@@ -52,7 +50,7 @@ export function mapInstructorQuickActions(
   return [
     {
       key: 'create-lesson-activity',
-      label: quickActionText(t, 'createCourseLesson', 'Курс/сабак түзүү'),
+      label: quickActionText(t, 'createCourseLesson'),
       detail: t('overview.createManageCoursesDetail'),
       disabledReason: t('overview.courseNoAccessDetail'),
       to: '/courses',
@@ -62,7 +60,7 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'post-announcement',
-      label: quickActionText(t, 'postAnnouncement', 'Жарыя кылуу'),
+      label: quickActionText(t, 'postAnnouncement'),
       detail: t('overview.assistantSessionsDetail'),
       disabledReason: announcementsEnabled
         ? t('overview.assistantSupportDisabled')
@@ -74,7 +72,7 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'set-weekly-challenge',
-      label: quickActionText(t, 'weeklyChallenge', 'Апталык тапшырма'),
+      label: quickActionText(t, 'weeklyChallenge'),
       detail: t('overview.homeworkReviewDetail'),
       disabledReason: challengesEnabled
         ? t('overview.homeworkQueueEmptyDetail')
@@ -86,7 +84,7 @@ export function mapInstructorQuickActions(
     },
     {
       key: 'review-grading',
-      label: quickActionText(t, 'reviewGrading', 'Текшерүү'),
+      label: quickActionText(t, 'reviewGrading'),
       detail: homeworkNeedsReviewCount > 0
         ? t('overview.submissionsNeedReview', { count: homeworkNeedsReviewCount })
         : t('overview.homeworkReviewDetail'),
